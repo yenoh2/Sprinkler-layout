@@ -4,11 +4,18 @@ import { createInteractionController } from "../canvas/interactions.js";
 import { bindPanels } from "../ui/panels.js";
 import { loadImageFile, loadProjectFile } from "../io/import.js";
 import { exportCanvasPng, exportProjectJson } from "../io/export.js";
+import { loadAutosave, saveAutosave } from "../io/persistence.js";
 
 const canvas = document.getElementById("sprinkler-canvas");
 const store = createStore(createInitialState());
 const renderer = createRenderer(canvas, store);
 const interactions = createInteractionController(canvas, store, renderer);
+const autosavedProject = loadAutosave();
+let autosaveTimer = null;
+
+if (autosavedProject) {
+  store.dispatch({ type: "LOAD_PROJECT", payload: { project: autosavedProject } });
+}
 
 bindPanels({
   store,
@@ -21,6 +28,7 @@ store.subscribe((state) => {
   renderer.render(state);
   interactions.syncState(state);
   updateStatusText(state);
+  queueAutosave(state);
 });
 
 renderer.render(store.getState());
@@ -30,6 +38,10 @@ updateStatusText(store.getState());
 window.addEventListener("resize", () => {
   renderer.resize();
   renderer.render(store.getState());
+});
+
+window.addEventListener("beforeunload", () => {
+  flushAutosave(store.getState());
 });
 
 document.addEventListener("keydown", (event) => {
@@ -79,4 +91,15 @@ function updateStatusText(state) {
 function isInputFocused() {
   const active = document.activeElement;
   return active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement;
+}
+
+function queueAutosave(state) {
+  window.clearTimeout(autosaveTimer);
+  autosaveTimer = window.setTimeout(() => {
+    flushAutosave(state);
+  }, 250);
+}
+
+function flushAutosave(state) {
+  saveAutosave(state);
 }
