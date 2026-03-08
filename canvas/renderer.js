@@ -262,12 +262,14 @@ export function createRenderer(canvas, store) {
 
   function drawHandle(point, color) {
     ctx.beginPath();
-    ctx.fillStyle = color;
     ctx.arc(point.x, point.y, 7, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.stroke();
     ctx.beginPath();
     ctx.strokeStyle = "rgba(255,255,255,0.95)";
     ctx.arc(point.x, point.y, 9, 0, Math.PI * 2);
+    ctx.lineWidth = 2;
     ctx.stroke();
   }
 
