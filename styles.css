@@ -19,7 +19,8 @@
 
 body {
   margin: 0;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   font-family: var(--font-body);
   color: var(--ink);
   background:
@@ -64,9 +65,10 @@ hr {
 }
 
 .app-shell {
-  min-height: 100vh;
+  height: 100vh;
   display: grid;
   grid-template-rows: auto 1fr;
+  overflow: hidden;
 }
 
 .topbar {
@@ -96,7 +98,9 @@ hr {
   grid-template-columns: 320px minmax(0, 1fr) 320px;
   gap: 1rem;
   padding: 0 1rem 1rem;
+  height: 100%;
   min-height: 0;
+  overflow: hidden;
 }
 
 .toolbar-panel,
@@ -105,7 +109,8 @@ hr {
   flex-direction: column;
   gap: 1rem;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .panel,
@@ -204,7 +209,8 @@ hr {
   display: grid;
   grid-template-rows: auto 1fr;
   min-height: 0;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .canvas-toolbar {
@@ -220,6 +226,7 @@ hr {
 .canvas-frame {
   min-height: 0;
   padding: 1rem;
+  overflow: hidden;
 }
 
 canvas {

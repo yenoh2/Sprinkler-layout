@@ -4,6 +4,7 @@ import { computePixelsPerUnitFromPoints, fitBackgroundToView, screenToWorld } fr
 export function createInteractionController(canvas, store, renderer) {
   let dragState = null;
   let panState = null;
+  let isSpacePressed = false;
 
   canvas.addEventListener("pointerdown", onPointerDown);
   canvas.addEventListener("pointermove", onPointerMove);
@@ -11,9 +12,12 @@ export function createInteractionController(canvas, store, renderer) {
   canvas.addEventListener("pointerleave", onPointerUp);
   canvas.addEventListener("wheel", onWheel, { passive: false });
   canvas.addEventListener("contextmenu", (event) => event.preventDefault());
+  window.addEventListener("keydown", onKeyDown);
+  window.addEventListener("keyup", onKeyUp);
 
   function syncState(state) {
     document.getElementById("hint-text").textContent = `Hint: ${state.ui.hint}`;
+    canvas.style.cursor = getCursorForTool(state.ui.activeTool);
   }
 
   function onPointerDown(event) {
@@ -21,7 +25,7 @@ export function createInteractionController(canvas, store, renderer) {
     const screenPoint = getCanvasPoint(event);
     const worldPoint = screenToWorld(screenPoint, state.view);
 
-    if (event.button === 1 || event.button === 2 || event.altKey) {
+    if (shouldStartPan(event, state.ui.activeTool, isSpacePressed)) {
       panState = {
         startX: event.clientX,
         startY: event.clientY,
@@ -67,7 +71,16 @@ export function createInteractionController(canvas, store, renderer) {
     if (hit) {
       dragState = { id: hit.id, startX: hit.x, startY: hit.y, lastX: hit.x, lastY: hit.y };
       canvas.setPointerCapture(event.pointerId);
+      return;
     }
+
+    panState = {
+      startX: event.clientX,
+      startY: event.clientY,
+      offsetX: state.view.offsetX,
+      offsetY: state.view.offsetY,
+    };
+    canvas.setPointerCapture(event.pointerId);
   }
 
   function onPointerMove(event) {
@@ -180,6 +193,19 @@ export function createInteractionController(canvas, store, renderer) {
     applyRatioCalibration,
     fitBackground,
   };
+
+  function onKeyDown(event) {
+    if (event.code === "Space" && !isFormField(event.target)) {
+      isSpacePressed = true;
+      event.preventDefault();
+    }
+  }
+
+  function onKeyUp(event) {
+    if (event.code === "Space") {
+      isSpacePressed = false;
+    }
+  }
 }
 
 function getCanvasPoint(event) {
@@ -188,4 +214,26 @@ function getCanvasPoint(event) {
     x: ((event.clientX - rect.left) / rect.width) * event.target.width,
     y: ((event.clientY - rect.top) / rect.height) * event.target.height,
   };
+}
+
+function shouldStartPan(event, activeTool, isSpacePressed) {
+  return activeTool === "pan" || event.button === 1 || event.button === 2 || event.altKey || (isSpacePressed && event.button === 0);
+}
+
+function getCursorForTool(tool) {
+  switch (tool) {
+    case "place":
+      return "crosshair";
+    case "calibrate":
+    case "measure":
+      return "cell";
+    case "pan":
+      return "grab";
+    default:
+      return "default";
+  }
+}
+
+function isFormField(target) {
+  return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement;
 }
