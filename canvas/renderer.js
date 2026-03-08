@@ -1,4 +1,4 @@
-import { pointInSprinkler, toRadians } from "../geometry/arcs.js";
+import { pointFromAngle, pointInSprinkler, toRadians } from "../geometry/arcs.js";
 import { toPixels, worldToScreen } from "../geometry/scale.js";
 import { findSelectedSprinkler, getZoneById, hasHydraulics, isProjectReady } from "../state/project-state.js";
 
@@ -40,6 +40,7 @@ export function createRenderer(canvas, store) {
       drawCoverage(state);
     }
     drawSprinklers(state);
+    drawSelectedArcHandles(state);
     drawOverlayWarnings(state);
   }
 
@@ -185,6 +186,27 @@ export function createRenderer(canvas, store) {
     });
   }
 
+  function drawSelectedArcHandles(state) {
+    const selected = findSelectedSprinkler(state);
+    if (!selected || selected.pattern !== "arc" || selected.sweepDeg >= 360 || !state.scale.pixelsPerUnit) {
+      return;
+    }
+
+    const handles = getArcHandlePositions(state, selected);
+    ctx.save();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(255,255,255,0.9)";
+    ctx.beginPath();
+    ctx.moveTo(handles.center.x, handles.center.y);
+    ctx.lineTo(handles.start.x, handles.start.y);
+    ctx.moveTo(handles.center.x, handles.center.y);
+    ctx.lineTo(handles.end.x, handles.end.y);
+    ctx.stroke();
+    drawHandle(handles.start, "#d55d3f");
+    drawHandle(handles.end, "#f1a22c");
+    ctx.restore();
+  }
+
   function drawSprinklerShape(state, sprinkler) {
     const center = worldToScreen({ x: sprinkler.x, y: sprinkler.y }, state.view);
     const radius = toPixels(sprinkler.radius, state.scale) * state.view.zoom;
@@ -238,12 +260,41 @@ export function createRenderer(canvas, store) {
     ctx.fill();
   }
 
+  function drawHandle(point, color) {
+    ctx.beginPath();
+    ctx.fillStyle = color;
+    ctx.arc(point.x, point.y, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.strokeStyle = "rgba(255,255,255,0.95)";
+    ctx.arc(point.x, point.y, 9, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
   function getHitSprinkler(worldPoint) {
     const state = store.getState();
     return [...state.sprinklers].reverse().find((sprinkler) => {
       const hitRadius = Math.max(8 / state.view.zoom, 4 / Math.max(state.scale.pixelsPerUnit || 1, 1));
       return pointInSprinkler(worldPoint, { ...sprinkler, pattern: "full", sweepDeg: 360, radius: hitRadius });
     }) || null;
+  }
+
+  function getArcHandleHit(worldPoint) {
+    const state = store.getState();
+    const selected = findSelectedSprinkler(state);
+    if (!selected || selected.pattern !== "arc" || selected.sweepDeg >= 360 || !state.scale.pixelsPerUnit) {
+      return null;
+    }
+
+    const handles = getArcHandlePositions(state, selected);
+    const worldHitRadius = Math.max(10 / state.view.zoom, 6 / state.scale.pixelsPerUnit);
+    if (distanceSquared(worldPoint, handles.startWorld) <= worldHitRadius * worldHitRadius) {
+      return { id: selected.id, edge: "start" };
+    }
+    if (distanceSquared(worldPoint, handles.endWorld) <= worldHitRadius * worldHitRadius) {
+      return { id: selected.id, edge: "end" };
+    }
+    return null;
   }
 
   function buildExportSummary() {
@@ -264,8 +315,29 @@ export function createRenderer(canvas, store) {
     resize,
     render,
     getHitSprinkler,
+    getArcHandleHit,
     buildExportSummary,
   };
+}
+
+function getArcHandlePositions(state, sprinkler) {
+  const radiusWorld = sprinkler.radius * state.scale.pixelsPerUnit;
+  const centerWorld = { x: sprinkler.x, y: sprinkler.y };
+  const startWorld = pointFromAngle(centerWorld, radiusWorld, sprinkler.startDeg + sprinkler.rotationDeg);
+  const endWorld = pointFromAngle(centerWorld, radiusWorld, sprinkler.startDeg + sprinkler.rotationDeg + sprinkler.sweepDeg);
+  return {
+    center: worldToScreen(centerWorld, state.view),
+    start: worldToScreen(startWorld, state.view),
+    end: worldToScreen(endWorld, state.view),
+    startWorld,
+    endWorld,
+  };
+}
+
+function distanceSquared(a, b) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  return dx * dx + dy * dy;
 }
 
 function hexToRgba(hex, alpha) {

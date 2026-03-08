@@ -1,4 +1,4 @@
-import { clamp } from "../geometry/arcs.js";
+import { clamp, normalizeAngle, toDegrees } from "../geometry/arcs.js";
 import { computePixelsPerUnitFromPoints, fitBackgroundToView, screenToWorld } from "../geometry/scale.js";
 
 export function createInteractionController(canvas, store, renderer) {
@@ -17,7 +17,7 @@ export function createInteractionController(canvas, store, renderer) {
 
   function syncState(state) {
     document.getElementById("hint-text").textContent = `Hint: ${state.ui.hint}`;
-    canvas.style.cursor = getCursorForTool(state.ui.activeTool);
+    canvas.style.cursor = dragState?.kind === "arc-handle" ? "grabbing" : getCursorForTool(state.ui.activeTool);
   }
 
   function onPointerDown(event) {
@@ -69,6 +69,23 @@ export function createInteractionController(canvas, store, renderer) {
       return;
     }
 
+    const handleHit = renderer.getArcHandleHit(worldPoint);
+    if (handleHit) {
+      const sprinkler = state.sprinklers.find((item) => item.id === handleHit.id);
+      if (sprinkler) {
+        dragState = {
+          kind: "arc-handle",
+          id: handleHit.id,
+          edge: handleHit.edge,
+          initialStartDeg: sprinkler.startDeg,
+          initialSweepDeg: sprinkler.sweepDeg,
+          lastPatch: null,
+        };
+        canvas.setPointerCapture(event.pointerId);
+        return;
+      }
+    }
+
     const hit = renderer.getHitSprinkler(worldPoint);
     store.dispatch({ type: "SELECT_SPRINKLER", payload: { id: hit?.id ?? null } });
     if (hit) {
@@ -107,6 +124,18 @@ export function createInteractionController(canvas, store, renderer) {
     }
 
     if (dragState) {
+      if (dragState.kind === "arc-handle") {
+        const patch = buildArcHandlePatch(state, dragState, worldPoint);
+        if (patch) {
+          dragState.lastPatch = patch;
+          store.dispatch({
+            type: "UPDATE_SPRINKLER",
+            payload: { id: dragState.id, patch },
+            meta: { skipHistory: true },
+          });
+        }
+        return;
+      }
       dragState.lastX = worldPoint.x;
       dragState.lastY = worldPoint.y;
       store.dispatch({
@@ -118,6 +147,12 @@ export function createInteractionController(canvas, store, renderer) {
   }
 
   function onPointerUp(event) {
+    if (dragState?.kind === "arc-handle" && dragState.lastPatch) {
+      store.dispatch({
+        type: "UPDATE_SPRINKLER",
+        payload: { id: dragState.id, patch: dragState.lastPatch },
+      });
+    }
     if (dragState?.kind === "move" && (dragState.startX !== dragState.lastX || dragState.startY !== dragState.lastY)) {
       store.dispatch({
         type: "MOVE_SPRINKLER",
@@ -212,6 +247,33 @@ export function createInteractionController(canvas, store, renderer) {
       isSpacePressed = false;
     }
   }
+}
+
+function buildArcHandlePatch(state, dragState, worldPoint) {
+  const sprinkler = state.sprinklers.find((item) => item.id === dragState.id);
+  if (!sprinkler) {
+    return null;
+  }
+
+  const angle = toDegrees(Math.atan2(worldPoint.y - sprinkler.y, worldPoint.x - sprinkler.x));
+  if (!Number.isFinite(angle)) {
+    return null;
+  }
+
+  const angleFromCenter = normalizeAngle(angle - sprinkler.rotationDeg);
+  if (dragState.edge === "start") {
+    const lockedEnd = normalizeAngle(dragState.initialStartDeg + dragState.initialSweepDeg);
+    const nextSweep = normalizeAngle(lockedEnd - angleFromCenter);
+    return {
+      startDeg: angleFromCenter,
+      sweepDeg: clamp(nextSweep || 360, 1, 359),
+    };
+  }
+
+  const nextSweep = normalizeAngle(angleFromCenter - sprinkler.startDeg);
+  return {
+    sweepDeg: clamp(nextSweep || 360, 1, 359),
+  };
 }
 
 function getCanvasPoint(event) {

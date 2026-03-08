@@ -19,6 +19,18 @@ export function toRadians(degrees) {
   return (degrees * Math.PI) / 180;
 }
 
+export function toDegrees(radians) {
+  return (radians * 180) / Math.PI;
+}
+
+export function pointFromAngle(origin, radius, degrees) {
+  const radians = toRadians(degrees);
+  return {
+    x: origin.x + Math.cos(radians) * radius,
+    y: origin.y + Math.sin(radians) * radius,
+  };
+}
+
 export function pointInSprinkler(point, sprinkler) {
   const dx = point.x - sprinkler.x;
   const dy = point.y - sprinkler.y;
