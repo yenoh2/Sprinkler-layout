@@ -101,7 +101,9 @@ export function createRenderer(canvas, store) {
     ctx.strokeStyle = "rgba(45, 106, 71, 0.92)";
     ctx.fillStyle = "rgba(45, 106, 71, 0.92)";
     ctx.lineWidth = 2;
-    const [first, second] = state.ui.measurePoints.map((point) => worldToScreen(point, state.view));
+    const first = worldToScreen(state.ui.measurePoints[0], state.view);
+    const secondPoint = state.ui.measurePoints[1] || state.ui.measurePreviewPoint;
+    const second = secondPoint ? worldToScreen(secondPoint, state.view) : null;
     drawMarker(first);
     if (second) {
       drawMarker(second);
@@ -109,6 +111,15 @@ export function createRenderer(canvas, store) {
       ctx.moveTo(first.x, first.y);
       ctx.lineTo(second.x, second.y);
       ctx.stroke();
+      if (!state.ui.measurePoints[1] && state.ui.measureDistance) {
+        const midX = (first.x + second.x) / 2;
+        const midY = (first.y + second.y) / 2;
+        ctx.fillStyle = "rgba(255, 247, 235, 0.96)";
+        ctx.fillRect(midX - 46, midY - 24, 92, 22);
+        ctx.fillStyle = "rgba(45, 106, 71, 0.96)";
+        ctx.font = "12px Aptos, Segoe UI, sans-serif";
+        ctx.fillText(`${state.ui.measureDistance.toFixed(2)} ${state.scale.units}`, midX - 38, midY - 9);
+      }
     }
     ctx.restore();
   }

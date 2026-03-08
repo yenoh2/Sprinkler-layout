@@ -88,6 +88,9 @@ export function createInteractionController(canvas, store, renderer) {
     const screenPoint = getCanvasPoint(event);
     const worldPoint = screenToWorld(screenPoint, state.view);
     store.dispatch({ type: "SET_CURSOR_WORLD", payload: { point: worldPoint } });
+    if (state.ui.activeTool === "measure" && state.ui.measurePoints.length === 1) {
+      store.dispatch({ type: "SET_MEASURE_PREVIEW", payload: { point: worldPoint } });
+    }
 
     if (panState) {
       store.dispatch({

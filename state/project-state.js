@@ -57,6 +57,7 @@ export function createInitialState() {
       selectedSprinklerId: null,
       hint: "Import an image, calibrate scale, then place sprinklers.",
       measurePoints: [],
+      measurePreviewPoint: null,
       measureDistance: null,
       cursorWorld: null,
     },
@@ -119,6 +120,7 @@ function applyAction(state, action) {
       state.ui.activeTool = action.payload.tool;
       if (action.payload.tool !== "measure") {
         state.ui.measurePoints = [];
+        state.ui.measurePreviewPoint = null;
         state.ui.measureDistance = null;
       }
       return state;
@@ -220,6 +222,10 @@ function applyAction(state, action) {
     }
     case "ADD_MEASURE_POINT":
       state.ui.measurePoints = appendBounded(state.ui.measurePoints, action.payload.point, 2);
+      state.ui.measurePreviewPoint = null;
+      return state;
+    case "SET_MEASURE_PREVIEW":
+      state.ui.measurePreviewPoint = action.payload.point;
       return state;
     case "LOAD_PROJECT":
       return normalizeLoadedProject(action.payload.project);
@@ -271,13 +277,22 @@ function appendBounded(items, item, limit) {
 }
 
 function calculateMeasureDistance(state) {
-  if (state.ui.measurePoints.length < 2) {
+  if (!state.scale.pixelsPerUnit) {
     return null;
   }
-  return distanceBetween(state.ui.measurePoints[0], state.ui.measurePoints[1]) / (state.scale.pixelsPerUnit || 1);
+  if (state.ui.measurePoints.length >= 2) {
+    return distanceBetween(state.ui.measurePoints[0], state.ui.measurePoints[1]) / state.scale.pixelsPerUnit;
+  }
+  if (state.ui.measurePoints.length === 1 && state.ui.measurePreviewPoint) {
+    return distanceBetween(state.ui.measurePoints[0], state.ui.measurePreviewPoint) / state.scale.pixelsPerUnit;
+  }
+  return null;
 }
 
 function buildHint(state) {
+  if (state.ui.activeTool === "measure" && state.ui.measurePoints.length === 1) {
+    return "Move the cursor to preview distance, then click the second point.";
+  }
   if (!state.background.src) {
     return "Import a yard image to begin.";
   }
@@ -300,7 +315,7 @@ function normalizeLoadedProject(project) {
     scale: { ...initial.scale, ...project.scale },
     hydraulics: { ...initial.hydraulics, ...project.hydraulics },
     view: { ...initial.view, ...project.view },
-    ui: { ...initial.ui, ...project.ui },
+    ui: { ...initial.ui, ...project.ui, measurePreviewPoint: null },
     sprinklers: Array.isArray(project.sprinklers) ? project.sprinklers : [],
   };
   merged.history = { undoStack: [], redoStack: [] };
