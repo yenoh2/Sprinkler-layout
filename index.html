@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sprinkler Layout Tool</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Local MVP</p>
+        <h1>Sprinkler Layout Tool</h1>
+      </div>
+      <div class="status-strip">
+        <span id="scale-status" class="status-pill status-pill-warning">Uncalibrated</span>
+        <span id="hydraulics-status" class="status-pill status-pill-warning">Hydraulics missing</span>
+        <span id="ready-status" class="status-pill">Draft</span>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <aside class="toolbar-panel">
+        <section class="panel">
+          <h2>Tools</h2>
+          <div class="tool-grid">
+            <button type="button" data-tool="select" class="tool-button is-active">Select</button>
+            <button type="button" data-tool="place" class="tool-button">Place</button>
+            <button type="button" data-tool="calibrate" class="tool-button">Calibrate</button>
+            <button type="button" data-tool="measure" class="tool-button">Measure</button>
+          </div>
+          <label class="field">
+            <span>Placement pattern</span>
+            <select id="placement-pattern">
+              <option value="full">Full circle</option>
+              <option value="arc">Arc</option>
+            </select>
+          </label>
+        </section>
+
+        <section class="panel">
+          <h2>Project</h2>
+          <label class="field">
+            <span>Project name</span>
+            <input id="project-name" type="text" value="Sprinkler Layout">
+          </label>
+          <label class="field">
+            <span>Units</span>
+            <select id="units-select">
+              <option value="ft">Feet</option>
+              <option value="m">Meters</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Import yard image</span>
+            <input id="background-input" type="file" accept="image/png,image/jpeg">
+          </label>
+          <div class="button-row">
+            <button id="save-json-button" type="button">Save JSON</button>
+            <button id="load-json-button" type="button">Load JSON</button>
+          </div>
+          <div class="button-row">
+            <button id="export-png-button" type="button">Export PNG</button>
+            <button id="reset-view-button" type="button">Reset View</button>
+          </div>
+          <input id="project-json-input" type="file" accept="application/json" hidden>
+        </section>
+
+        <section class="panel">
+          <h2>Calibration</h2>
+          <p class="panel-copy">Two-point calibration: click two points on the image, then enter the real distance.</p>
+          <label class="field">
+            <span>Measured distance</span>
+            <input id="calibration-distance" type="number" min="0.01" step="0.01" value="10">
+          </label>
+          <button id="apply-two-point-button" type="button">Apply Two-Point Calibration</button>
+          <hr>
+          <p class="panel-copy">Ratio calibration: define pixels per unit directly.</p>
+          <div class="field-group">
+            <label class="field">
+              <span>Pixels</span>
+              <input id="ratio-pixels" type="number" min="1" step="1" value="100">
+            </label>
+            <label class="field">
+              <span>Real units</span>
+              <input id="ratio-units" type="number" min="0.01" step="0.01" value="10">
+            </label>
+          </div>
+          <button id="apply-ratio-button" type="button">Apply Ratio Calibration</button>
+          <p id="calibration-points-label" class="muted-line">Calibration points: 0 selected</p>
+        </section>
+
+        <section class="panel">
+          <h2>Hydraulics</h2>
+          <label class="field">
+            <span>Supply line size</span>
+            <select id="line-size-select">
+              <option value="">Select line size</option>
+              <option value="0.75">3/4 in</option>
+              <option value="1">1 in</option>
+              <option value="1.25">1 1/4 in</option>
+              <option value="1.5">1 1/2 in</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Pressure (psi)</span>
+            <input id="pressure-input" type="number" min="1" step="1" placeholder="e.g. 55">
+          </label>
+          <p class="advisory">Hydraulic review is advisory only. This MVP does not calculate full pressure loss or zone sizing.</p>
+        </section>
+
+        <section class="panel">
+          <h2>View</h2>
+          <label class="checkbox-row">
+            <input id="toggle-coverage" type="checkbox" checked>
+            <span>Show coverage</span>
+          </label>
+          <label class="checkbox-row">
+            <input id="toggle-grid" type="checkbox">
+            <span>Show grid</span>
+          </label>
+          <label class="checkbox-row">
+            <input id="toggle-labels" type="checkbox" checked>
+            <span>Show labels</span>
+          </label>
+          <label class="field">
+            <span>Coverage opacity</span>
+            <input id="coverage-opacity" type="range" min="0.05" max="0.5" step="0.01" value="0.22">
+          </label>
+          <div class="legend">
+            <div><span class="legend-swatch legend-zero"></span>No coverage</div>
+            <div><span class="legend-swatch legend-one"></span>1 overlap</div>
+            <div><span class="legend-swatch legend-two"></span>2 overlaps</div>
+            <div><span class="legend-swatch legend-three"></span>3+ overlaps</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>History</h2>
+          <div class="button-row">
+            <button id="undo-button" type="button">Undo</button>
+            <button id="redo-button" type="button">Redo</button>
+          </div>
+          <p id="history-summary" class="muted-line">0 undo / 0 redo</p>
+        </section>
+      </aside>
+
+      <section class="canvas-panel">
+        <div class="canvas-toolbar">
+          <span id="cursor-position">Cursor: --</span>
+          <span id="measure-readout">Measure: --</span>
+          <span id="hint-text">Hint: import an image, calibrate scale, then place sprinklers.</span>
+        </div>
+        <div class="canvas-frame">
+          <canvas id="sprinkler-canvas" width="1600" height="1000"></canvas>
+        </div>
+      </section>
+
+      <aside class="details-panel">
+        <section class="panel">
+          <h2>Selected Sprinkler</h2>
+          <div id="selection-empty" class="empty-card">Select a sprinkler to edit its properties.</div>
+          <div id="selection-form" hidden>
+            <label class="field">
+              <span>Label</span>
+              <input id="sprinkler-label" type="text">
+            </label>
+            <div class="field-group">
+              <label class="field">
+                <span>X</span>
+                <input id="sprinkler-x" type="number" step="0.01">
+              </label>
+              <label class="field">
+                <span>Y</span>
+                <input id="sprinkler-y" type="number" step="0.01">
+              </label>
+            </div>
+            <div class="field-group">
+              <label class="field">
+                <span>Radius</span>
+                <input id="sprinkler-radius" type="number" min="0.1" step="0.1">
+              </label>
+              <label class="field">
+                <span>Pattern</span>
+                <select id="sprinkler-pattern">
+                  <option value="full">Full</option>
+                  <option value="arc">Arc</option>
+                </select>
+              </label>
+            </div>
+            <div class="field-group">
+              <label class="field">
+                <span>Start deg</span>
+                <input id="sprinkler-start" type="number" min="0" max="359" step="1">
+              </label>
+              <label class="field">
+                <span>Sweep deg</span>
+                <input id="sprinkler-sweep" type="number" min="1" max="360" step="1">
+              </label>
+            </div>
+            <label class="field">
+              <span>Rotation deg</span>
+              <input id="sprinkler-rotation" type="number" min="0" max="359" step="1">
+            </label>
+            <label class="checkbox-row">
+              <input id="sprinkler-hidden" type="checkbox">
+              <span>Hide coverage</span>
+            </label>
+            <div class="button-row">
+              <button id="duplicate-sprinkler-button" type="button">Duplicate</button>
+              <button id="delete-sprinkler-button" type="button" class="danger-button">Delete</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>Project Summary</h2>
+          <dl id="project-summary" class="summary-list"></dl>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
