@@ -72,7 +72,7 @@ export function createInteractionController(canvas, store, renderer) {
     const hit = renderer.getHitSprinkler(worldPoint);
     store.dispatch({ type: "SELECT_SPRINKLER", payload: { id: hit?.id ?? null } });
     if (hit) {
-      dragState = { id: hit.id, startX: hit.x, startY: hit.y, lastX: hit.x, lastY: hit.y };
+      dragState = { kind: "move", id: hit.id, startX: hit.x, startY: hit.y, lastX: hit.x, lastY: hit.y };
       canvas.setPointerCapture(event.pointerId);
       return;
     }
@@ -118,7 +118,7 @@ export function createInteractionController(canvas, store, renderer) {
   }
 
   function onPointerUp(event) {
-    if (dragState && (dragState.startX !== dragState.lastX || dragState.startY !== dragState.lastY)) {
+    if (dragState?.kind === "move" && (dragState.startX !== dragState.lastX || dragState.startY !== dragState.lastY)) {
       store.dispatch({
         type: "MOVE_SPRINKLER",
         payload: { id: dragState.id, x: dragState.lastX, y: dragState.lastY },

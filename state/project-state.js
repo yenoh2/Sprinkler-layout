@@ -10,7 +10,15 @@ const HISTORY_ACTIONS = new Set([
   "SET_BACKGROUND",
   "LOAD_PROJECT",
   "DUPLICATE_SPRINKLER",
+  "CREATE_ZONE",
+  "UPDATE_ZONE",
+  "DELETE_ZONE",
+  "SET_ACTIVE_ZONE",
+  "SET_ZONE_VIEW_MODE",
+  "SET_FOCUSED_ZONE",
 ]);
+
+const ZONE_COLORS = ["#d55d3f", "#4d8b31", "#3876b4", "#9d59c1", "#d18e2f", "#2e8b85"];
 
 export function createInitialState() {
   return {
@@ -37,6 +45,7 @@ export function createInitialState() {
       lineSizeInches: null,
       pressurePsi: null,
     },
+    zones: [],
     sprinklers: [],
     view: {
       offsetX: 0,
@@ -45,7 +54,9 @@ export function createInitialState() {
       showCoverage: true,
       showGrid: false,
       showLabels: true,
+      showZoneLabels: true,
       coverageOpacity: 0.22,
+      zoneViewMode: "coverage",
     },
     history: {
       undoStack: [],
@@ -60,6 +71,8 @@ export function createInitialState() {
       measurePreviewPoint: null,
       measureDistance: null,
       cursorWorld: null,
+      activeZoneId: null,
+      focusedZoneId: null,
     },
   };
 }
@@ -139,6 +152,9 @@ function applyAction(state, action) {
     case "SET_VIEW":
       state.view = { ...state.view, ...action.payload };
       return state;
+    case "SET_ZONE_VIEW_MODE":
+      state.view.zoneViewMode = action.payload.mode;
+      return state;
     case "RESET_VIEW":
       state.view.offsetX = 0;
       state.view.offsetY = 0;
@@ -164,6 +180,45 @@ function applyAction(state, action) {
         pressurePsi: action.payload.pressurePsi ?? null,
       };
       return state;
+    case "CREATE_ZONE": {
+      const zone = {
+        id: action.payload.id,
+        name: action.payload.name,
+        color: action.payload.color,
+        visible: true,
+      };
+      state.zones.push(zone);
+      state.ui.activeZoneId = zone.id;
+      return state;
+    }
+    case "UPDATE_ZONE": {
+      const zone = findZone(state, action.payload.id);
+      if (!zone) {
+        return null;
+      }
+      Object.assign(zone, action.payload.patch);
+      return state;
+    }
+    case "DELETE_ZONE":
+      state.zones = state.zones.filter((zone) => zone.id !== action.payload.id);
+      state.sprinklers.forEach((sprinkler) => {
+        if (sprinkler.zoneId === action.payload.id) {
+          sprinkler.zoneId = null;
+        }
+      });
+      if (state.ui.activeZoneId === action.payload.id) {
+        state.ui.activeZoneId = null;
+      }
+      if (state.ui.focusedZoneId === action.payload.id) {
+        state.ui.focusedZoneId = null;
+      }
+      return state;
+    case "SET_ACTIVE_ZONE":
+      state.ui.activeZoneId = action.payload.id || null;
+      return state;
+    case "SET_FOCUSED_ZONE":
+      state.ui.focusedZoneId = action.payload.id || null;
+      return state;
     case "ADD_SPRINKLER":
       state.sprinklers.push({
         id: action.payload.id,
@@ -176,6 +231,7 @@ function applyAction(state, action) {
         rotationDeg: normalizeAngle(action.payload.rotationDeg ?? 0),
         hidden: Boolean(action.payload.hidden),
         label: action.payload.label || `S-${state.sprinklers.length + 1}`,
+        zoneId: action.payload.zoneId ?? state.ui.activeZoneId ?? null,
       });
       state.ui.selectedSprinklerId = action.payload.id;
       return state;
@@ -264,17 +320,44 @@ function redo(state) {
 }
 
 function sanitizePatch(patch) {
-  return {
-    ...patch,
-    x: Number(patch.x),
-    y: Number(patch.y),
-    radius: Math.max(0.1, Number(patch.radius)),
-    pattern: patch.pattern === "arc" ? "arc" : "full",
-    startDeg: normalizeAngle(Number(patch.startDeg ?? 0)),
-    sweepDeg: clamp(Number(patch.sweepDeg ?? 360), 1, 360),
-    rotationDeg: normalizeAngle(Number(patch.rotationDeg ?? 0)),
-    hidden: Boolean(patch.hidden),
-  };
+  if (!patch) {
+    return {};
+  }
+
+  const sanitized = {};
+
+  if ("x" in patch) {
+    sanitized.x = Number(patch.x);
+  }
+  if ("y" in patch) {
+    sanitized.y = Number(patch.y);
+  }
+  if ("radius" in patch) {
+    sanitized.radius = Math.max(0.1, Number(patch.radius));
+  }
+  if ("pattern" in patch) {
+    sanitized.pattern = patch.pattern === "arc" ? "arc" : "full";
+  }
+  if ("startDeg" in patch) {
+    sanitized.startDeg = normalizeAngle(Number(patch.startDeg ?? 0));
+  }
+  if ("sweepDeg" in patch) {
+    sanitized.sweepDeg = clamp(Number(patch.sweepDeg ?? 360), 1, 360);
+  }
+  if ("rotationDeg" in patch) {
+    sanitized.rotationDeg = normalizeAngle(Number(patch.rotationDeg ?? 0));
+  }
+  if ("hidden" in patch) {
+    sanitized.hidden = Boolean(patch.hidden);
+  }
+  if ("zoneId" in patch) {
+    sanitized.zoneId = patch.zoneId || null;
+  }
+  if ("label" in patch) {
+    sanitized.label = patch.label;
+  }
+
+  return sanitized;
 }
 
 function appendBounded(items, item, limit) {
@@ -322,9 +405,10 @@ function normalizeLoadedProject(project) {
     background: { ...initial.background, ...project.background },
     scale: { ...initial.scale, ...project.scale },
     hydraulics: { ...initial.hydraulics, ...project.hydraulics },
+    zones: Array.isArray(project.zones) ? project.zones : [],
     view: { ...initial.view, ...project.view },
     ui: { ...initial.ui, ...project.ui, measurePreviewPoint: null },
-    sprinklers: Array.isArray(project.sprinklers) ? project.sprinklers : [],
+    sprinklers: Array.isArray(project.sprinklers) ? project.sprinklers.map(normalizeSprinkler) : [],
   };
   merged.history = { undoStack: [], redoStack: [] };
   return merged;
@@ -350,4 +434,46 @@ export function hasHydraulics(state) {
 
 export function isProjectReady(state) {
   return Boolean(state.background.src) && state.scale.calibrated && hasHydraulics(state);
+}
+
+export function getZoneById(state, id) {
+  return findZone(state, id);
+}
+
+export function getZoneColorById(state, id) {
+  return findZone(state, id)?.color || "#2f2418";
+}
+
+export function getNextZoneSeed(state) {
+  return {
+    name: `Zone ${state.zones.length + 1}`,
+    color: ZONE_COLORS[state.zones.length % ZONE_COLORS.length],
+  };
+}
+
+function findZone(state, id) {
+  return state.zones.find((zone) => zone.id === id) || null;
+}
+
+function normalizeSprinkler(sprinkler) {
+  const x = Number(sprinkler?.x);
+  const y = Number(sprinkler?.y);
+  const radius = Number(sprinkler?.radius);
+  const startDeg = Number(sprinkler?.startDeg);
+  const sweepDeg = Number(sprinkler?.sweepDeg);
+  const rotationDeg = Number(sprinkler?.rotationDeg);
+
+  return {
+    id: sprinkler?.id || crypto.randomUUID(),
+    x: Number.isFinite(x) ? x : 0,
+    y: Number.isFinite(y) ? y : 0,
+    radius: Number.isFinite(radius) ? Math.max(0.1, radius) : 12,
+    pattern: sprinkler?.pattern === "arc" ? "arc" : "full",
+    startDeg: Number.isFinite(startDeg) ? normalizeAngle(startDeg) : 0,
+    sweepDeg: Number.isFinite(sweepDeg) ? clamp(sweepDeg, 1, 360) : 360,
+    rotationDeg: Number.isFinite(rotationDeg) ? normalizeAngle(rotationDeg) : 0,
+    hidden: Boolean(sprinkler?.hidden),
+    label: sprinkler?.label || "Sprinkler",
+    zoneId: sprinkler?.zoneId || null,
+  };
 }

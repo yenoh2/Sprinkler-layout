@@ -303,6 +303,58 @@ canvas {
   text-align: right;
 }
 
+.zone-list {
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 0.9rem;
+}
+
+.zone-card {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.8rem;
+  border: 1px solid rgba(47, 36, 24, 0.12);
+  border-radius: 16px;
+  background: rgba(255, 252, 245, 0.7);
+}
+
+.zone-card.is-dimmed {
+  opacity: 0.55;
+}
+
+.zone-card-head,
+.zone-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.zone-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.92rem;
+}
+
+.zone-swatch {
+  width: 0.95rem;
+  height: 0.95rem;
+  border-radius: 50%;
+  border: 1px solid rgba(47, 36, 24, 0.18);
+  flex: 0 0 auto;
+}
+
+.zone-meta {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.zone-card-actions button {
+  padding: 0.45rem 0.6rem;
+  font-size: 0.85rem;
+}
+
 @media (max-width: 1320px) {
   .workspace {
     grid-template-columns: 290px minmax(0, 1fr);

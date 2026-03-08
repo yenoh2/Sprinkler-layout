@@ -1,9 +1,10 @@
 import { clamp } from "../geometry/arcs.js";
 import { fitBackgroundToView } from "../geometry/scale.js";
-import { cloneProjectSnapshot, findSelectedSprinkler, hasHydraulics, isProjectReady } from "../state/project-state.js";
+import { cloneProjectSnapshot, findSelectedSprinkler, getNextZoneSeed, hasHydraulics, isProjectReady } from "../state/project-state.js";
 
 export function bindPanels({ store, renderer, interactions, io }) {
   const elements = bindElements();
+  elements.__store = store;
   bindEvents(elements, store, renderer, interactions, io);
   store.subscribe((state) => updateUi(elements, state, renderer));
   updateUi(elements, store.getState(), renderer);
@@ -29,9 +30,15 @@ function bindElements() {
     calibrationPointsLabel: document.getElementById("calibration-points-label"),
     lineSizeSelect: document.getElementById("line-size-select"),
     pressureInput: document.getElementById("pressure-input"),
+    zoneViewMode: document.getElementById("zone-view-mode"),
+    activeZoneSelect: document.getElementById("active-zone-select"),
+    createZoneButton: document.getElementById("create-zone-button"),
+    clearZoneFocusButton: document.getElementById("clear-zone-focus-button"),
+    zonesList: document.getElementById("zones-list"),
     toggleCoverage: document.getElementById("toggle-coverage"),
     toggleGrid: document.getElementById("toggle-grid"),
     toggleLabels: document.getElementById("toggle-labels"),
+    toggleZoneLabels: document.getElementById("toggle-zone-labels"),
     coverageOpacity: document.getElementById("coverage-opacity"),
     undoButton: document.getElementById("undo-button"),
     redoButton: document.getElementById("redo-button"),
@@ -46,6 +53,7 @@ function bindElements() {
     sprinklerStart: document.getElementById("sprinkler-start"),
     sprinklerSweep: document.getElementById("sprinkler-sweep"),
     sprinklerRotation: document.getElementById("sprinkler-rotation"),
+    sprinklerZone: document.getElementById("sprinkler-zone"),
     sprinklerHidden: document.getElementById("sprinkler-hidden"),
     duplicateButton: document.getElementById("duplicate-sprinkler-button"),
     deleteButton: document.getElementById("delete-sprinkler-button"),
@@ -139,6 +147,23 @@ function bindEvents(elements, store, renderer, interactions, io) {
   elements.lineSizeSelect.addEventListener("change", updateHydraulics);
   elements.pressureInput.addEventListener("input", updateHydraulics);
 
+  elements.zoneViewMode.addEventListener("change", () => {
+    store.dispatch({ type: "SET_ZONE_VIEW_MODE", payload: { mode: elements.zoneViewMode.value } });
+  });
+  elements.activeZoneSelect.addEventListener("change", () => {
+    store.dispatch({ type: "SET_ACTIVE_ZONE", payload: { id: elements.activeZoneSelect.value || null } });
+  });
+  elements.createZoneButton.addEventListener("click", () => {
+    const seed = getNextZoneSeed(store.getState());
+    store.dispatch({
+      type: "CREATE_ZONE",
+      payload: { id: crypto.randomUUID(), name: seed.name, color: seed.color },
+    });
+  });
+  elements.clearZoneFocusButton.addEventListener("click", () => {
+    store.dispatch({ type: "SET_FOCUSED_ZONE", payload: { id: null } });
+  });
+
   elements.toggleCoverage.addEventListener("change", () => {
     store.dispatch({ type: "SET_VIEW", payload: { showCoverage: elements.toggleCoverage.checked } });
   });
@@ -147,6 +172,9 @@ function bindEvents(elements, store, renderer, interactions, io) {
   });
   elements.toggleLabels.addEventListener("change", () => {
     store.dispatch({ type: "SET_VIEW", payload: { showLabels: elements.toggleLabels.checked } });
+  });
+  elements.toggleZoneLabels.addEventListener("change", () => {
+    store.dispatch({ type: "SET_VIEW", payload: { showZoneLabels: elements.toggleZoneLabels.checked } });
   });
   elements.coverageOpacity.addEventListener("input", () => {
     store.dispatch({ type: "SET_VIEW", payload: { coverageOpacity: Number(elements.coverageOpacity.value) } });
@@ -161,6 +189,7 @@ function bindEvents(elements, store, renderer, interactions, io) {
     elements.sprinklerStart,
     elements.sprinklerSweep,
     elements.sprinklerRotation,
+    elements.sprinklerZone,
     elements.sprinklerHidden,
   ].forEach((element) => {
     const eventName = element.type === "checkbox" || element.tagName === "SELECT" ? "change" : "input";
@@ -203,6 +232,7 @@ function updateSelection(elements, store) {
         startDeg: Number(elements.sprinklerStart.value),
         sweepDeg: clamp(Number(elements.sprinklerSweep.value), 1, 360),
         rotationDeg: Number(elements.sprinklerRotation.value),
+        zoneId: elements.sprinklerZone.value || null,
         hidden: elements.sprinklerHidden.checked,
       },
     },
@@ -218,27 +248,32 @@ function updateUi(elements, state, renderer) {
   elements.placementPattern.value = state.ui.placementPattern;
   elements.lineSizeSelect.value = state.hydraulics.lineSizeInches ? String(state.hydraulics.lineSizeInches) : "";
   elements.pressureInput.value = state.hydraulics.pressurePsi ?? "";
+  elements.zoneViewMode.value = state.view.zoneViewMode;
   elements.toggleCoverage.checked = state.view.showCoverage;
   elements.toggleGrid.checked = state.view.showGrid;
   elements.toggleLabels.checked = state.view.showLabels;
+  elements.toggleZoneLabels.checked = state.view.showZoneLabels;
   elements.coverageOpacity.value = String(state.view.coverageOpacity);
   elements.calibrationPointsLabel.textContent = `Calibration points: ${state.scale.calibrationPoints.length} selected`;
   elements.historySummary.textContent = `${state.history.undoStack.length} undo / ${state.history.redoStack.length} redo`;
   elements.undoButton.disabled = !state.history.undoStack.length;
   elements.redoButton.disabled = !state.history.redoStack.length;
-
   const selected = findSelectedSprinkler(state);
+  populateZoneSelect(elements.activeZoneSelect, state.zones, state.ui.activeZoneId);
+  populateZoneSelect(elements.sprinklerZone, state.zones, selected?.zoneId ?? "");
+  renderZonesList(elements, state);
   elements.selectionEmpty.hidden = Boolean(selected);
   elements.selectionForm.hidden = !selected;
   if (selected) {
     elements.sprinklerLabel.value = selected.label ?? "";
-    elements.sprinklerX.value = selected.x.toFixed(2);
-    elements.sprinklerY.value = selected.y.toFixed(2);
-    elements.sprinklerRadius.value = selected.radius.toFixed(2);
+    elements.sprinklerX.value = formatDecimal(selected.x);
+    elements.sprinklerY.value = formatDecimal(selected.y);
+    elements.sprinklerRadius.value = formatDecimal(selected.radius);
     elements.sprinklerPattern.value = selected.pattern;
     elements.sprinklerStart.value = String(selected.startDeg);
     elements.sprinklerSweep.value = String(selected.sweepDeg);
     elements.sprinklerRotation.value = String(selected.rotationDeg);
+    elements.sprinklerZone.value = selected.zoneId ?? "";
     elements.sprinklerHidden.checked = selected.hidden;
   }
 
@@ -265,4 +300,91 @@ function applyStatus(node, label, ok, warningOnly = false) {
   if (!ok) {
     node.classList.add(warningOnly ? "status-pill-danger" : "status-pill-warning");
   }
+}
+
+function populateZoneSelect(select, zones, value) {
+  const current = value ?? "";
+  const options = ['<option value="">Unassigned</option>']
+    .concat(zones.map((zone) => `<option value="${zone.id}">${zone.name}</option>`));
+  select.innerHTML = options.join("");
+  select.value = current;
+}
+
+function renderZonesList(elements, state) {
+  if (!state.zones.length) {
+    elements.zonesList.innerHTML = '<div class="empty-card">No zones yet. Create one to group heads.</div>';
+    return;
+  }
+
+  elements.zonesList.innerHTML = state.zones.map((zone) => {
+    const count = state.sprinklers.filter((sprinkler) => sprinkler.zoneId === zone.id).length;
+    const isDimmed = state.ui.focusedZoneId && state.ui.focusedZoneId !== zone.id;
+    const isFocused = state.ui.focusedZoneId === zone.id;
+    const activeMark = state.ui.activeZoneId === zone.id ? "Active zone" : `${count} head${count === 1 ? "" : "s"}`;
+    return `
+      <div class="zone-card ${isDimmed ? "is-dimmed" : ""}" data-zone-id="${zone.id}">
+        <div class="zone-card-head">
+          <label class="zone-chip">
+            <span class="zone-swatch" style="background:${zone.color}"></span>
+            <input data-zone-name="${zone.id}" type="text" value="${escapeHtml(zone.name)}">
+          </label>
+          <input data-zone-color="${zone.id}" type="color" value="${zone.color}">
+        </div>
+        <div class="zone-meta">${activeMark}</div>
+        <div class="zone-card-actions">
+          <button type="button" data-zone-focus="${zone.id}">${isFocused ? "Focused" : "Focus"}</button>
+          <button type="button" data-zone-active="${zone.id}">Set Active</button>
+          <button type="button" data-zone-delete="${zone.id}" class="danger-button">Delete</button>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  elements.zonesList.querySelectorAll("[data-zone-name]").forEach((input) => {
+    input.addEventListener("input", () => {
+      storeSafeDispatch(elements, "UPDATE_ZONE", { id: input.dataset.zoneName, patch: { name: input.value || "Untitled Zone" } });
+    });
+  });
+  elements.zonesList.querySelectorAll("[data-zone-color]").forEach((input) => {
+    input.addEventListener("input", () => {
+      storeSafeDispatch(elements, "UPDATE_ZONE", { id: input.dataset.zoneColor, patch: { color: input.value } });
+    });
+  });
+  elements.zonesList.querySelectorAll("[data-zone-focus]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const id = button.dataset.zoneFocus;
+      const focused = elements.zonesList.dataset.focusedZoneId;
+      storeSafeDispatch(elements, "SET_FOCUSED_ZONE", { id: focused === id ? null : id });
+    });
+  });
+  elements.zonesList.querySelectorAll("[data-zone-active]").forEach((button) => {
+    button.addEventListener("click", () => {
+      storeSafeDispatch(elements, "SET_ACTIVE_ZONE", { id: button.dataset.zoneActive });
+    });
+  });
+  elements.zonesList.querySelectorAll("[data-zone-delete]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const id = button.dataset.zoneDelete;
+      if (window.confirm("Delete this zone? Heads in it will become unassigned.")) {
+        storeSafeDispatch(elements, "DELETE_ZONE", { id });
+      }
+    });
+  });
+  elements.zonesList.dataset.focusedZoneId = state.ui.focusedZoneId || "";
+}
+
+function storeSafeDispatch(elements, type, payload) {
+  elements.__store.dispatch({ type, payload });
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function formatDecimal(value) {
+  return Number.isFinite(value) ? value.toFixed(2) : "0.00";
 }

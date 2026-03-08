@@ -1,6 +1,6 @@
 import { pointInSprinkler, toRadians } from "../geometry/arcs.js";
 import { toPixels, worldToScreen } from "../geometry/scale.js";
-import { findSelectedSprinkler, hasHydraulics, isProjectReady } from "../state/project-state.js";
+import { findSelectedSprinkler, getZoneById, hasHydraulics, isProjectReady } from "../state/project-state.js";
 
 export function createRenderer(canvas, store) {
   const ctx = canvas.getContext("2d");
@@ -130,8 +130,19 @@ export function createRenderer(canvas, store) {
       if (sprinkler.hidden) {
         return;
       }
-      ctx.fillStyle = `rgba(56, 133, 196, ${state.view.coverageOpacity})`;
-      ctx.strokeStyle = "rgba(30, 82, 121, 0.88)";
+      const zone = getZoneById(state, sprinkler.zoneId);
+      const isFocusedOut = state.ui.focusedZoneId && sprinkler.zoneId !== state.ui.focusedZoneId;
+      const opacity = isFocusedOut ? Math.max(0.04, state.view.coverageOpacity * 0.35) : state.view.coverageOpacity;
+      if (state.view.zoneViewMode === "zone" && zone) {
+        ctx.fillStyle = hexToRgba(zone.color, opacity);
+        ctx.strokeStyle = hexToRgba(zone.color, isFocusedOut ? 0.35 : 0.9);
+      } else if (state.view.zoneViewMode === "zone" && !zone) {
+        ctx.fillStyle = `rgba(112, 112, 112, ${opacity})`;
+        ctx.strokeStyle = `rgba(70, 70, 70, ${isFocusedOut ? 0.35 : 0.8})`;
+      } else {
+        ctx.fillStyle = `rgba(56, 133, 196, ${opacity})`;
+        ctx.strokeStyle = `rgba(30, 82, 121, ${isFocusedOut ? 0.3 : 0.88})`;
+      }
       ctx.lineWidth = 1.4;
       drawSprinklerShape(state, sprinkler);
       ctx.fill();
@@ -144,9 +155,15 @@ export function createRenderer(canvas, store) {
     const selected = findSelectedSprinkler(state);
     state.sprinklers.forEach((sprinkler) => {
       const center = worldToScreen({ x: sprinkler.x, y: sprinkler.y }, state.view);
+      const zone = getZoneById(state, sprinkler.zoneId);
+      const headColor = zone ? zone.color : "#2f2418";
+      const isFocusedOut = state.ui.focusedZoneId && sprinkler.zoneId !== state.ui.focusedZoneId;
       ctx.save();
       ctx.beginPath();
-      ctx.fillStyle = selected?.id === sprinkler.id ? "#b65c2a" : "#2f2418";
+      ctx.fillStyle = selected?.id === sprinkler.id ? "#b65c2a" : headColor;
+      if (isFocusedOut) {
+        ctx.globalAlpha = 0.35;
+      }
       ctx.arc(center.x, center.y, 6, 0, Math.PI * 2);
       ctx.fill();
       ctx.beginPath();
@@ -158,6 +175,11 @@ export function createRenderer(canvas, store) {
         ctx.fillStyle = "#2f2418";
         ctx.font = "12px Aptos, Segoe UI, sans-serif";
         ctx.fillText(sprinkler.label || sprinkler.id, center.x + 10, center.y - 10);
+        if (zone && state.view.showZoneLabels) {
+          ctx.fillStyle = headColor;
+          ctx.font = "11px Aptos, Segoe UI, sans-serif";
+          ctx.fillText(zone.name, center.x + 10, center.y + 4);
+        }
       }
       ctx.restore();
     });
@@ -244,4 +266,15 @@ export function createRenderer(canvas, store) {
     getHitSprinkler,
     buildExportSummary,
   };
+}
+
+function hexToRgba(hex, alpha) {
+  const safe = hex.replace("#", "");
+  const normalized = safe.length === 3
+    ? safe.split("").map((value) => value + value).join("")
+    : safe;
+  const red = parseInt(normalized.slice(0, 2), 16);
+  const green = parseInt(normalized.slice(2, 4), 16);
+  const blue = parseInt(normalized.slice(4, 6), 16);
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
 }
