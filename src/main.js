@@ -55,6 +55,14 @@ document.addEventListener("keydown", (event) => {
       store.dispatch({ type: "DELETE_SPRINKLER", payload: { id: selectedId } });
     }
   }
+
+  if (event.key === "Escape") {
+    const state = store.getState();
+    if (state.ui.activeTool === "measure" && (state.ui.measurePoints.length || state.ui.measurePreviewPoint)) {
+      event.preventDefault();
+      store.dispatch({ type: "CLEAR_MEASURE" });
+    }
+  }
 });
 
 function updateStatusText(state) {

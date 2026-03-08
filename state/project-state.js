@@ -224,6 +224,11 @@ function applyAction(state, action) {
       state.ui.measurePoints = appendBounded(state.ui.measurePoints, action.payload.point, 2);
       state.ui.measurePreviewPoint = null;
       return state;
+    case "CLEAR_MEASURE":
+      state.ui.measurePoints = [];
+      state.ui.measurePreviewPoint = null;
+      state.ui.measureDistance = null;
+      return state;
     case "SET_MEASURE_PREVIEW":
       state.ui.measurePreviewPoint = action.payload.point;
       return state;
@@ -292,6 +297,9 @@ function calculateMeasureDistance(state) {
 function buildHint(state) {
   if (state.ui.activeTool === "measure" && state.ui.measurePoints.length === 1) {
     return "Move the cursor to preview distance, then click the second point.";
+  }
+  if (state.ui.activeTool === "measure" && state.ui.measurePoints.length >= 2) {
+    return "Click to start a new measurement, or press Esc to clear.";
   }
   if (!state.background.src) {
     return "Import a yard image to begin.";

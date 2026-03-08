@@ -62,6 +62,9 @@ export function createInteractionController(canvas, store, renderer) {
     }
 
     if (state.ui.activeTool === "measure") {
+      if (state.ui.measurePoints.length >= 2) {
+        store.dispatch({ type: "CLEAR_MEASURE" });
+      }
       store.dispatch({ type: "ADD_MEASURE_POINT", payload: { point: worldPoint } });
       return;
     }
