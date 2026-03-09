@@ -17,7 +17,7 @@ export function createInteractionController(canvas, store, renderer) {
 
   function syncState(state) {
     document.getElementById("hint-text").textContent = `Hint: ${state.ui.hint}`;
-    canvas.style.cursor = dragState?.kind === "arc-handle" ? "grabbing" : getCursorForTool(state.ui.activeTool);
+    canvas.style.cursor = dragState?.kind?.includes("handle") ? "grabbing" : getCursorForTool(state.ui.activeTool);
   }
 
   function onPointerDown(event) {
@@ -86,6 +86,17 @@ export function createInteractionController(canvas, store, renderer) {
       }
     }
 
+    const radiusHandleHit = renderer.getRadiusHandleHit(worldPoint);
+    if (radiusHandleHit) {
+      dragState = {
+        kind: "radius-handle",
+        id: radiusHandleHit.id,
+        lastPatch: null,
+      };
+      canvas.setPointerCapture(event.pointerId);
+      return;
+    }
+
     const hit = renderer.getHitSprinkler(worldPoint);
     store.dispatch({ type: "SELECT_SPRINKLER", payload: { id: hit?.id ?? null } });
     if (hit) {
@@ -136,6 +147,18 @@ export function createInteractionController(canvas, store, renderer) {
         }
         return;
       }
+      if (dragState.kind === "radius-handle") {
+        const patch = buildRadiusHandlePatch(state, dragState, worldPoint);
+        if (patch) {
+          dragState.lastPatch = patch;
+          store.dispatch({
+            type: "UPDATE_SPRINKLER",
+            payload: { id: dragState.id, patch },
+            meta: { skipHistory: true },
+          });
+        }
+        return;
+      }
       dragState.lastX = worldPoint.x;
       dragState.lastY = worldPoint.y;
       store.dispatch({
@@ -148,6 +171,12 @@ export function createInteractionController(canvas, store, renderer) {
 
   function onPointerUp(event) {
     if (dragState?.kind === "arc-handle" && dragState.lastPatch) {
+      store.dispatch({
+        type: "UPDATE_SPRINKLER",
+        payload: { id: dragState.id, patch: dragState.lastPatch },
+      });
+    }
+    if (dragState?.kind === "radius-handle" && dragState.lastPatch) {
       store.dispatch({
         type: "UPDATE_SPRINKLER",
         payload: { id: dragState.id, patch: dragState.lastPatch },
@@ -273,6 +302,22 @@ function buildArcHandlePatch(state, dragState, worldPoint) {
   const nextSweep = normalizeAngle(angleFromCenter - sprinkler.startDeg);
   return {
     sweepDeg: clamp(nextSweep || 360, 1, 359),
+  };
+}
+
+function buildRadiusHandlePatch(state, dragState, worldPoint) {
+  const sprinkler = state.sprinklers.find((item) => item.id === dragState.id);
+  if (!sprinkler || !state.scale.pixelsPerUnit) {
+    return null;
+  }
+
+  const radiusPixels = Math.hypot(worldPoint.x - sprinkler.x, worldPoint.y - sprinkler.y);
+  if (!Number.isFinite(radiusPixels)) {
+    return null;
+  }
+
+  return {
+    radius: clamp(radiusPixels / state.scale.pixelsPerUnit, 0.1, 500),
   };
 }
 

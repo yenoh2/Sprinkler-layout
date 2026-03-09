@@ -204,6 +204,7 @@ export function createRenderer(canvas, store) {
     ctx.stroke();
     drawHandle(handles.start, "#d55d3f");
     drawHandle(handles.end, "#f1a22c");
+    drawRadiusHandle(handles.mid, handles.midArrowTip, handles.midArrowBase, "#4f5bff");
     ctx.restore();
   }
 
@@ -273,6 +274,75 @@ export function createRenderer(canvas, store) {
     ctx.stroke();
   }
 
+  function drawRadiusHandle(point, arrowTip, arrowBase, color) {
+    const angle = Math.atan2(arrowTip.y - arrowBase.y, arrowTip.x - arrowBase.x);
+    const unitX = Math.cos(angle);
+    const unitY = Math.sin(angle);
+    const perpX = -unitY;
+    const perpY = unitX;
+    const triangleLength = 8;
+    const triangleWidth = 5;
+    const gap = 1.5;
+
+    const outwardTip = {
+      x: point.x + unitX * (gap + triangleLength),
+      y: point.y + unitY * (gap + triangleLength),
+    };
+    const inwardTip = {
+      x: point.x - unitX * (gap + triangleLength),
+      y: point.y - unitY * (gap + triangleLength),
+    };
+
+    const outwardBaseCenter = {
+      x: point.x + unitX * gap,
+      y: point.y + unitY * gap,
+    };
+    const inwardBaseCenter = {
+      x: point.x - unitX * gap,
+      y: point.y - unitY * gap,
+    };
+
+    ctx.fillStyle = color;
+    fillTriangle(
+      outwardTip,
+      {
+        x: outwardBaseCenter.x + perpX * triangleWidth,
+        y: outwardBaseCenter.y + perpY * triangleWidth,
+      },
+      {
+        x: outwardBaseCenter.x - perpX * triangleWidth,
+        y: outwardBaseCenter.y - perpY * triangleWidth,
+      },
+    );
+    fillTriangle(
+      inwardTip,
+      {
+        x: inwardBaseCenter.x + perpX * triangleWidth,
+        y: inwardBaseCenter.y + perpY * triangleWidth,
+      },
+      {
+        x: inwardBaseCenter.x - perpX * triangleWidth,
+        y: inwardBaseCenter.y - perpY * triangleWidth,
+      },
+    );
+
+    ctx.beginPath();
+    ctx.strokeStyle = "rgba(255,255,255,0.9)";
+    ctx.lineWidth = 1;
+    ctx.moveTo(outwardTip.x + unitX, outwardTip.y + unitY);
+    ctx.lineTo(inwardTip.x - unitX, inwardTip.y - unitY);
+    ctx.stroke();
+  }
+
+  function fillTriangle(a, b, c) {
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.lineTo(c.x, c.y);
+    ctx.closePath();
+    ctx.fill();
+  }
+
   function getHitSprinkler(worldPoint) {
     const state = store.getState();
     return [...state.sprinklers].reverse().find((sprinkler) => {
@@ -299,6 +369,21 @@ export function createRenderer(canvas, store) {
     return null;
   }
 
+  function getRadiusHandleHit(worldPoint) {
+    const state = store.getState();
+    const selected = findSelectedSprinkler(state);
+    if (!selected || selected.pattern !== "arc" || selected.sweepDeg >= 360 || !state.scale.pixelsPerUnit) {
+      return null;
+    }
+
+    const handles = getArcHandlePositions(state, selected);
+    const worldHitRadius = Math.max(10 / state.view.zoom, 6 / state.scale.pixelsPerUnit);
+    if (distanceSquared(worldPoint, handles.midWorld) <= worldHitRadius * worldHitRadius) {
+      return { id: selected.id, edge: "radius" };
+    }
+    return null;
+  }
+
   function buildExportSummary() {
     const state = store.getState();
     return {
@@ -318,6 +403,7 @@ export function createRenderer(canvas, store) {
     render,
     getHitSprinkler,
     getArcHandleHit,
+    getRadiusHandleHit,
     buildExportSummary,
   };
 }
@@ -327,12 +413,20 @@ function getArcHandlePositions(state, sprinkler) {
   const centerWorld = { x: sprinkler.x, y: sprinkler.y };
   const startWorld = pointFromAngle(centerWorld, radiusWorld, sprinkler.startDeg + sprinkler.rotationDeg);
   const endWorld = pointFromAngle(centerWorld, radiusWorld, sprinkler.startDeg + sprinkler.rotationDeg + sprinkler.sweepDeg);
+  const midAngle = sprinkler.startDeg + sprinkler.rotationDeg + sprinkler.sweepDeg / 2;
+  const midWorld = pointFromAngle(centerWorld, radiusWorld, midAngle);
+  const midArrowBaseWorld = pointFromAngle(centerWorld, Math.max(radiusWorld - Math.max(16 / state.view.zoom, 10 / state.scale.pixelsPerUnit), 0), midAngle);
+  const midArrowTipWorld = pointFromAngle(centerWorld, radiusWorld + Math.max(16 / state.view.zoom, 10 / state.scale.pixelsPerUnit), midAngle);
   return {
     center: worldToScreen(centerWorld, state.view),
     start: worldToScreen(startWorld, state.view),
     end: worldToScreen(endWorld, state.view),
+    mid: worldToScreen(midWorld, state.view),
+    midArrowBase: worldToScreen(midArrowBaseWorld, state.view),
+    midArrowTip: worldToScreen(midArrowTipWorld, state.view),
     startWorld,
     endWorld,
+    midWorld,
   };
 }
 

@@ -226,8 +226,8 @@ function applyAction(state, action) {
         y: action.payload.y,
         radius: action.payload.radius ?? 12,
         pattern: action.payload.pattern ?? "full",
-        startDeg: normalizeAngle(action.payload.startDeg ?? 0),
-        sweepDeg: clamp(action.payload.sweepDeg ?? 360, 1, 360),
+        startDeg: normalizeAngle(Math.round(action.payload.startDeg ?? 0)),
+        sweepDeg: clamp(Math.round(action.payload.sweepDeg ?? 360), 1, 360),
         rotationDeg: normalizeAngle(action.payload.rotationDeg ?? 0),
         hidden: Boolean(action.payload.hidden),
         label: action.payload.label || `S-${state.sprinklers.length + 1}`,
@@ -339,10 +339,10 @@ function sanitizePatch(patch) {
     sanitized.pattern = patch.pattern === "arc" ? "arc" : "full";
   }
   if ("startDeg" in patch) {
-    sanitized.startDeg = normalizeAngle(Number(patch.startDeg ?? 0));
+    sanitized.startDeg = normalizeAngle(Math.round(Number(patch.startDeg ?? 0)));
   }
   if ("sweepDeg" in patch) {
-    sanitized.sweepDeg = clamp(Number(patch.sweepDeg ?? 360), 1, 360);
+    sanitized.sweepDeg = clamp(Math.round(Number(patch.sweepDeg ?? 360)), 1, 360);
   }
   if ("rotationDeg" in patch) {
     sanitized.rotationDeg = normalizeAngle(Number(patch.rotationDeg ?? 0));
@@ -469,8 +469,8 @@ function normalizeSprinkler(sprinkler) {
     y: Number.isFinite(y) ? y : 0,
     radius: Number.isFinite(radius) ? Math.max(0.1, radius) : 12,
     pattern: sprinkler?.pattern === "arc" ? "arc" : "full",
-    startDeg: Number.isFinite(startDeg) ? normalizeAngle(startDeg) : 0,
-    sweepDeg: Number.isFinite(sweepDeg) ? clamp(sweepDeg, 1, 360) : 360,
+    startDeg: Number.isFinite(startDeg) ? normalizeAngle(Math.round(startDeg)) : 0,
+    sweepDeg: Number.isFinite(sweepDeg) ? clamp(Math.round(sweepDeg), 1, 360) : 360,
     rotationDeg: Number.isFinite(rotationDeg) ? normalizeAngle(rotationDeg) : 0,
     hidden: Boolean(sprinkler?.hidden),
     label: sprinkler?.label || "Sprinkler",
