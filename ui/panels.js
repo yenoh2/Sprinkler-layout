@@ -52,7 +52,6 @@ function bindElements() {
     sprinklerPattern: document.getElementById("sprinkler-pattern"),
     sprinklerStart: document.getElementById("sprinkler-start"),
     sprinklerSweep: document.getElementById("sprinkler-sweep"),
-    sprinklerRotation: document.getElementById("sprinkler-rotation"),
     sprinklerZone: document.getElementById("sprinkler-zone"),
     sprinklerHidden: document.getElementById("sprinkler-hidden"),
     duplicateButton: document.getElementById("duplicate-sprinkler-button"),
@@ -188,7 +187,6 @@ function bindEvents(elements, store, renderer, interactions, io) {
     elements.sprinklerPattern,
     elements.sprinklerStart,
     elements.sprinklerSweep,
-    elements.sprinklerRotation,
     elements.sprinklerZone,
     elements.sprinklerHidden,
   ].forEach((element) => {
@@ -231,7 +229,7 @@ function updateSelection(elements, store) {
         pattern: elements.sprinklerPattern.value,
         startDeg: Number(elements.sprinklerStart.value),
         sweepDeg: clamp(Number(elements.sprinklerSweep.value), 1, 360),
-        rotationDeg: Number(elements.sprinklerRotation.value),
+        rotationDeg: 0,
         zoneId: elements.sprinklerZone.value || null,
         hidden: elements.sprinklerHidden.checked,
       },
@@ -270,9 +268,8 @@ function updateUi(elements, state, renderer) {
     elements.sprinklerY.value = formatDecimal(selected.y);
     elements.sprinklerRadius.value = formatDecimal(selected.radius);
     elements.sprinklerPattern.value = selected.pattern;
-    elements.sprinklerStart.value = String(selected.startDeg);
+    elements.sprinklerStart.value = String((selected.startDeg + selected.rotationDeg) % 360);
     elements.sprinklerSweep.value = String(selected.sweepDeg);
-    elements.sprinklerRotation.value = String(selected.rotationDeg);
     elements.sprinklerZone.value = selected.zoneId ?? "";
     elements.sprinklerHidden.checked = selected.hidden;
   }

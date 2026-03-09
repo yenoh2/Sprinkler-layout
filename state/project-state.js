@@ -226,9 +226,9 @@ function applyAction(state, action) {
         y: action.payload.y,
         radius: action.payload.radius ?? 12,
         pattern: action.payload.pattern ?? "full",
-        startDeg: normalizeAngle(Math.round(action.payload.startDeg ?? 0)),
+        startDeg: normalizeAngle(Math.round((action.payload.startDeg ?? 0) + (action.payload.rotationDeg ?? 0))),
         sweepDeg: clamp(Math.round(action.payload.sweepDeg ?? 360), 1, 360),
-        rotationDeg: normalizeAngle(action.payload.rotationDeg ?? 0),
+        rotationDeg: 0,
         hidden: Boolean(action.payload.hidden),
         label: action.payload.label || `S-${state.sprinklers.length + 1}`,
         zoneId: action.payload.zoneId ?? state.ui.activeZoneId ?? null,
@@ -345,7 +345,7 @@ function sanitizePatch(patch) {
     sanitized.sweepDeg = clamp(Math.round(Number(patch.sweepDeg ?? 360)), 1, 360);
   }
   if ("rotationDeg" in patch) {
-    sanitized.rotationDeg = normalizeAngle(Number(patch.rotationDeg ?? 0));
+    sanitized.rotationDeg = 0;
   }
   if ("hidden" in patch) {
     sanitized.hidden = Boolean(patch.hidden);
@@ -462,6 +462,10 @@ function normalizeSprinkler(sprinkler) {
   const startDeg = Number(sprinkler?.startDeg);
   const sweepDeg = Number(sprinkler?.sweepDeg);
   const rotationDeg = Number(sprinkler?.rotationDeg);
+  const effectiveStartDeg = normalizeAngle(
+    (Number.isFinite(startDeg) ? Math.round(startDeg) : 0) +
+    (Number.isFinite(rotationDeg) ? Math.round(rotationDeg) : 0)
+  );
 
   return {
     id: sprinkler?.id || crypto.randomUUID(),
@@ -469,9 +473,9 @@ function normalizeSprinkler(sprinkler) {
     y: Number.isFinite(y) ? y : 0,
     radius: Number.isFinite(radius) ? Math.max(0.1, radius) : 12,
     pattern: sprinkler?.pattern === "arc" ? "arc" : "full",
-    startDeg: Number.isFinite(startDeg) ? normalizeAngle(Math.round(startDeg)) : 0,
+    startDeg: effectiveStartDeg,
     sweepDeg: Number.isFinite(sweepDeg) ? clamp(Math.round(sweepDeg), 1, 360) : 360,
-    rotationDeg: Number.isFinite(rotationDeg) ? normalizeAngle(rotationDeg) : 0,
+    rotationDeg: 0,
     hidden: Boolean(sprinkler?.hidden),
     label: sprinkler?.label || "Sprinkler",
     zoneId: sprinkler?.zoneId || null,
