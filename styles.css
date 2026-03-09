@@ -73,10 +73,11 @@ hr {
 
 .topbar {
   display: flex;
-  align-items: end;
+  align-items: center;
   justify-content: space-between;
   gap: 1rem;
   padding: 1.2rem 1.4rem 1rem;
+  flex-wrap: wrap;
 }
 
 .topbar h1 {
@@ -91,6 +92,36 @@ hr {
   letter-spacing: 0.12em;
   font-size: 0.72rem;
   color: var(--muted);
+}
+
+.topbar-brand {
+  flex: 0 0 auto;
+}
+
+.topbar-tools {
+  display: flex;
+  align-items: end;
+  gap: 0.9rem;
+  flex: 1 1 auto;
+  justify-content: center;
+  flex-wrap: nowrap;
+  min-width: 320px;
+}
+
+.topbar-tool-grid {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  grid-template-columns: none;
+}
+
+.topbar-pattern {
+  min-width: 170px;
+}
+
+.topbar-status {
+  flex: 0 1 auto;
+  justify-content: flex-end;
 }
 
 .workspace {
@@ -156,10 +187,22 @@ hr {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.topbar-tool-grid {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  grid-template-columns: none;
+}
+
 .field {
   display: grid;
   gap: 0.4rem;
   margin-bottom: 0.85rem;
+}
+
+.field-compact {
+  min-width: 180px;
+  margin-bottom: 0;
 }
 
 .checkbox-row {
@@ -379,5 +422,15 @@ canvas {
 
   .canvas-panel {
     min-height: 60vh;
+  }
+
+  .topbar {
+    align-items: stretch;
+  }
+
+  .topbar-tools,
+  .topbar-status {
+    justify-content: flex-start;
+    min-width: 0;
   }
 }

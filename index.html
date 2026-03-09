@@ -9,11 +9,27 @@
 <body>
   <div class="app-shell">
     <header class="topbar">
-      <div>
+      <div class="topbar-brand">
         <p class="eyebrow">Local MVP</p>
         <h1>Sprinkler Layout Tool</h1>
       </div>
-      <div class="status-strip">
+      <div class="topbar-tools">
+        <div class="tool-grid topbar-tool-grid">
+          <button type="button" data-tool="select" class="tool-button is-active">Select</button>
+          <button type="button" data-tool="place" class="tool-button">Place</button>
+          <button type="button" data-tool="calibrate" class="tool-button">Calibrate</button>
+          <button type="button" data-tool="measure" class="tool-button">Measure</button>
+          <button type="button" data-tool="pan" class="tool-button">Pan</button>
+        </div>
+        <label class="field field-compact topbar-pattern">
+          <span>Placement pattern</span>
+          <select id="placement-pattern">
+            <option value="full">Full circle</option>
+            <option value="arc">Arc</option>
+          </select>
+        </label>
+      </div>
+      <div class="status-strip topbar-status">
         <span id="scale-status" class="status-pill status-pill-warning">Uncalibrated</span>
         <span id="hydraulics-status" class="status-pill status-pill-warning">Hydraulics missing</span>
         <span id="ready-status" class="status-pill">Draft</span>
@@ -22,25 +38,6 @@
 
     <main class="workspace">
       <aside class="toolbar-panel">
-        <section class="panel">
-          <h2>Tools</h2>
-          <div class="tool-grid">
-            <button type="button" data-tool="select" class="tool-button is-active">Select</button>
-            <button type="button" data-tool="place" class="tool-button">Place</button>
-            <button type="button" data-tool="calibrate" class="tool-button">Calibrate</button>
-            <button type="button" data-tool="measure" class="tool-button">Measure</button>
-            <button type="button" data-tool="pan" class="tool-button">Pan</button>
-          </div>
-          <p class="panel-copy">Pan with the `Pan` tool, by dragging empty canvas space in `Select`, or by holding `Space` while dragging.</p>
-          <label class="field">
-            <span>Placement pattern</span>
-            <select id="placement-pattern">
-              <option value="full">Full circle</option>
-              <option value="arc">Arc</option>
-            </select>
-          </label>
-        </section>
-
         <section class="panel">
           <h2>Project</h2>
           <label class="field">
