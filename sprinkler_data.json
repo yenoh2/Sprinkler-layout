@@ -11,23 +11,28 @@
     },
     "rotor_series": {
       "rain_bird_5004_prs": {
-        "target_pressure_psi": 45,
+        "nominal_pressure_psi": 45,
         "mechanical_specs": {
           "inlet_size": "3/4 inch NPT",
           "max_radius_reduction_pct": 25,
           "arc_range": "40 to 360 degrees"
         },
-        "standard_nozzles": [
-          {"nozzle": "1.5", "radius_ft": 35, "flow_gpm": 1.54, "precip_in_hr_square": 0.24},
-          {"nozzle": "2.0", "radius_ft": 37, "flow_gpm": 2.07, "precip_in_hr_square": 0.29},
-          {"nozzle": "3.0", "radius_ft": 40, "flow_gpm": 3.09, "precip_in_hr_square": 0.37},
-          {"nozzle": "4.0", "radius_ft": 42, "flow_gpm": 4.01, "precip_in_hr_square": 0.44},
-          {"nozzle": "6.0", "radius_ft": 46, "flow_gpm": 6.01, "precip_in_hr_square": 0.55}
+        "standard_angle_25_deg": [
+          {"nozzle": "1.5", "radius_ft": 35, "flow_gpm": 1.54},
+          {"nozzle": "2.0", "radius_ft": 37, "flow_gpm": 2.07},
+          {"nozzle": "3.0", "radius_ft": 40, "flow_gpm": 3.09},
+          {"nozzle": "4.0", "radius_ft": 42, "flow_gpm": 4.01},
+          {"nozzle": "6.0", "radius_ft": 46, "flow_gpm": 6.01}
         ],
-        "mpr_matched_sets": [
-          {"color": "Red (25ft)", "Q_90": 1.00, "H_180": 1.98, "F_360": 3.82},
-          {"color": "Green (30ft)", "Q_90": 1.40, "H_180": 2.96, "F_360": 5.78},
-          {"color": "Beige (35ft)", "Q_90": 1.92, "H_180": 3.90, "F_360": 7.62}
+        "low_angle_10_deg": [
+          {"nozzle": "1.0_LA", "radius_ft": 29, "flow_gpm": 1.05},
+          {"nozzle": "1.5_LA", "radius_ft": 31, "flow_gpm": 1.58},
+          {"nozzle": "3.0_LA", "radius_ft": 35, "flow_gpm": 3.07}
+        ],
+        "mpr_pre_balanced_sets": [
+          {"set": "25ft_Red", "Q_90": 1.00, "T_120": 1.21, "H_180": 1.98, "F_360": 3.82},
+          {"set": "30ft_Green", "Q_90": 1.40, "T_120": 1.85, "H_180": 2.96, "F_360": 5.78},
+          {"set": "35ft_Beige", "Q_90": 1.92, "T_120": 2.58, "H_180": 3.90, "F_360": 7.62}
         ]
       },
       "rain_bird_3504": {
