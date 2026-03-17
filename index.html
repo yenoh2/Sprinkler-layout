@@ -204,9 +204,22 @@
             </div>
             <label class="field">
               <span>Zone</span>
-              <select id="sprinkler-zone">
-                <option value="">Unassigned</option>
-              </select>
+              <div id="sprinkler-zone-picker" class="zone-picker">
+                <button
+                  id="sprinkler-zone-button"
+                  class="zone-picker-button"
+                  type="button"
+                  aria-haspopup="listbox"
+                  aria-expanded="false"
+                >
+                  <span class="zone-picker-value">
+                    <span id="sprinkler-zone-dot" class="zone-swatch zone-swatch-neutral"></span>
+                    <span id="sprinkler-zone-label">Unassigned</span>
+                  </span>
+                </button>
+                <div id="sprinkler-zone-menu" class="zone-picker-menu" role="listbox" hidden></div>
+                <input id="sprinkler-zone" type="hidden" value="">
+              </div>
             </label>
             <label class="checkbox-row">
               <input id="sprinkler-hidden" type="checkbox">

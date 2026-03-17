@@ -53,6 +53,11 @@ function bindElements() {
     sprinklerStart: document.getElementById("sprinkler-start"),
     sprinklerSweep: document.getElementById("sprinkler-sweep"),
     sprinklerZone: document.getElementById("sprinkler-zone"),
+    sprinklerZonePicker: document.getElementById("sprinkler-zone-picker"),
+    sprinklerZoneButton: document.getElementById("sprinkler-zone-button"),
+    sprinklerZoneLabel: document.getElementById("sprinkler-zone-label"),
+    sprinklerZoneDot: document.getElementById("sprinkler-zone-dot"),
+    sprinklerZoneMenu: document.getElementById("sprinkler-zone-menu"),
     sprinklerHidden: document.getElementById("sprinkler-hidden"),
     duplicateButton: document.getElementById("duplicate-sprinkler-button"),
     deleteButton: document.getElementById("delete-sprinkler-button"),
@@ -187,11 +192,48 @@ function bindEvents(elements, store, renderer, interactions, io) {
     elements.sprinklerPattern,
     elements.sprinklerStart,
     elements.sprinklerSweep,
-    elements.sprinklerZone,
     elements.sprinklerHidden,
   ].forEach((element) => {
     const eventName = element.type === "checkbox" || element.tagName === "SELECT" ? "change" : "input";
     element.addEventListener(eventName, () => updateSelection(elements, store));
+  });
+
+  elements.sprinklerZoneButton.addEventListener("click", () => {
+    setZonePickerOpen(elements, elements.sprinklerZoneMenu.hidden);
+  });
+  elements.sprinklerZoneButton.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      setZonePickerOpen(elements, true);
+    }
+  });
+  elements.sprinklerZoneMenu.addEventListener("click", (event) => {
+    event.preventDefault();
+    const target = event.target instanceof Element ? event.target : null;
+    const button = target?.closest("[data-zone-option]");
+    if (!button) {
+      return;
+    }
+    setZonePickerOpen(elements, false);
+    elements.sprinklerZone.value = button.dataset.zoneOption;
+    updateSelection(elements, store);
+    elements.sprinklerZoneButton.focus();
+  });
+  elements.sprinklerZonePicker.addEventListener("focusout", (event) => {
+    const nextTarget = event.relatedTarget instanceof Node ? event.relatedTarget : null;
+    if (!nextTarget || !elements.sprinklerZonePicker.contains(nextTarget)) {
+      setZonePickerOpen(elements, false);
+    }
+  });
+  document.addEventListener("click", (event) => {
+    if (!elements.sprinklerZonePicker.contains(event.target)) {
+      setZonePickerOpen(elements, false);
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      setZonePickerOpen(elements, false);
+    }
   });
 
   elements.deleteButton.addEventListener("click", () => {
@@ -258,7 +300,10 @@ function updateUi(elements, state, renderer) {
   elements.redoButton.disabled = !state.history.redoStack.length;
   const selected = findSelectedSprinkler(state);
   populateZoneSelect(elements.activeZoneSelect, state.zones, state.ui.activeZoneId);
-  populateZoneSelect(elements.sprinklerZone, state.zones, selected?.zoneId ?? "");
+  populateSprinklerZonePicker(elements, state.zones, selected?.zoneId ?? "");
+  if (!selected) {
+    setZonePickerOpen(elements, false);
+  }
   renderZonesList(elements, state);
   elements.selectionEmpty.hidden = Boolean(selected);
   elements.selectionForm.hidden = !selected;
@@ -305,6 +350,42 @@ function populateZoneSelect(select, zones, value) {
     .concat(zones.map((zone) => `<option value="${zone.id}">${zone.name}</option>`));
   select.innerHTML = options.join("");
   select.value = current;
+}
+
+function populateSprinklerZonePicker(elements, zones, value) {
+  const current = value ?? "";
+  elements.sprinklerZone.value = current;
+  const selectedZone = zones.find((zone) => zone.id === current) ?? null;
+  elements.sprinklerZoneLabel.textContent = selectedZone?.name ?? "Unassigned";
+  elements.sprinklerZoneDot.style.background = selectedZone?.color ?? "rgba(119, 102, 85, 0.25)";
+  elements.sprinklerZoneMenu.innerHTML = [
+    renderZonePickerOption({ id: "", name: "Unassigned", color: null }, current === ""),
+    ...zones.map((zone) => renderZonePickerOption(zone, zone.id === current)),
+  ].join("");
+}
+
+function renderZonePickerOption(zone, isSelected) {
+  const color = zone.color ?? "rgba(119, 102, 85, 0.25)";
+  return `
+    <button
+      type="button"
+      class="zone-picker-item ${isSelected ? "is-selected" : ""}"
+      role="option"
+      aria-selected="${isSelected ? "true" : "false"}"
+      data-zone-option="${zone.id}"
+    >
+      <span class="zone-picker-option">
+        <span class="zone-swatch" style="background:${color}"></span>
+        <span>${escapeHtml(zone.name)}</span>
+      </span>
+      <span class="zone-picker-check">${isSelected ? "Selected" : ""}</span>
+    </button>
+  `;
+}
+
+function setZonePickerOpen(elements, isOpen) {
+  elements.sprinklerZoneMenu.hidden = !isOpen;
+  elements.sprinklerZoneButton.setAttribute("aria-expanded", isOpen ? "true" : "false");
 }
 
 function renderZonesList(elements, state) {
