@@ -137,6 +137,53 @@
             <div><span class="legend-swatch legend-two"></span>2 overlaps</div>
             <div><span class="legend-swatch legend-three"></span>3+ overlaps</div>
           </div>
+          <p class="muted-line">Coverage view still helps inspect overlap geometry while analysis overlays handle application rate, runtime, and schedule depth.</p>
+        </section>
+
+        <section class="panel">
+          <h2>Analysis</h2>
+          <label class="field">
+            <span>Overlay</span>
+            <select id="analysis-overlay-mode">
+              <option value="none">None</option>
+              <option value="application_rate" selected>Application rate</option>
+              <option value="zone_catch_can">Zone catch-can</option>
+              <option value="full_schedule_depth">Full schedule depth</option>
+              <option value="target_error">Target error</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Target depth (in)</span>
+            <input id="analysis-target-depth" type="number" min="0.1" step="0.05" value="1.0">
+          </label>
+          <label class="field">
+            <span>Catch-can zone</span>
+            <select id="analysis-zone-select">
+              <option value="">Select zone</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Grid detail</span>
+            <select id="analysis-cell-px">
+              <option value="12">Fine</option>
+              <option value="18" selected>Balanced</option>
+              <option value="28">Fast</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Rate scale</span>
+            <select id="analysis-rate-scale-mode">
+              <option value="zone" selected>Auto per zone</option>
+              <option value="project">Auto full plan</option>
+              <option value="fixed">Fixed absolute</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Rate max in/hr</span>
+            <input id="analysis-rate-scale-max" type="number" min="0.1" step="0.1" value="3.0">
+          </label>
+          <div id="analysis-legend" class="legend"></div>
+          <p id="analysis-summary" class="muted-line">Analysis overlays estimate application rate, runtime depth, and schedule balance from the recommended heads and nozzles.</p>
         </section>
 
         <section class="panel">
@@ -153,6 +200,7 @@
         <div class="canvas-toolbar">
           <span id="cursor-position">Cursor: --</span>
           <span id="measure-readout">Measure: --</span>
+          <span id="analysis-readout">Analysis: --</span>
           <span id="hint-text">Hint: import an image, calibrate scale, then place sprinklers.</span>
         </div>
         <div class="canvas-frame">
@@ -225,6 +273,7 @@
               <input id="sprinkler-hidden" type="checkbox">
               <span>Hide coverage</span>
             </label>
+            <div id="sprinkler-analysis" hidden></div>
             <div class="button-row">
               <button id="duplicate-sprinkler-button" type="button">Duplicate</button>
               <button id="delete-sprinkler-button" type="button" class="danger-button">Delete</button>

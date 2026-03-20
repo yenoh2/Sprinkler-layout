@@ -3,9 +3,9 @@ import fs from "node:fs";
 const ASSUMPTIONS = {
   designFlowLimitGpm: 14,
   sprayArcNormalizeToleranceDeg: 10,
-  sprayCutoffRadiusFt: 15,
   preferLongerRangeRotors: true,
   rotorSimplicityPrecipToleranceInHr: 0.01,
+  zoneFamilyAutoResolvePrecipToleranceInHr: 0.03,
   universalMaxRadiusReductionPct: 0.25,
 };
 
@@ -37,14 +37,16 @@ reportLines.push("");
 reportLines.push("## Assumptions");
 reportLines.push("");
 reportLines.push(`- Design flow cap: ${ASSUMPTIONS.designFlowLimitGpm.toFixed(2)} GPM per zone.`);
-reportLines.push("- Spray heads are recommended for plan radii up to 15 ft; larger throws are treated as rotor zones.");
+reportLines.push("- Spray versus rotor classification is based on whether any spray radius class in the dataset can meet the head under the no-undershoot plus allowed reduction rule, so larger spray options like `18-VAN` are preferred over mixing in rotors when they fit.");
 reportLines.push(`- Fixed spray arcs are normalized when the drawn arc is within +/-${ASSUMPTIONS.sprayArcNormalizeToleranceDeg} degrees of 90, 180, or 360 and that radius class has a fixed nozzle option.`);
 reportLines.push(`- All head types are assumed to allow up to ${(ASSUMPTIONS.universalMaxRadiusReductionPct * 100).toFixed(0)}% radius reduction with the screw adjustment.`);
 reportLines.push("- Rotor optimization compares Rain Bird 5004 PRS MPR pre-balanced sets plus the standard-angle 25 degree and low-angle 10 degree nozzle families.");
 reportLines.push("- The 5004 PRS Red, Green, and Beige pre-balanced sets are treated as discrete fixed-flow nozzle choices: `Q_90`, `T_120`, `H_180`, and `F_360`.");
 reportLines.push("- The 5004 standard-angle and low-angle nozzle entries use their listed `flow_gpm` directly as candidate head flow.");
+reportLines.push("- Adjustable VAN spray nozzles use arc-aware flow. When the chart provides 90/180/270/360 GPM anchors, intermediate arcs are piecewise-linearly interpolated; otherwise flow is scaled linearly from 0 to the listed 360 degree GPM.");
 reportLines.push("- Actual precipitation is recalculated per head from flow, installed arc, and target radius using `96.3 x GPM / sector area`, so installed sweep changes actual PR but does not change nozzle GPM.");
 reportLines.push(`- When rotor precipitation spread is within ${ASSUMPTIONS.rotorSimplicityPrecipToleranceInHr.toFixed(3)} in/hr, the optimizer favors simpler installs: fewer specialty nozzles, fewer low-angle heads, and fewer unique SKUs.`);
+reportLines.push(`- When a mixed-family zone has a uniform dominant-family alternative within ${ASSUMPTIONS.zoneFamilyAutoResolvePrecipToleranceInHr.toFixed(3)} in/hr of the current spread and without a worse flow overage, the selector auto-resolves to the dominant family.`);
 reportLines.push("- No undershoot is allowed for any head type; selected nominal radius must be greater than or equal to the required throw, and the closest qualifying radius is preferred.");
 reportLines.push("");
 
@@ -68,33 +70,41 @@ function analyzeZone(zone, sprinklers, sprayData, rotorData, assumptions) {
   const enriched = sprinklers.map((sprinkler) => ({
     ...sprinkler,
     desiredArcDeg: sprinkler.pattern === "full" ? 360 : sprinkler.sweepDeg,
-    headType: sprinkler.radius <= assumptions.sprayCutoffRadiusFt ? "spray" : "rotor",
   }));
 
-  const sprays = enriched.filter((sprinkler) => sprinkler.headType === "spray");
-  const rotors = enriched.filter((sprinkler) => sprinkler.headType === "rotor");
-  const recommendations = [];
-  const notes = [];
-
-  if (sprays.length && rotors.length) {
-    notes.push("Mixed spray and rotor head styles appear in the same zone. That is usually a precipitation mismatch risk.");
-  }
+  const sprays = enriched.filter((sprinkler) => sprinklerCanUseSpray(sprinkler, sprayData, assumptions));
+  const rotors = enriched.filter((sprinkler) => !sprinklerCanUseSpray(sprinkler, sprayData, assumptions));
+  const baselineRecommendations = [];
+  const baselineNotes = [];
 
   for (const sprinkler of sprays.sort(compareSprinklers)) {
-    recommendations.push(recommendSpray(sprinkler, sprayData, assumptions));
+    baselineRecommendations.push(recommendSpray(sprinkler, sprayData, assumptions));
   }
 
   if (rotors.length) {
     const rotorRecommendations = recommendRotorZone(rotors.sort(compareSprinklers), rotorData, assumptions);
-    recommendations.push(...rotorRecommendations.recommendations);
-    notes.push(...rotorRecommendations.notes);
+    baselineRecommendations.push(...rotorRecommendations.recommendations);
+    baselineNotes.push(...rotorRecommendations.notes);
   }
 
-  const totalFlowGpm = recommendations.reduce((sum, item) => sum + item.flowGpm, 0);
-  const precipValues = recommendations
-    .map((item) => item.actualPrecipInHr)
-    .filter((value) => typeof value === "number" && Number.isFinite(value));
-  const precipSpread = precipValues.length ? Math.max(...precipValues) - Math.min(...precipValues) : 0;
+  const baselineMetrics = scoreZoneRecommendations(baselineRecommendations, assumptions);
+  const preferredFamily = determinePreferredZoneFamily(baselineMetrics.familyCounts);
+  const familyResolution = preferredFamily !== "mixed"
+    ? tryAutoResolveZoneFamily(preferredFamily, baselineRecommendations, enriched, sprayData, rotorData, assumptions)
+    : null;
+  const recommendations = familyResolution?.applied
+    ? familyResolution.recommendations
+    : baselineRecommendations;
+  const notes = familyResolution?.applied
+    ? [...familyResolution.notes]
+    : [...baselineNotes, ...(familyResolution?.notes ?? [])];
+  const finalMetrics = scoreZoneRecommendations(recommendations, assumptions);
+  const totalFlowGpm = finalMetrics.totalFlowGpm;
+  const precipSpread = finalMetrics.precipSpread;
+
+  if (finalMetrics.familyCounts.spray > 0 && finalMetrics.familyCounts.rotor > 0) {
+    notes.unshift("Mixed spray and rotor head styles appear in the same zone. That is usually a precipitation mismatch risk.");
+  }
 
   if (totalFlowGpm > assumptions.designFlowLimitGpm) {
     notes.push(`Zone exceeds the ${assumptions.designFlowLimitGpm.toFixed(2)} GPM design cap by ${(totalFlowGpm - assumptions.designFlowLimitGpm).toFixed(2)} GPM.`);
@@ -125,7 +135,7 @@ function recommendSpray(sprinkler, sprayData, assumptions) {
       .filter((candidate) => candidate >= desiredRadius)
       .sort((a, b) => a - b)[0] ?? sprayData.radiusClasses[sprayData.radiusClasses.length - 1];
     const variable = sprayData.variableByRadius.get(fallback);
-    const flowGpm = variable.flowAt360 * (desiredArc / 360);
+    const flowGpm = calculateAdjustableSprayFlow(variable, desiredArc);
     return {
       label: sprinkler.label,
       x: sprinkler.x,
@@ -195,9 +205,9 @@ function recommendSpray(sprinkler, sprayData, assumptions) {
     desiredArcDeg: desiredArc,
     selectedArcDeg: desiredArc,
     arcNormalized: false,
-    flowGpm: variable.flowAt360 * (desiredArc / 360),
+    flowGpm: calculateAdjustableSprayFlow(variable, desiredArc),
     precipInHr: variable.precipInHr,
-    actualPrecipInHr: calculateActualPrecipInHr(variable.flowAt360 * (desiredArc / 360), desiredRadius, desiredArc),
+    actualPrecipInHr: calculateActualPrecipInHr(calculateAdjustableSprayFlow(variable, desiredArc), desiredRadius, desiredArc),
     comment: "Variable arc selected because the drawn arc is not close to a fixed pattern or the radius class is variable-only.",
   };
 }
@@ -227,6 +237,87 @@ function recommendRotorZone(rotors, rotorData, assumptions) {
     notes.push("Some rotors could not be placed cleanly in the 5004 PRS matched sets, so those heads fell back to 3504 nozzle fits.");
   }
   return { notes, recommendations };
+}
+
+function tryAutoResolveZoneFamily(preferredFamily, baselineRecommendations, sprinklers, sprayData, rotorData, assumptions) {
+  const baselineMetrics = scoreZoneRecommendations(baselineRecommendations, assumptions);
+  const outlierCount = baselineRecommendations.filter((recommendation) => recommendation.family !== preferredFamily).length;
+  if (!outlierCount) {
+    return { applied: false, recommendations: baselineRecommendations, notes: [] };
+  }
+
+  const uniformZone = buildUniformZoneRecommendations(preferredFamily, sprinklers, sprayData, rotorData, assumptions);
+  if (!uniformZone) {
+    return { applied: false, recommendations: baselineRecommendations, notes: [] };
+  }
+
+  const uniformMetrics = scoreZoneRecommendations(uniformZone.recommendations, assumptions);
+  const withinFlowTolerance = uniformMetrics.flowOverageGpm <= baselineMetrics.flowOverageGpm;
+  const withinPrecipTolerance =
+    uniformMetrics.precipSpread <= baselineMetrics.precipSpread + assumptions.zoneFamilyAutoResolvePrecipToleranceInHr;
+
+  if (!withinFlowTolerance || !withinPrecipTolerance) {
+    const reasons = [];
+    if (!withinFlowTolerance) {
+      reasons.push(`flow would rise from ${baselineMetrics.totalFlowGpm.toFixed(2)} to ${uniformMetrics.totalFlowGpm.toFixed(2)} GPM`);
+    }
+    if (!withinPrecipTolerance) {
+      reasons.push(`spread would rise from ${baselineMetrics.precipSpread.toFixed(3)} to ${uniformMetrics.precipSpread.toFixed(3)} in/hr`);
+    }
+    return {
+      applied: false,
+      recommendations: baselineRecommendations,
+      notes: [
+        `A uniform ${preferredFamily} alternative exists, but it was not auto-applied because ${reasons.join(" and ")}.`,
+      ],
+    };
+  }
+
+  const notes = [];
+  if (uniformZone.searchMode === "beam") {
+    notes.push("Zone-family auto-resolution used beam search to keep the report optimizer responsive.");
+  }
+  notes.push(
+    `Auto-resolved ${outlierCount} outlier head${outlierCount === 1 ? "" : "s"} to the ${preferredFamily} family. Zone spread ${baselineMetrics.precipSpread.toFixed(3)} -> ${uniformMetrics.precipSpread.toFixed(3)} in/hr at ${baselineMetrics.totalFlowGpm.toFixed(2)} -> ${uniformMetrics.totalFlowGpm.toFixed(2)} GPM.`,
+  );
+
+  return {
+    applied: true,
+    recommendations: uniformZone.recommendations.map((recommendation) => ({
+      ...recommendation,
+      comment: `${recommendation.comment} Auto-resolved to keep the ${preferredFamily}-dominant zone uniform.`,
+    })),
+    notes,
+  };
+}
+
+function buildUniformZoneRecommendations(preferredFamily, sprinklers, sprayData, rotorData, assumptions) {
+  const sortedSprinklers = [...sprinklers].sort(compareSprinklers);
+  if (preferredFamily === "spray") {
+    if (sortedSprinklers.some((sprinkler) => !sprinklerCanUseSpray(sprinkler, sprayData, assumptions))) {
+      return null;
+    }
+    return {
+      recommendations: sortedSprinklers.map((sprinkler) => recommendSpray(sprinkler, sprayData, assumptions)),
+      searchMode: "direct",
+    };
+  }
+
+  if (preferredFamily === "rotor") {
+    const candidateMatrix = sortedSprinklers.map((sprinkler) =>
+      buildRotorCandidatesForHead(sprinkler, rotorData, assumptions),
+    );
+    if (candidateMatrix.some((candidates) => candidates.length === 0)) {
+      return null;
+    }
+    const optimized = optimizeRotorAssignments(candidateMatrix, assumptions);
+    return {
+      recommendations: optimized.recommendations,
+      searchMode: optimized.searchMode,
+    };
+  }
+
+  return null;
 }
 
 function appendZoneReport(lines, zoneReport) {
@@ -285,20 +376,96 @@ function buildSprayDatabase(series) {
 
   const variableByRadius = new Map();
   for (const nozzle of series.he_van_high_efficiency) {
-    variableByRadius.set(nozzle.max_radius_ft, {
-      model: nozzle.model,
-      maxRadiusFt: nozzle.max_radius_ft,
-      flowAt360: nozzle.flow_gpm_360,
-      precipInHr: nozzle.precip_avg,
-    });
+    variableByRadius.set(nozzle.max_radius_ft, createAdjustableSprayEntry(nozzle));
+  }
+
+  for (const nozzle of series.van_series_variable_arc ?? []) {
+    variableByRadius.set(nozzle.max_radius_ft, createAdjustableSprayEntry(nozzle));
   }
 
   return {
     maxRadiusReduction: series.mechanical_specs.max_radius_reduction_pct / 100,
-    radiusClasses: [...variableByRadius.keys()].sort((a, b) => a - b),
+    radiusClasses: [...new Set([...fixedByRadius.keys(), ...variableByRadius.keys()])].sort((a, b) => a - b),
     fixedByRadius,
     variableByRadius,
   };
+}
+
+function sprinklerCanUseSpray(sprinkler, sprayData, assumptions) {
+  const desiredRadius = Number(sprinkler?.radius);
+  if (!Number.isFinite(desiredRadius) || desiredRadius <= 0) {
+    return false;
+  }
+
+  return (sprayData?.radiusClasses ?? []).some((radiusClass) =>
+    radiusFits(radiusClass, desiredRadius, sprayData.maxRadiusReduction, assumptions),
+  );
+}
+
+function createAdjustableSprayEntry(nozzle) {
+  const anchors = buildAdjustableSprayAnchors(nozzle);
+  return {
+    model: nozzle.model,
+    maxRadiusFt: Number(nozzle.max_radius_ft),
+    flowAt360: anchors.at(-1)?.flowGpm ?? Number(nozzle.flow_gpm_360) ?? 0,
+    flowAnchors: anchors,
+    precipInHr: Number(nozzle.precip_avg),
+  };
+}
+
+function buildAdjustableSprayAnchors(nozzle) {
+  const explicitAnchors = [
+    { arcDeg: 90, flowGpm: Number(nozzle.flow_gpm_90) },
+    { arcDeg: 180, flowGpm: Number(nozzle.flow_gpm_180) },
+    { arcDeg: 270, flowGpm: Number(nozzle.flow_gpm_270) },
+    { arcDeg: 360, flowGpm: Number(nozzle.flow_gpm_360) },
+  ].filter((anchor) => Number.isFinite(anchor.flowGpm) && anchor.flowGpm > 0);
+
+  if (explicitAnchors.length) {
+    return [{ arcDeg: 0, flowGpm: 0 }].concat(explicitAnchors);
+  }
+
+  const flowAt360 = Number(nozzle.flow_gpm_360);
+  return Number.isFinite(flowAt360) && flowAt360 > 0
+    ? [
+      { arcDeg: 0, flowGpm: 0 },
+      { arcDeg: 360, flowGpm: flowAt360 },
+    ]
+    : [{ arcDeg: 0, flowGpm: 0 }];
+}
+
+function calculateAdjustableSprayFlow(nozzle, desiredArcDeg) {
+  const anchors = Array.isArray(nozzle?.flowAnchors) && nozzle.flowAnchors.length
+    ? nozzle.flowAnchors
+    : [
+      { arcDeg: 0, flowGpm: 0 },
+      { arcDeg: 360, flowGpm: Number(nozzle?.flowAt360) || 0 },
+    ];
+  const clampedArcDeg = Math.max(0, Math.min(360, Number(desiredArcDeg) || 0));
+
+  for (let index = 1; index < anchors.length; index += 1) {
+    const lower = anchors[index - 1];
+    const upper = anchors[index];
+    if (clampedArcDeg <= upper.arcDeg) {
+      const span = Math.max(upper.arcDeg - lower.arcDeg, 0.0001);
+      const weight = (clampedArcDeg - lower.arcDeg) / span;
+      return lower.flowGpm + (upper.flowGpm - lower.flowGpm) * weight;
+    }
+  }
+
+  return anchors.at(-1)?.flowGpm ?? 0;
+}
+
+function determinePreferredZoneFamily(familyCounts) {
+  const sprayCount = familyCounts?.spray ?? 0;
+  const rotorCount = familyCounts?.rotor ?? 0;
+  if (sprayCount > rotorCount) {
+    return "spray";
+  }
+  if (rotorCount > sprayCount) {
+    return "rotor";
+  }
+  return "mixed";
 }
 
 function buildRotorDatabase(rotorSeries) {
@@ -600,6 +767,25 @@ function optimizeRotorAssignments(candidateMatrix, assumptions) {
       picks.pop();
     }
   }
+}
+
+function scoreZoneRecommendations(recommendations, assumptions) {
+  const totalFlowGpm = recommendations.reduce((sum, recommendation) => sum + recommendation.flowGpm, 0);
+  const precipValues = recommendations
+    .map((recommendation) => recommendation.actualPrecipInHr)
+    .filter((value) => typeof value === "number" && Number.isFinite(value));
+  const precipSpread = precipValues.length ? Math.max(...precipValues) - Math.min(...precipValues) : 0;
+  const familyCounts = recommendations.reduce((counts, recommendation) => {
+    counts[recommendation.family] = (counts[recommendation.family] ?? 0) + 1;
+    return counts;
+  }, { spray: 0, rotor: 0 });
+
+  return {
+    totalFlowGpm,
+    flowOverageGpm: Math.max(0, totalFlowGpm - assumptions.designFlowLimitGpm),
+    precipSpread,
+    familyCounts,
+  };
 }
 
 function scoreRotorAssignment(picks, assumptions) {

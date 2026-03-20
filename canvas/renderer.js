@@ -2,7 +2,31 @@ import { pointFromAngle, pointInSprinkler, toRadians } from "../geometry/arcs.js
 import { toPixels, worldToScreen } from "../geometry/scale.js";
 import { findSelectedSprinkler, getZoneById, hasHydraulics, isProjectReady } from "../state/project-state.js";
 
-export function createRenderer(canvas, store) {
+const RATE_COLOR_STOPS = [
+  { stop: 0, rgb: [24, 76, 107], alpha: 0 },
+  { stop: 0.18, rgb: [62, 156, 170], alpha: 0.26 },
+  { stop: 0.42, rgb: [72, 177, 106], alpha: 0.4 },
+  { stop: 0.72, rgb: [214, 171, 57], alpha: 0.58 },
+  { stop: 1, rgb: [176, 74, 42], alpha: 0.74 },
+];
+
+const DEPTH_COLOR_STOPS = [
+  { stop: 0, rgb: [34, 73, 110], alpha: 0 },
+  { stop: 0.24, rgb: [67, 152, 177], alpha: 0.26 },
+  { stop: 0.5, rgb: [84, 166, 92], alpha: 0.44 },
+  { stop: 0.76, rgb: [217, 180, 64], alpha: 0.62 },
+  { stop: 1, rgb: [176, 74, 42], alpha: 0.76 },
+];
+
+const ERROR_COLOR_STOPS = [
+  { stop: -1, rgb: [38, 95, 160], alpha: 0.74 },
+  { stop: -0.45, rgb: [84, 173, 219], alpha: 0.54 },
+  { stop: 0, rgb: [255, 250, 240], alpha: 0.06 },
+  { stop: 0.45, rgb: [230, 175, 71], alpha: 0.58 },
+  { stop: 1, rgb: [176, 74, 42], alpha: 0.8 },
+];
+
+export function createRenderer(canvas, store, analyzer) {
   const ctx = canvas.getContext("2d");
   const backgroundImage = new Image();
   let currentBackground = "";
@@ -23,6 +47,7 @@ export function createRenderer(canvas, store) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = "#f6f1e4";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const analysis = analyzer?.getSnapshot(state) ?? null;
 
     if (backgroundImage.complete && backgroundImage.naturalWidth > 0) {
       const topLeft = worldToScreen({ x: 0, y: 0 }, state.view);
@@ -36,8 +61,9 @@ export function createRenderer(canvas, store) {
     }
     drawCalibrationLine(state);
     drawMeasureLine(state);
+    drawAnalysisOverlay(state, analysis);
     if (state.view.showCoverage) {
-      drawCoverage(state);
+      drawCoverage(state, analysis);
     }
     drawSprinklers(state);
     drawSelectedArcHandles(state);
@@ -125,7 +151,96 @@ export function createRenderer(canvas, store) {
     ctx.restore();
   }
 
-  function drawCoverage(state) {
+  function drawAnalysisOverlay(state, analysis) {
+    const overlayMode = state.view.analysisOverlayMode ?? "none";
+    const grid = analysis?.grid;
+    if (overlayMode === "none" || !grid) {
+      return;
+    }
+
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+
+    if (overlayMode === "application_rate") {
+      drawApplicationRateOverlay(state, grid);
+    } else if (overlayMode === "zone_catch_can") {
+      const selectedLayer = grid.zoneDepthLayers.find((layer) => layer.zoneId === analysis.selectedZoneId) ?? null;
+      if (selectedLayer) {
+        drawSequentialGrid(state, grid, selectedLayer.values, Math.max(0.1, analysis.targetDepthInches * 2), DEPTH_COLOR_STOPS);
+      }
+    } else if (overlayMode === "full_schedule_depth") {
+      drawSequentialGrid(state, grid, grid.fullScheduleDepth.values, Math.max(0.1, analysis.targetDepthInches * 2), DEPTH_COLOR_STOPS);
+    } else if (overlayMode === "target_error") {
+      drawTargetErrorGrid(state, grid);
+    }
+
+    ctx.restore();
+  }
+
+  function drawApplicationRateOverlay(state, grid) {
+    const scaleMode = state.view.heatmapScaleMode ?? "zone";
+    if (scaleMode === "zone" && Array.isArray(grid.zoneRateLayers) && grid.zoneRateLayers.length) {
+      for (const zoneLayer of grid.zoneRateLayers) {
+        if (zoneLayer.maxInHr <= 0) {
+          continue;
+        }
+        drawSequentialGrid(state, grid, zoneLayer.values, zoneLayer.maxInHr, RATE_COLOR_STOPS);
+      }
+      return;
+    }
+
+    const scaleMaxInHr = scaleMode === "project"
+      ? Math.max(0.1, grid.applicationRate.maxInHr)
+      : Math.max(0.1, Number(state.view.heatmapScaleMaxInHr) || 3);
+    drawSequentialGrid(state, grid, grid.applicationRate.values, scaleMaxInHr, RATE_COLOR_STOPS);
+  }
+
+  function drawSequentialGrid(state, grid, values, scaleMax, stops) {
+    if (!values?.length || scaleMax <= 0) {
+      return;
+    }
+    const cellSize = grid.cellSizeWorldPx * state.view.zoom;
+    forEachGridCell(grid, (cellIndex, topLeftX, topLeftY) => {
+      const value = values[cellIndex];
+      if (!(value > 0)) {
+        return;
+      }
+      ctx.fillStyle = getSequentialColor(value, scaleMax, stops);
+      ctx.fillRect(topLeftX, topLeftY, cellSize + 0.75, cellSize + 0.75);
+    });
+  }
+
+  function drawTargetErrorGrid(state, grid) {
+    const cellSize = grid.cellSizeWorldPx * state.view.zoom;
+    const maxAbs = 0.5;
+    forEachGridCell(grid, (cellIndex, topLeftX, topLeftY) => {
+      const totalDepth = grid.fullScheduleDepth.values[cellIndex];
+      if (!(totalDepth > 0)) {
+        return;
+      }
+      const value = Math.max(-maxAbs, Math.min(maxAbs, grid.targetError.values[cellIndex]));
+      ctx.fillStyle = getDivergingColor(value / maxAbs, ERROR_COLOR_STOPS);
+      ctx.fillRect(topLeftX, topLeftY, cellSize + 0.75, cellSize + 0.75);
+    });
+  }
+
+  function forEachGridCell(grid, callback) {
+    for (let row = 0; row < grid.rows; row += 1) {
+      for (let col = 0; col < grid.cols; col += 1) {
+        const topLeft = worldToScreen(
+          {
+            x: grid.x + col * grid.cellSizeWorldPx,
+            y: grid.y + row * grid.cellSizeWorldPx,
+          },
+          store.getState().view,
+        );
+        callback(row * grid.cols + col, topLeft.x, topLeft.y, row, col);
+      }
+    }
+  }
+
+  function drawCoverage(state, analysis) {
+    const overlayActive = Boolean(analysis?.grid) && (state.view.analysisOverlayMode ?? "none") !== "none";
     ctx.save();
     state.sprinklers.forEach((sprinkler) => {
       if (sprinkler.hidden) {
@@ -133,18 +248,20 @@ export function createRenderer(canvas, store) {
       }
       const zone = getZoneById(state, sprinkler.zoneId);
       const isFocusedOut = state.ui.focusedZoneId && sprinkler.zoneId !== state.ui.focusedZoneId;
-      const opacity = isFocusedOut ? Math.max(0.04, state.view.coverageOpacity * 0.35) : state.view.coverageOpacity;
+      const opacityBase = isFocusedOut ? Math.max(0.04, state.view.coverageOpacity * 0.35) : state.view.coverageOpacity;
+      const fillOpacity = overlayActive ? opacityBase * 0.42 : opacityBase;
+
       if (state.view.zoneViewMode === "zone" && zone) {
-        ctx.fillStyle = hexToRgba(zone.color, opacity);
-        ctx.strokeStyle = hexToRgba(zone.color, isFocusedOut ? 0.35 : 0.9);
+        ctx.fillStyle = hexToRgba(zone.color, fillOpacity);
+        ctx.strokeStyle = hexToRgba(zone.color, overlayActive ? (isFocusedOut ? 0.24 : 0.72) : (isFocusedOut ? 0.35 : 0.9));
       } else if (state.view.zoneViewMode === "zone" && !zone) {
-        ctx.fillStyle = `rgba(112, 112, 112, ${opacity})`;
-        ctx.strokeStyle = `rgba(70, 70, 70, ${isFocusedOut ? 0.35 : 0.8})`;
+        ctx.fillStyle = `rgba(112, 112, 112, ${fillOpacity})`;
+        ctx.strokeStyle = `rgba(70, 70, 70, ${overlayActive ? (isFocusedOut ? 0.24 : 0.68) : (isFocusedOut ? 0.35 : 0.8)})`;
       } else {
-        ctx.fillStyle = `rgba(56, 133, 196, ${opacity})`;
-        ctx.strokeStyle = `rgba(30, 82, 121, ${isFocusedOut ? 0.3 : 0.88})`;
+        ctx.fillStyle = `rgba(56, 133, 196, ${fillOpacity})`;
+        ctx.strokeStyle = `rgba(30, 82, 121, ${overlayActive ? (isFocusedOut ? 0.22 : 0.72) : (isFocusedOut ? 0.3 : 0.88)})`;
       }
-      ctx.lineWidth = 1.4;
+      ctx.lineWidth = overlayActive ? 1.2 : 1.4;
       drawSprinklerShape(state, sprinkler);
       ctx.fill();
       ctx.stroke();
@@ -406,6 +523,40 @@ export function createRenderer(canvas, store) {
     getRadiusHandleHit,
     buildExportSummary,
   };
+}
+
+function getSequentialColor(value, maxValue, stops) {
+  const ratio = maxValue > 0 ? Math.min(1, value / maxValue) : 0;
+  return interpolateStops(ratio, stops);
+}
+
+function getDivergingColor(normalizedValue, stops) {
+  const value = Math.max(-1, Math.min(1, normalizedValue));
+  return interpolateStops(value, stops);
+}
+
+function interpolateStops(value, stops) {
+  const upperIndex = stops.findIndex((stop) => value <= stop.stop);
+  if (upperIndex <= 0) {
+    return formatRgba(stops[0]);
+  }
+  if (upperIndex === -1) {
+    return formatRgba(stops[stops.length - 1]);
+  }
+
+  const upper = stops[upperIndex];
+  const lower = stops[upperIndex - 1];
+  const span = Math.max(0.0001, upper.stop - lower.stop);
+  const weight = (value - lower.stop) / span;
+  const rgb = lower.rgb.map((channel, index) =>
+    Math.round(channel + (upper.rgb[index] - channel) * weight),
+  );
+  const alpha = lower.alpha + (upper.alpha - lower.alpha) * weight;
+  return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha.toFixed(3)})`;
+}
+
+function formatRgba(stop) {
+  return `rgba(${stop.rgb[0]}, ${stop.rgb[1]}, ${stop.rgb[2]}, ${stop.alpha.toFixed(3)})`;
 }
 
 function getArcHandlePositions(state, sprinkler) {

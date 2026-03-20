@@ -9,7 +9,7 @@ export function createInteractionController(canvas, store, renderer) {
   canvas.addEventListener("pointerdown", onPointerDown);
   canvas.addEventListener("pointermove", onPointerMove);
   canvas.addEventListener("pointerup", onPointerUp);
-  canvas.addEventListener("pointerleave", onPointerUp);
+  canvas.addEventListener("pointerleave", onPointerLeave);
   canvas.addEventListener("wheel", onWheel, { passive: false });
   canvas.addEventListener("contextmenu", (event) => event.preventDefault());
   window.addEventListener("keydown", onKeyDown);
@@ -193,6 +193,11 @@ export function createInteractionController(canvas, store, renderer) {
     }
     dragState = null;
     panState = null;
+  }
+
+  function onPointerLeave(event) {
+    store.dispatch({ type: "SET_CURSOR_WORLD", payload: { point: null } });
+    onPointerUp(event);
   }
 
   function onWheel(event) {

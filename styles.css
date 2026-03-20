@@ -293,6 +293,23 @@ canvas {
   gap: 0.55rem;
 }
 
+.heatmap-legend-bar,
+.analysis-legend-bar {
+  height: 0.9rem;
+  border-radius: 999px;
+  border: 1px solid rgba(35, 65, 92, 0.18);
+  background: linear-gradient(90deg, rgba(24, 76, 107, 0) 0%, rgba(62, 156, 170, 0.52) 22%, rgba(72, 177, 106, 0.62) 48%, rgba(214, 171, 57, 0.72) 76%, rgba(176, 74, 42, 0.82) 100%);
+}
+
+.heatmap-legend-scale,
+.analysis-legend-scale {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
 .legend-swatch {
   width: 1rem;
   height: 1rem;
@@ -344,6 +361,111 @@ canvas {
 .summary-list dd {
   margin: 0;
   text-align: right;
+}
+
+.analysis-card {
+  display: grid;
+  gap: 0.7rem;
+  margin-bottom: 0.9rem;
+  padding: 0.85rem;
+  border: 1px solid rgba(47, 36, 24, 0.12);
+  border-radius: 16px;
+  background: rgba(250, 246, 238, 0.88);
+}
+
+.analysis-card-title {
+  font-size: 0.84rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.analysis-grid {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+}
+
+.analysis-grid div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  border-bottom: 1px dashed rgba(47, 36, 24, 0.1);
+  padding-bottom: 0.35rem;
+}
+
+.analysis-grid dd {
+  margin: 0;
+  text-align: right;
+}
+
+.analysis-note {
+  color: var(--muted);
+  line-height: 1.45;
+  font-size: 0.89rem;
+}
+
+.analysis-emphasis {
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.analysis-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.analysis-status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.58rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  background: rgba(70, 48, 28, 0.08);
+}
+
+.analysis-status-meta {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.analysis-status-ok {
+  border-color: rgba(45, 106, 71, 0.22);
+  background: rgba(240, 249, 243, 0.92);
+}
+
+.analysis-status-ok .analysis-status-pill {
+  background: rgba(45, 106, 71, 0.14);
+  color: var(--success);
+}
+
+.analysis-status-warning {
+  border-color: rgba(155, 107, 0, 0.22);
+  background: rgba(253, 247, 233, 0.94);
+}
+
+.analysis-status-warning .analysis-status-pill {
+  background: rgba(155, 107, 0, 0.14);
+  color: var(--warning);
+}
+
+.analysis-status-error {
+  border-color: rgba(156, 44, 36, 0.22);
+  background: rgba(252, 242, 240, 0.94);
+}
+
+.analysis-status-error .analysis-status-pill {
+  background: rgba(156, 44, 36, 0.12);
+  color: var(--danger);
+}
+
+.analysis-status-info .analysis-status-pill {
+  background: rgba(56, 133, 196, 0.14);
+  color: rgba(30, 82, 121, 1);
 }
 
 .zone-list {
@@ -467,6 +589,40 @@ canvas {
 .zone-meta {
   color: var(--muted);
   font-size: 0.88rem;
+}
+
+.zone-analysis-block {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.7rem;
+  border-radius: 14px;
+  background: rgba(250, 246, 238, 0.88);
+  border: 1px solid rgba(47, 36, 24, 0.08);
+}
+
+.zone-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem 0.75rem;
+}
+
+.zone-stats div {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.zone-stats span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.zone-stats strong {
+  font-size: 0.94rem;
+  font-weight: 600;
+}
+
+.zone-runtime-field {
+  margin-bottom: 0;
 }
 
 .zone-card-actions button {

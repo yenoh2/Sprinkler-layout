@@ -2,12 +2,12 @@ import { clamp } from "../geometry/arcs.js";
 import { fitBackgroundToView } from "../geometry/scale.js";
 import { cloneProjectSnapshot, findSelectedSprinkler, getNextZoneSeed, hasHydraulics, isProjectReady } from "../state/project-state.js";
 
-export function bindPanels({ store, renderer, interactions, io }) {
+export function bindPanels({ store, renderer, analyzer, interactions, io }) {
   const elements = bindElements();
   elements.__store = store;
   bindEvents(elements, store, renderer, interactions, io);
-  store.subscribe((state) => updateUi(elements, state, renderer));
-  updateUi(elements, store.getState(), renderer);
+  store.subscribe((state) => updateUi(elements, state, renderer, analyzer));
+  updateUi(elements, store.getState(), renderer, analyzer);
 }
 
 function bindElements() {
@@ -40,6 +40,14 @@ function bindElements() {
     toggleLabels: document.getElementById("toggle-labels"),
     toggleZoneLabels: document.getElementById("toggle-zone-labels"),
     coverageOpacity: document.getElementById("coverage-opacity"),
+    analysisOverlayMode: document.getElementById("analysis-overlay-mode"),
+    analysisTargetDepth: document.getElementById("analysis-target-depth"),
+    analysisZoneSelect: document.getElementById("analysis-zone-select"),
+    analysisCellPx: document.getElementById("analysis-cell-px"),
+    analysisRateScaleMode: document.getElementById("analysis-rate-scale-mode"),
+    analysisRateScaleMax: document.getElementById("analysis-rate-scale-max"),
+    analysisLegend: document.getElementById("analysis-legend"),
+    analysisSummary: document.getElementById("analysis-summary"),
     undoButton: document.getElementById("undo-button"),
     redoButton: document.getElementById("redo-button"),
     historySummary: document.getElementById("history-summary"),
@@ -59,6 +67,7 @@ function bindElements() {
     sprinklerZoneDot: document.getElementById("sprinkler-zone-dot"),
     sprinklerZoneMenu: document.getElementById("sprinkler-zone-menu"),
     sprinklerHidden: document.getElementById("sprinkler-hidden"),
+    sprinklerAnalysis: document.getElementById("sprinkler-analysis"),
     duplicateButton: document.getElementById("duplicate-sprinkler-button"),
     deleteButton: document.getElementById("delete-sprinkler-button"),
     scaleStatus: document.getElementById("scale-status"),
@@ -184,6 +193,27 @@ function bindEvents(elements, store, renderer, interactions, io) {
     store.dispatch({ type: "SET_VIEW", payload: { coverageOpacity: Number(elements.coverageOpacity.value) } });
   });
 
+  elements.analysisOverlayMode.addEventListener("change", () => {
+    store.dispatch({ type: "SET_VIEW", payload: { analysisOverlayMode: elements.analysisOverlayMode.value } });
+  });
+  elements.analysisTargetDepth.addEventListener("change", () => {
+    const value = Math.max(0.1, Number(elements.analysisTargetDepth.value) || 1);
+    store.dispatch({ type: "SET_ANALYSIS", payload: { targetDepthInches: value } });
+  });
+  elements.analysisZoneSelect.addEventListener("change", () => {
+    store.dispatch({ type: "SET_VIEW", payload: { analysisZoneId: elements.analysisZoneSelect.value || null } });
+  });
+  elements.analysisCellPx.addEventListener("change", () => {
+    store.dispatch({ type: "SET_VIEW", payload: { heatmapCellPx: Number(elements.analysisCellPx.value) } });
+  });
+  elements.analysisRateScaleMode.addEventListener("change", () => {
+    store.dispatch({ type: "SET_VIEW", payload: { heatmapScaleMode: elements.analysisRateScaleMode.value } });
+  });
+  elements.analysisRateScaleMax.addEventListener("input", () => {
+    const value = Math.max(0.1, Number(elements.analysisRateScaleMax.value) || 3);
+    store.dispatch({ type: "SET_VIEW", payload: { heatmapScaleMaxInHr: value } });
+  });
+
   [
     elements.sprinklerLabel,
     elements.sprinklerX,
@@ -279,7 +309,9 @@ function updateSelection(elements, store) {
   });
 }
 
-function updateUi(elements, state, renderer) {
+function updateUi(elements, state, renderer, analyzer) {
+  const analysis = analyzer?.getSnapshot(state) ?? null;
+
   elements.toolButtons.forEach((button) => {
     button.classList.toggle("is-active", button.dataset.tool === state.ui.activeTool);
   });
@@ -294,30 +326,44 @@ function updateUi(elements, state, renderer) {
   elements.toggleLabels.checked = state.view.showLabels;
   elements.toggleZoneLabels.checked = state.view.showZoneLabels;
   elements.coverageOpacity.value = String(state.view.coverageOpacity);
+  elements.analysisOverlayMode.value = state.view.analysisOverlayMode ?? "application_rate";
+  elements.analysisTargetDepth.value = formatEditableNumber(state.analysis.targetDepthInches ?? 1);
+  elements.analysisCellPx.value = String(state.view.heatmapCellPx ?? 18);
+  elements.analysisRateScaleMode.value = state.view.heatmapScaleMode ?? "zone";
+  elements.analysisRateScaleMax.value = formatEditableNumber(state.view.heatmapScaleMaxInHr ?? 3);
+  elements.analysisRateScaleMode.disabled = (state.view.analysisOverlayMode ?? "application_rate") !== "application_rate";
+  elements.analysisRateScaleMax.disabled = elements.analysisRateScaleMode.disabled || (state.view.heatmapScaleMode ?? "zone") !== "fixed";
   elements.calibrationPointsLabel.textContent = `Calibration points: ${state.scale.calibrationPoints.length} selected`;
   elements.historySummary.textContent = `${state.history.undoStack.length} undo / ${state.history.redoStack.length} redo`;
   elements.undoButton.disabled = !state.history.undoStack.length;
   elements.redoButton.disabled = !state.history.redoStack.length;
+
   const selected = findSelectedSprinkler(state);
   populateZoneSelect(elements.activeZoneSelect, state.zones, state.ui.activeZoneId);
+  populateAnalysisZoneSelect(elements.analysisZoneSelect, state.zones, analysis?.selectedZoneId ?? state.view.analysisZoneId ?? "");
+  elements.analysisZoneSelect.disabled = (state.view.analysisOverlayMode ?? "application_rate") !== "zone_catch_can" || !state.zones.length;
   populateSprinklerZonePicker(elements, state.zones, selected?.zoneId ?? "");
   if (!selected) {
     setZonePickerOpen(elements, false);
   }
-  renderZonesList(elements, state);
+
+  renderZonesList(elements, state, analysis);
   elements.selectionEmpty.hidden = Boolean(selected);
   elements.selectionForm.hidden = !selected;
   if (selected) {
     elements.sprinklerLabel.value = selected.label ?? "";
-    elements.sprinklerX.value = formatDecimal(selected.x);
-    elements.sprinklerY.value = formatDecimal(selected.y);
-    elements.sprinklerRadius.value = formatDecimal(selected.radius);
+    elements.sprinklerX.value = formatEditableNumber(selected.x);
+    elements.sprinklerY.value = formatEditableNumber(selected.y);
+    elements.sprinklerRadius.value = formatEditableNumber(selected.radius);
     elements.sprinklerPattern.value = selected.pattern;
     elements.sprinklerStart.value = String((selected.startDeg + selected.rotationDeg) % 360);
     elements.sprinklerSweep.value = String(selected.sweepDeg);
     elements.sprinklerZone.value = selected.zoneId ?? "";
     elements.sprinklerHidden.checked = selected.hidden;
   }
+
+  renderSprinklerAnalysis(elements.sprinklerAnalysis, selected, analysis);
+  renderAnalysisLegend(elements, state, analysis);
 
   applyStatus(elements.scaleStatus, state.scale.calibrated ? "Calibrated" : "Uncalibrated", state.scale.calibrated);
   applyStatus(elements.hydraulicsStatus, hasHydraulics(state) ? "Hydraulics set" : "Hydraulics missing", hasHydraulics(state));
@@ -329,6 +375,12 @@ function updateUi(elements, state, renderer) {
     ["Scale", state.scale.calibrated ? `${state.scale.pixelsPerUnit.toFixed(2)} px/${state.scale.units}` : "Not calibrated"],
     ["Heads", String(summary.sprinklerCount)],
     ["Mean radius", summary.meanRadius ? `${summary.meanRadius.toFixed(1)} ${state.scale.units}` : "--"],
+    ["Peak rate", analysis?.summary.applicationRateMaxInHr ? `${analysis.summary.applicationRateMaxInHr.toFixed(2)} in/hr` : "--"],
+    ["Avg rate", analysis?.summary.applicationRateAverageInHr ? `${analysis.summary.applicationRateAverageInHr.toFixed(2)} in/hr` : "--"],
+    ["Target depth", `${(analysis?.targetDepthInches ?? state.analysis.targetDepthInches ?? 1).toFixed(2)} in`],
+    ["Avg schedule depth", analysis?.summary.fullScheduleAverageDepthInches ? `${analysis.summary.fullScheduleAverageDepthInches.toFixed(2)} in` : "--"],
+    ["Peak schedule depth", analysis?.summary.fullScheduleMaxDepthInches ? `${analysis.summary.fullScheduleMaxDepthInches.toFixed(2)} in` : "--"],
+    ["Over-limit zones", String(analysis?.summary.overLimitZones ?? 0)],
     ["Line size", state.hydraulics.lineSizeInches ? `${state.hydraulics.lineSizeInches} in` : "--"],
     ["Pressure", state.hydraulics.pressurePsi ? `${state.hydraulics.pressurePsi} psi` : "--"],
     ["Plan size", summary.backgroundSize],
@@ -350,6 +402,14 @@ function populateZoneSelect(select, zones, value) {
     .concat(zones.map((zone) => `<option value="${zone.id}">${zone.name}</option>`));
   select.innerHTML = options.join("");
   select.value = current;
+}
+
+function populateAnalysisZoneSelect(select, zones, value) {
+  const current = value ?? "";
+  const options = ['<option value="">Select zone</option>']
+    .concat(zones.map((zone) => `<option value="${zone.id}">${zone.name}</option>`));
+  select.innerHTML = options.join("");
+  select.value = current && zones.some((zone) => zone.id === current) ? current : "";
 }
 
 function populateSprinklerZonePicker(elements, zones, value) {
@@ -388,17 +448,25 @@ function setZonePickerOpen(elements, isOpen) {
   elements.sprinklerZoneButton.setAttribute("aria-expanded", isOpen ? "true" : "false");
 }
 
-function renderZonesList(elements, state) {
+function renderZonesList(elements, state, analysis) {
   if (!state.zones.length) {
     elements.zonesList.innerHTML = '<div class="empty-card">No zones yet. Create one to group heads.</div>';
     return;
   }
 
+  const metricsById = new Map((analysis?.zones ?? []).map((zone) => [zone.zoneId, zone]));
   elements.zonesList.innerHTML = state.zones.map((zone) => {
     const count = state.sprinklers.filter((sprinkler) => sprinkler.zoneId === zone.id).length;
+    const metrics = metricsById.get(zone.id) ?? null;
     const isDimmed = state.ui.focusedZoneId && state.ui.focusedZoneId !== zone.id;
     const isFocused = state.ui.focusedZoneId === zone.id;
-    const activeMark = state.ui.activeZoneId === zone.id ? "Active zone" : `${count} head${count === 1 ? "" : "s"}`;
+    const metaBits = [state.ui.activeZoneId === zone.id ? "Active zone" : `${count} head${count === 1 ? "" : "s"}`];
+    if (metrics?.isOverLimit) {
+      metaBits.push("Over flow limit");
+    }
+    if (zone.runtimeMinutes) {
+      metaBits.push("Manual runtime");
+    }
     return `
       <div class="zone-card ${isDimmed ? "is-dimmed" : ""}" data-zone-id="${zone.id}">
         <div class="zone-card-head">
@@ -408,7 +476,8 @@ function renderZonesList(elements, state) {
           </label>
           <input data-zone-color="${zone.id}" type="color" value="${zone.color}">
         </div>
-        <div class="zone-meta">${activeMark}</div>
+        <div class="zone-meta">${metaBits.join(" | ")}</div>
+        ${renderZoneAnalysisBlock(zone, metrics)}
         <div class="zone-card-actions">
           <button type="button" data-zone-focus="${zone.id}">${isFocused ? "Focused" : "Focus"}</button>
           <button type="button" data-zone-active="${zone.id}">Set Active</button>
@@ -426,6 +495,16 @@ function renderZonesList(elements, state) {
   elements.zonesList.querySelectorAll("[data-zone-color]").forEach((input) => {
     input.addEventListener("input", () => {
       storeSafeDispatch(elements, "UPDATE_ZONE", { id: input.dataset.zoneColor, patch: { color: input.value } });
+    });
+  });
+  elements.zonesList.querySelectorAll("[data-zone-runtime]").forEach((input) => {
+    input.addEventListener("change", () => {
+      const raw = input.value.trim();
+      const runtimeMinutes = raw ? Number(raw) : null;
+      storeSafeDispatch(elements, "UPDATE_ZONE", {
+        id: input.dataset.zoneRuntime,
+        patch: { runtimeMinutes: Number.isFinite(runtimeMinutes) && runtimeMinutes > 0 ? runtimeMinutes : null },
+      });
     });
   });
   elements.zonesList.querySelectorAll("[data-zone-focus]").forEach((button) => {
@@ -451,6 +530,45 @@ function renderZonesList(elements, state) {
   elements.zonesList.dataset.focusedZoneId = state.ui.focusedZoneId || "";
 }
 
+function renderZoneAnalysisBlock(zone, metrics) {
+  if (!metrics) {
+    return `
+      <div class="zone-analysis-block">
+        <label class="field zone-runtime-field">
+          <span>Runtime min</span>
+          <input data-zone-runtime="${zone.id}" type="number" min="0.1" step="0.1" value="${zone.runtimeMinutes ?? ""}" placeholder="Auto">
+        </label>
+        <div class="zone-meta">Calibrate scale and add heads to generate catch-can stats.</div>
+      </div>
+    `;
+  }
+
+  const suggested = formatMaybeNumber(metrics.suggestedRuntimeMinutes, "min");
+  const effective = formatMaybeNumber(metrics.effectiveRuntimeMinutes, "min");
+  const avgRate = formatMaybeNumber(metrics.averageRateInHr, "in/hr");
+  const avgDepth = formatMaybeNumber(metrics.averageDepthInches, "in");
+  const wateredArea = formatMaybeNumber(metrics.wateredAreaSqFt, "sq ft", 0);
+  const flow = formatMaybeNumber(metrics.totalFlowGpm, "GPM");
+  const spread = formatMaybeNumber(metrics.precipSpreadInHr, "in/hr");
+  const placeholder = Number.isFinite(metrics.suggestedRuntimeMinutes) ? metrics.suggestedRuntimeMinutes.toFixed(1) : "Auto";
+
+  return `
+    <div class="zone-analysis-block">
+      <div class="zone-stats">
+        <div><span>Suggested</span><strong>${suggested}</strong></div>
+        <div><span>Effective</span><strong>${effective}</strong></div>
+        <div><span>Avg rate</span><strong>${avgRate}</strong></div>
+        <div><span>Avg depth</span><strong>${avgDepth}</strong></div>
+      </div>
+      <label class="field zone-runtime-field">
+        <span>Runtime min</span>
+        <input data-zone-runtime="${zone.id}" type="number" min="0.1" step="0.1" value="${zone.runtimeMinutes ?? ""}" placeholder="${placeholder}">
+      </label>
+      <div class="zone-meta">Flow ${flow} | PR spread ${spread} | Watered ${wateredArea}</div>
+    </div>
+  `;
+}
+
 function storeSafeDispatch(elements, type, payload) {
   elements.__store.dispatch({ type, payload });
 }
@@ -463,6 +581,221 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
-function formatDecimal(value) {
-  return Number.isFinite(value) ? value.toFixed(2) : "0.00";
+function formatEditableNumber(value) {
+  return Number.isFinite(value) ? String(Number(value.toFixed(2))) : "";
+}
+
+function formatMaybeNumber(value, unit, decimals = 2) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "--";
+  }
+  return `${value.toFixed(decimals)} ${unit}`;
+}
+
+function formatSignedPercent(value) {
+  if (!Number.isFinite(value)) {
+    return "--";
+  }
+  return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(0)}%`;
+}
+
+function capitalize(value) {
+  return typeof value === "string" && value.length
+    ? `${value[0].toUpperCase()}${value.slice(1)}`
+    : value;
+}
+
+function renderAnalysisLegend(elements, state, analysis) {
+  const overlayMode = state.view.analysisOverlayMode ?? "application_rate";
+  const targetDepth = analysis?.targetDepthInches ?? state.analysis.targetDepthInches ?? 1;
+  const scaleMode = state.view.heatmapScaleMode ?? "zone";
+  const scaleMaxInHr = Math.max(0.1, Number(state.view.heatmapScaleMaxInHr) || 3);
+
+  if (overlayMode === "none") {
+    elements.analysisLegend.innerHTML = legendScaleHtml("Analysis overlay is off.");
+    elements.analysisSummary.textContent = "Turn on an analysis overlay to inspect application rate, zone runtime depth, or full-schedule balance.";
+    return;
+  }
+
+  if (!analysis?.grid) {
+    elements.analysisLegend.innerHTML = buildLegendBar("linear-gradient(90deg, rgba(34, 73, 110, 0.05), rgba(176, 74, 42, 0.35))", ["0", "target", "high"]);
+    elements.analysisSummary.textContent = "Calibrate scale and place visible heads to generate analysis values.";
+    return;
+  }
+
+  if (overlayMode === "application_rate") {
+    renderApplicationRateLegend(elements, state, analysis, scaleMode, scaleMaxInHr);
+    return;
+  }
+
+  if (overlayMode === "zone_catch_can") {
+    const selectedZone = analysis.selectedZone;
+    elements.analysisLegend.innerHTML = buildLegendBar(
+      "linear-gradient(90deg, rgba(34, 73, 110, 0) 0%, rgba(67, 152, 177, 0.48) 24%, rgba(84, 166, 92, 0.62) 50%, rgba(217, 180, 64, 0.76) 76%, rgba(176, 74, 42, 0.86) 100%)",
+      ["0.00", `${targetDepth.toFixed(2)} in`, `${(targetDepth * 2).toFixed(2)} in`],
+    );
+    if (!selectedZone) {
+      elements.analysisSummary.textContent = "Select a zone to inspect its virtual catch-can depth at the current runtime.";
+      return;
+    }
+    const overrideNote = selectedZone.runtimeMinutesOverride
+      ? ` Manual override ${selectedZone.runtimeMinutesOverride.toFixed(1)} min is in effect.`
+      : "";
+    elements.analysisSummary.textContent = `${selectedZone.zoneName} averages ${selectedZone.averageDepthInches.toFixed(2)} in over ${selectedZone.wateredAreaSqFt.toFixed(0)} sq ft at ${selectedZone.effectiveRuntimeMinutes?.toFixed(1) ?? "--"} min. Positive cells range ${selectedZone.minPositiveDepthInches.toFixed(2)} to ${selectedZone.maxDepthInches.toFixed(2)} in. Suggested runtime is ${selectedZone.suggestedRuntimeMinutes?.toFixed(1) ?? "--"} min.${overrideNote}`;
+    return;
+  }
+
+  if (overlayMode === "full_schedule_depth") {
+    elements.analysisLegend.innerHTML = buildLegendBar(
+      "linear-gradient(90deg, rgba(34, 73, 110, 0) 0%, rgba(67, 152, 177, 0.48) 24%, rgba(84, 166, 92, 0.62) 50%, rgba(217, 180, 64, 0.76) 76%, rgba(176, 74, 42, 0.86) 100%)",
+      ["0.00", `${targetDepth.toFixed(2)} in`, `${(targetDepth * 2).toFixed(2)} in`],
+    );
+    const grid = analysis.grid.fullScheduleDepth;
+    elements.analysisSummary.textContent = `The full schedule averages ${grid.averageInches.toFixed(2)} in over ${grid.wateredAreaSqFt.toFixed(0)} sq ft. Positive cells range ${grid.minPositiveInches.toFixed(2)} to ${grid.maxInches.toFixed(2)} in against a ${targetDepth.toFixed(2)} in target.`;
+    return;
+  }
+
+  elements.analysisLegend.innerHTML = buildLegendBar(
+    "linear-gradient(90deg, rgba(38, 95, 160, 0.84) 0%, rgba(84, 173, 219, 0.7) 28%, rgba(255, 250, 240, 0.18) 50%, rgba(230, 175, 71, 0.7) 72%, rgba(176, 74, 42, 0.88) 100%)",
+    ["-50%", "On target", "+50%"],
+  );
+  const targetError = analysis.grid.targetError;
+  const grid = analysis.grid.fullScheduleDepth;
+  elements.analysisSummary.textContent = `Target error compares the full schedule against ${targetDepth.toFixed(2)} in. Wetted cells currently range from ${formatSignedPercent(targetError.minRatio)} to ${formatSignedPercent(targetError.maxRatio)}, with total depth spanning ${grid.minPositiveInches.toFixed(2)} to ${grid.maxInches.toFixed(2)} in.`;
+}
+
+function renderApplicationRateLegend(elements, state, analysis, scaleMode, scaleMaxInHr) {
+  const applicationRate = analysis.grid.applicationRate;
+  if (!(applicationRate.maxInHr > 0)) {
+    elements.analysisLegend.innerHTML = buildLegendBar(
+      "linear-gradient(90deg, rgba(24, 76, 107, 0) 0%, rgba(62, 156, 170, 0.52) 22%, rgba(72, 177, 106, 0.62) 48%, rgba(214, 171, 57, 0.72) 76%, rgba(176, 74, 42, 0.82) 100%)",
+      ["0.00", "50%", "100%"],
+    );
+    elements.analysisSummary.textContent = "No positive application rate cells are available yet.";
+    return;
+  }
+
+  const rateGradient = "linear-gradient(90deg, rgba(24, 76, 107, 0) 0%, rgba(62, 156, 170, 0.52) 22%, rgba(72, 177, 106, 0.62) 48%, rgba(214, 171, 57, 0.72) 76%, rgba(176, 74, 42, 0.82) 100%)";
+  if (scaleMode === "fixed") {
+    elements.analysisLegend.innerHTML = buildLegendBar(
+      rateGradient,
+      ["0.00", `${(scaleMaxInHr / 2).toFixed(2)}`, `${scaleMaxInHr.toFixed(2)} in/hr`],
+    );
+    const clippedNote = applicationRate.maxInHr > scaleMaxInHr
+      ? ` Peak ${applicationRate.maxInHr.toFixed(2)} in/hr is clipping at the top of the scale.`
+      : "";
+    elements.analysisSummary.textContent = `Application rate averages ${applicationRate.averageInHr.toFixed(2)} in/hr over ${applicationRate.wateredAreaSqFt.toFixed(0)} sq ft. Positive cells range ${applicationRate.minPositiveInHr.toFixed(2)} to ${applicationRate.maxInHr.toFixed(2)} in/hr on a fixed 0-${scaleMaxInHr.toFixed(2)} in/hr scale.${clippedNote}`;
+    return;
+  }
+
+  if (scaleMode === "project") {
+    elements.analysisLegend.innerHTML = buildLegendBar(
+      rateGradient,
+      ["0.00", `${(applicationRate.maxInHr / 2).toFixed(2)}`, `${applicationRate.maxInHr.toFixed(2)} in/hr`],
+    );
+    elements.analysisSummary.textContent = `Application rate is auto-scaled to the plan peak ${applicationRate.maxInHr.toFixed(2)} in/hr, so cross-zone overlaps stay directly comparable.`;
+    return;
+  }
+
+  elements.analysisLegend.innerHTML = buildLegendBar(rateGradient, ["0%", "50%", "100% of zone peak"]);
+  const visibleZoneLayers = (analysis.grid.zoneRateLayers ?? []).filter((layer) => layer.maxInHr > 0);
+  const focusedLayer = visibleZoneLayers.find((layer) => layer.zoneId === state.ui.focusedZoneId)
+    ?? visibleZoneLayers.find((layer) => layer.zoneId === analysis.selectedZoneId)
+    ?? (visibleZoneLayers.length === 1 ? visibleZoneLayers[0] : null);
+  if (focusedLayer) {
+    elements.analysisSummary.textContent = `${focusedLayer.zoneName} is auto-scaled to its own peak ${focusedLayer.maxInHr.toFixed(2)} in/hr. Positive cells in that zone range from ${focusedLayer.minPositiveInHr.toFixed(2)} to ${focusedLayer.maxInHr.toFixed(2)} in/hr.`;
+    return;
+  }
+  const peakPreview = visibleZoneLayers
+    .slice(0, 4)
+    .map((layer) => `${layer.zoneName} ${layer.maxInHr.toFixed(2)}`)
+    .join(", ");
+  const extraCount = Math.max(0, visibleZoneLayers.length - 4);
+  elements.analysisSummary.textContent = `Each zone auto-scales to its own peak while all zones stay visible. Current peaks: ${peakPreview}${extraCount ? `, +${extraCount} more` : ""}.`;
+}
+
+function buildLegendBar(gradient, labels) {
+  return `
+    <div class="analysis-legend-bar" style="background:${gradient}"></div>
+    <div class="analysis-legend-scale">
+      <span>${labels[0]}</span>
+      <span>${labels[1]}</span>
+      <span>${labels[2]}</span>
+    </div>
+  `;
+}
+
+function legendScaleHtml(message) {
+  return `<div class="muted-line">${message}</div>`;
+}
+
+function renderSprinklerAnalysis(node, selected, analysis) {
+  if (!selected) {
+    node.hidden = true;
+    node.innerHTML = "";
+    return;
+  }
+
+  const recommendation = analysis?.recommendationsById?.[selected.id];
+  const compatibility = analysis?.compatibilityById?.[selected.id] ?? null;
+  if (!recommendation) {
+    node.hidden = false;
+    node.innerHTML = '<div class="analysis-note">No nozzle recommendation available for this sprinkler yet.</div>';
+    return;
+  }
+
+  const zoneSummary = analysis?.zones?.find((zone) => zone.zoneId === recommendation.zoneId) ?? null;
+  node.hidden = false;
+  node.innerHTML = [
+    '<div class="analysis-card">',
+    '<div class="analysis-card-title">Recommended Head Logic</div>',
+    '<dl class="analysis-grid">',
+    `<div><dt>Body</dt><dd>${escapeHtml(recommendation.body)}</dd></div>`,
+    `<div><dt>Nozzle</dt><dd>${escapeHtml(recommendation.nozzle)}</dd></div>`,
+    `<div><dt>Flow</dt><dd>${recommendation.flowGpm.toFixed(2)} GPM</dd></div>`,
+    `<div><dt>Actual PR</dt><dd>${recommendation.actualPrecipInHr.toFixed(2)} in/hr</dd></div>`,
+    `<div><dt>Throw</dt><dd>${recommendation.desiredRadiusFt.toFixed(2)} ft on ${recommendation.selectedRadiusFt.toFixed(0)} ft nozzle</dd></div>`,
+    `<div><dt>Adjustment</dt><dd>${recommendation.radiusAdjustmentPct.toFixed(1)}%</dd></div>`,
+    '</dl>',
+    zoneSummary
+      ? `<div class="analysis-note">${escapeHtml(zoneSummary.zoneName)} runtime ${zoneSummary.effectiveRuntimeMinutes?.toFixed(1) ?? "--"} min (suggested ${zoneSummary.suggestedRuntimeMinutes?.toFixed(1) ?? "--"} min), average zone rate ${zoneSummary.averageRateInHr.toFixed(2)} in/hr.</div>`
+      : "",
+    `<div class="analysis-note">${escapeHtml(recommendation.comment)}</div>`,
+    `${selected.hidden ? '<div class="analysis-note">This sprinkler is hidden from the coverage and analysis overlays.</div>' : ""}`,
+    "</div>",
+    compatibility ? renderCompatibilityCard(compatibility) : "",
+  ].join("");
+}
+
+function renderCompatibilityCard(compatibility) {
+  const familyCounts = compatibility.familyCounts ?? { spray: 0, rotor: 0 };
+  const statusClass = `analysis-status-${compatibility.status ?? "info"}`;
+  const preferredFamilyLabel = compatibility.zonePreferredFamily === "mixed"
+    ? "Mixed"
+    : capitalize(compatibility.zonePreferredFamily ?? "mixed");
+  const lines = [
+    `<div class="analysis-card ${statusClass}">`,
+    '<div class="analysis-card-title">Zone Family Compatibility</div>',
+    `<div class="analysis-status-row"><span class="analysis-status-pill">${escapeHtml(capitalize(compatibility.status ?? "info"))}</span><span class="analysis-status-meta">Preferred family: ${escapeHtml(preferredFamilyLabel)} | ${familyCounts.spray} spray / ${familyCounts.rotor} rotor</span></div>`,
+    `<div class="analysis-emphasis">${escapeHtml(compatibility.headline ?? "")}</div>`,
+    `<div class="analysis-note">${escapeHtml(compatibility.detail ?? "")}</div>`,
+  ];
+
+  if (compatibility.preferredFitLabel || compatibility.alternateFitLabel) {
+    lines.push('<dl class="analysis-grid">');
+    if (compatibility.preferredFitLabel) {
+      lines.push(`<div><dt>Preferred fit</dt><dd>${escapeHtml(compatibility.preferredFitLabel)}</dd></div>`);
+    }
+    if (compatibility.alternateFitLabel) {
+      lines.push(`<div><dt>Alternate fit</dt><dd>${escapeHtml(compatibility.alternateFitLabel)}</dd></div>`);
+    }
+    lines.push("</dl>");
+  }
+
+  for (const suggestion of compatibility.suggestions ?? []) {
+    lines.push(`<div class="analysis-note">Next: ${escapeHtml(suggestion)}</div>`);
+  }
+
+  lines.push("</div>");
+  return lines.join("");
 }

@@ -5,14 +5,16 @@ Generated from `sprinkler-layout.json` and `sprinkler_data.json`.
 ## Assumptions
 
 - Design flow cap: 14.00 GPM per zone.
-- Spray heads are recommended for plan radii up to 15 ft; larger throws are treated as rotor zones.
+- Spray versus rotor classification is based on whether any spray radius class in the dataset can meet the head under the no-undershoot plus allowed reduction rule, so larger spray options like `18-VAN` are preferred over mixing in rotors when they fit.
 - Fixed spray arcs are normalized when the drawn arc is within +/-10 degrees of 90, 180, or 360 and that radius class has a fixed nozzle option.
 - All head types are assumed to allow up to 25% radius reduction with the screw adjustment.
 - Rotor optimization compares Rain Bird 5004 PRS MPR pre-balanced sets plus the standard-angle 25 degree and low-angle 10 degree nozzle families.
 - The 5004 PRS Red, Green, and Beige pre-balanced sets are treated as discrete fixed-flow nozzle choices: `Q_90`, `T_120`, `H_180`, and `F_360`.
 - The 5004 standard-angle and low-angle nozzle entries use their listed `flow_gpm` directly as candidate head flow.
+- Adjustable VAN spray nozzles use arc-aware flow. When the chart provides 90/180/270/360 GPM anchors, intermediate arcs are piecewise-linearly interpolated; otherwise flow is scaled linearly from 0 to the listed 360 degree GPM.
 - Actual precipitation is recalculated per head from flow, installed arc, and target radius using `96.3 x GPM / sector area`, so installed sweep changes actual PR but does not change nozzle GPM.
 - When rotor precipitation spread is within 0.010 in/hr, the optimizer favors simpler installs: fewer specialty nozzles, fewer low-angle heads, and fewer unique SKUs.
+- When a mixed-family zone has a uniform dominant-family alternative within 0.030 in/hr of the current spread and without a worse flow overage, the selector auto-resolves to the dominant family.
 - No undershoot is allowed for any head type; selected nominal radius must be greater than or equal to the required throw, and the closest qualifying radius is preferred.
 
 ## Zone East

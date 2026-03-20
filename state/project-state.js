@@ -8,6 +8,7 @@ const HISTORY_ACTIONS = new Set([
   "SET_SCALE",
   "SET_HYDRAULICS",
   "SET_BACKGROUND",
+  "SET_ANALYSIS",
   "LOAD_PROJECT",
   "DUPLICATE_SPRINKLER",
   "CREATE_ZONE",
@@ -45,6 +46,9 @@ export function createInitialState() {
       lineSizeInches: null,
       pressurePsi: null,
     },
+    analysis: {
+      targetDepthInches: 1,
+    },
     zones: [],
     sprinklers: [],
     view: {
@@ -57,6 +61,11 @@ export function createInitialState() {
       showZoneLabels: true,
       coverageOpacity: 0.22,
       zoneViewMode: "coverage",
+      analysisOverlayMode: "application_rate",
+      analysisZoneId: null,
+      heatmapCellPx: 18,
+      heatmapScaleMode: "zone",
+      heatmapScaleMaxInHr: 3,
     },
     history: {
       undoStack: [],
@@ -180,12 +189,19 @@ function applyAction(state, action) {
         pressurePsi: action.payload.pressurePsi ?? null,
       };
       return state;
+    case "SET_ANALYSIS":
+      state.analysis = {
+        ...state.analysis,
+        ...sanitizeAnalysisPatch(action.payload),
+      };
+      return state;
     case "CREATE_ZONE": {
       const zone = {
         id: action.payload.id,
         name: action.payload.name,
         color: action.payload.color,
         visible: true,
+        runtimeMinutes: null,
       };
       state.zones.push(zone);
       state.ui.activeZoneId = zone.id;
@@ -196,7 +212,7 @@ function applyAction(state, action) {
       if (!zone) {
         return null;
       }
-      Object.assign(zone, action.payload.patch);
+      Object.assign(zone, sanitizeZonePatch(action.payload.patch));
       return state;
     }
     case "DELETE_ZONE":
@@ -271,7 +287,7 @@ function applyAction(state, action) {
         id: action.payload.newId,
         x: sprinkler.x + 1,
         y: sprinkler.y + 1,
-        label: `${sprinkler.label} copy`,
+        label: buildCopiedSprinklerLabel(state.sprinklers, sprinkler.label),
       });
       state.ui.selectedSprinklerId = action.payload.newId;
       return state;
@@ -360,6 +376,43 @@ function sanitizePatch(patch) {
   return sanitized;
 }
 
+function sanitizeZonePatch(patch) {
+  if (!patch) {
+    return {};
+  }
+
+  const sanitized = {};
+
+  if ("name" in patch) {
+    sanitized.name = patch.name || "Untitled Zone";
+  }
+  if ("color" in patch) {
+    sanitized.color = patch.color;
+  }
+  if ("visible" in patch) {
+    sanitized.visible = Boolean(patch.visible);
+  }
+  if ("runtimeMinutes" in patch) {
+    const runtime = Number(patch.runtimeMinutes);
+    sanitized.runtimeMinutes = Number.isFinite(runtime) && runtime > 0 ? runtime : null;
+  }
+
+  return sanitized;
+}
+
+function sanitizeAnalysisPatch(patch) {
+  if (!patch) {
+    return {};
+  }
+
+  const sanitized = {};
+  if ("targetDepthInches" in patch) {
+    const targetDepth = Number(patch.targetDepthInches);
+    sanitized.targetDepthInches = Number.isFinite(targetDepth) && targetDepth > 0 ? targetDepth : 1;
+  }
+  return sanitized;
+}
+
 function appendBounded(items, item, limit) {
   return [...items, item].slice(-limit);
 }
@@ -398,6 +451,7 @@ function buildHint(state) {
 
 function normalizeLoadedProject(project) {
   const initial = createInitialState();
+  const normalizedView = normalizeView({ ...initial.view, ...project.view });
   const merged = {
     ...initial,
     ...project,
@@ -405,8 +459,9 @@ function normalizeLoadedProject(project) {
     background: { ...initial.background, ...project.background },
     scale: { ...initial.scale, ...project.scale },
     hydraulics: { ...initial.hydraulics, ...project.hydraulics },
-    zones: Array.isArray(project.zones) ? project.zones : [],
-    view: { ...initial.view, ...project.view },
+    analysis: { ...initial.analysis, ...sanitizeAnalysisPatch(project.analysis) },
+    zones: Array.isArray(project.zones) ? project.zones.map(normalizeZone) : [],
+    view: normalizedView,
     ui: { ...initial.ui, ...project.ui, measurePreviewPoint: null },
     sprinklers: Array.isArray(project.sprinklers) ? project.sprinklers.map(normalizeSprinkler) : [],
   };
@@ -426,6 +481,21 @@ export function cloneProjectSnapshot(state) {
   const snapshot = structuredClone(state);
   snapshot.history = { undoStack: [], redoStack: [] };
   return snapshot;
+}
+
+export function buildCopiedSprinklerLabel(sprinklers, sourceLabel) {
+  const rootLabel = String(sourceLabel || "Sprinkler").replace(/ copy(?: \d+)?$/i, "");
+  const baseLabel = `${rootLabel} copy`;
+  const existingLabels = new Set((sprinklers ?? []).map((sprinkler) => sprinkler.label));
+  if (!existingLabels.has(baseLabel)) {
+    return baseLabel;
+  }
+
+  let suffix = 2;
+  while (existingLabels.has(`${baseLabel} ${suffix}`)) {
+    suffix += 1;
+  }
+  return `${baseLabel} ${suffix}`;
 }
 
 export function hasHydraulics(state) {
@@ -480,4 +550,46 @@ function normalizeSprinkler(sprinkler) {
     label: sprinkler?.label || "Sprinkler",
     zoneId: sprinkler?.zoneId || null,
   };
+}
+
+function normalizeZone(zone) {
+  return {
+    id: zone?.id || crypto.randomUUID(),
+    name: zone?.name || "Untitled Zone",
+    color: zone?.color || ZONE_COLORS[0],
+    visible: "visible" in (zone ?? {}) ? Boolean(zone.visible) : true,
+    runtimeMinutes: Number.isFinite(Number(zone?.runtimeMinutes)) && Number(zone.runtimeMinutes) > 0
+      ? Number(zone.runtimeMinutes)
+      : null,
+  };
+}
+
+function normalizeView(view) {
+  const normalized = { ...view };
+
+  if (normalized.zoneViewMode === "heatmap") {
+    normalized.zoneViewMode = "coverage";
+    normalized.analysisOverlayMode = "application_rate";
+  }
+
+  if (!["coverage", "zone"].includes(normalized.zoneViewMode)) {
+    normalized.zoneViewMode = "coverage";
+  }
+
+  if (!["none", "application_rate", "zone_catch_can", "full_schedule_depth", "target_error"].includes(normalized.analysisOverlayMode)) {
+    normalized.analysisOverlayMode = "application_rate";
+  }
+
+  normalized.analysisZoneId = normalized.analysisZoneId || null;
+  normalized.heatmapCellPx = Number.isFinite(Number(normalized.heatmapCellPx))
+    ? Math.max(6, Number(normalized.heatmapCellPx))
+    : 18;
+  normalized.heatmapScaleMode = ["zone", "project", "fixed"].includes(normalized.heatmapScaleMode)
+    ? normalized.heatmapScaleMode
+    : "zone";
+  normalized.heatmapScaleMaxInHr = Number.isFinite(Number(normalized.heatmapScaleMaxInHr)) && Number(normalized.heatmapScaleMaxInHr) > 0
+    ? Number(normalized.heatmapScaleMaxInHr)
+    : 3;
+
+  return normalized;
 }
