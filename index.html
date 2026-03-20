@@ -26,6 +26,7 @@
           <select id="placement-pattern">
             <option value="full">Full circle</option>
             <option value="arc">Arc</option>
+            <option value="strip">Strip</option>
           </select>
         </label>
       </div>
@@ -214,6 +215,14 @@
           <div id="selection-empty" class="empty-card">Select a sprinkler to edit its properties.</div>
           <div id="selection-form" hidden>
             <label class="field">
+              <span>Coverage</span>
+              <select id="sprinkler-coverage-model">
+                <option value="full">Full circle</option>
+                <option value="arc">Arc</option>
+                <option value="strip">Strip</option>
+              </select>
+            </label>
+            <label class="field">
               <span>Label</span>
               <input id="sprinkler-label" type="text">
             </label>
@@ -227,7 +236,7 @@
                 <input id="sprinkler-y" type="number" step="0.01">
               </label>
             </div>
-            <div class="field-group">
+            <div id="sector-radius-pattern" class="field-group">
               <label class="field">
                 <span>Radius</span>
                 <input id="sprinkler-radius" type="number" min="0.1" step="0.1">
@@ -240,7 +249,7 @@
                 </select>
               </label>
             </div>
-            <div class="field-group">
+            <div id="sector-angle-fields" class="field-group">
               <label class="field">
                 <span>Start deg</span>
                 <input id="sprinkler-start" type="number" min="0" max="359" step="1">
@@ -248,6 +257,40 @@
               <label class="field">
                 <span>Sweep deg</span>
                 <input id="sprinkler-sweep" type="number" min="1" max="360" step="1">
+              </label>
+            </div>
+            <div id="strip-fields" hidden>
+              <div class="field-group">
+                <label class="field">
+                  <span>Strip type</span>
+                  <select id="sprinkler-strip-mode">
+                    <option value="end">End strip</option>
+                    <option value="side">Side strip</option>
+                    <option value="center">Center strip</option>
+                    <option value="corner">Corner strip</option>
+                  </select>
+                </label>
+                <label class="field" id="sprinkler-strip-mirror-field">
+                  <span>Corner side</span>
+                  <select id="sprinkler-strip-mirror">
+                    <option value="right">Right</option>
+                    <option value="left">Left</option>
+                  </select>
+                </label>
+              </div>
+              <div class="field-group">
+                <label class="field">
+                  <span>Length</span>
+                  <input id="sprinkler-strip-length" type="number" min="0.1" step="0.1">
+                </label>
+                <label class="field">
+                  <span>Width</span>
+                  <input id="sprinkler-strip-width" type="number" min="0.1" step="0.1">
+                </label>
+              </div>
+              <label class="field">
+                <span>Rotation deg</span>
+                <input id="sprinkler-strip-rotation" type="number" min="0" max="359" step="1">
               </label>
             </div>
             <label class="field">

@@ -1,4 +1,5 @@
 import { clamp, normalizeAngle, toDegrees } from "../geometry/arcs.js";
+import { buildStripPrimaryPatch, buildStripSecondaryPatch, isStripCoverage } from "../geometry/coverage.js";
 import { computePixelsPerUnitFromPoints, fitBackgroundToView, screenToWorld } from "../geometry/scale.js";
 
 export function createInteractionController(canvas, store, renderer) {
@@ -38,6 +39,35 @@ export function createInteractionController(canvas, store, renderer) {
 
     if (state.ui.activeTool === "place") {
       if (!state.scale.calibrated) {
+        return;
+      }
+      if (state.ui.placementPattern === "strip") {
+        const id = crypto.randomUUID();
+        store.dispatch({
+          type: "ADD_SPRINKLER",
+          payload: {
+            id,
+            x: worldPoint.x,
+            y: worldPoint.y,
+            coverageModel: "strip",
+            radius: 15,
+            pattern: "full",
+            startDeg: 0,
+            sweepDeg: 360,
+            rotationDeg: 0,
+            stripMode: "end",
+            stripMirror: "right",
+            stripLength: 15,
+            stripWidth: 4,
+            stripRotationDeg: 0,
+          },
+        });
+        dragState = {
+          kind: "strip-primary",
+          id,
+          lastPatch: null,
+        };
+        canvas.setPointerCapture(event.pointerId);
         return;
       }
       store.dispatch({
@@ -91,6 +121,17 @@ export function createInteractionController(canvas, store, renderer) {
       dragState = {
         kind: "radius-handle",
         id: radiusHandleHit.id,
+        lastPatch: null,
+      };
+      canvas.setPointerCapture(event.pointerId);
+      return;
+    }
+
+    const stripHandleHit = renderer.getStripHandleHit?.(worldPoint);
+    if (stripHandleHit) {
+      dragState = {
+        kind: stripHandleHit.edge === "secondary" ? "strip-secondary" : "strip-primary",
+        id: stripHandleHit.id,
         lastPatch: null,
       };
       canvas.setPointerCapture(event.pointerId);
@@ -159,6 +200,30 @@ export function createInteractionController(canvas, store, renderer) {
         }
         return;
       }
+      if (dragState.kind === "strip-primary") {
+        const patch = buildStripHandlePatch(state, dragState, worldPoint, "primary");
+        if (patch) {
+          dragState.lastPatch = patch;
+          store.dispatch({
+            type: "UPDATE_SPRINKLER",
+            payload: { id: dragState.id, patch },
+            meta: { skipHistory: true },
+          });
+        }
+        return;
+      }
+      if (dragState.kind === "strip-secondary") {
+        const patch = buildStripHandlePatch(state, dragState, worldPoint, "secondary");
+        if (patch) {
+          dragState.lastPatch = patch;
+          store.dispatch({
+            type: "UPDATE_SPRINKLER",
+            payload: { id: dragState.id, patch },
+            meta: { skipHistory: true },
+          });
+        }
+        return;
+      }
       dragState.lastX = worldPoint.x;
       dragState.lastY = worldPoint.y;
       store.dispatch({
@@ -177,6 +242,12 @@ export function createInteractionController(canvas, store, renderer) {
       });
     }
     if (dragState?.kind === "radius-handle" && dragState.lastPatch) {
+      store.dispatch({
+        type: "UPDATE_SPRINKLER",
+        payload: { id: dragState.id, patch: dragState.lastPatch },
+      });
+    }
+    if ((dragState?.kind === "strip-primary" || dragState?.kind === "strip-secondary") && dragState.lastPatch) {
       store.dispatch({
         type: "UPDATE_SPRINKLER",
         payload: { id: dragState.id, patch: dragState.lastPatch },
@@ -324,6 +395,17 @@ function buildRadiusHandlePatch(state, dragState, worldPoint) {
   return {
     radius: clamp(radiusPixels / state.scale.pixelsPerUnit, 0.1, 500),
   };
+}
+
+function buildStripHandlePatch(state, dragState, worldPoint, handleKind) {
+  const sprinkler = state.sprinklers.find((item) => item.id === dragState.id);
+  if (!sprinkler || !state.scale.pixelsPerUnit || !isStripCoverage(sprinkler)) {
+    return null;
+  }
+
+  return handleKind === "secondary"
+    ? buildStripSecondaryPatch(sprinkler, worldPoint, state.scale.pixelsPerUnit)
+    : buildStripPrimaryPatch(sprinkler, worldPoint, state.scale.pixelsPerUnit);
 }
 
 function getCanvasPoint(event) {

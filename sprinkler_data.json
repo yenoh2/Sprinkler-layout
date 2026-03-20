@@ -71,6 +71,13 @@
           {"series": "10H", "arc": "180", "radius_ft": 10, "flow_gpm": 0.79, "precip_in_hr": 1.52},
           {"series": "10F", "arc": "360", "radius_ft": 10, "flow_gpm": 1.58, "precip_in_hr": 1.52}
         ],
+        "mpr_strip_series": [
+          {"model": "15ESTC1", "mode": "end", "mirror": "both", "min_length_ft": 10, "max_length_ft": 15, "min_width_ft": 3, "max_width_ft": 4, "flow_gpm_nominal": 0.98, "precip_avg": 1.58},
+          {"model": "15SSTC1", "mode": "side", "mirror": "both", "min_length_ft": 20, "max_length_ft": 30, "min_width_ft": 3, "max_width_ft": 4, "flow_gpm_nominal": 1.97, "precip_avg": 1.58},
+          {"model": "15CSTC1", "mode": "center", "mirror": "both", "min_length_ft": 12, "max_length_ft": 15, "min_width_ft": 4, "max_width_ft": 6, "flow_gpm_nominal": 1.48, "precip_avg": 1.58, "footprint_note": "center strip footprint modeled as 6 x 15 ft nominal"},
+          {"model": "15RCSC1", "mode": "corner", "mirror": "right", "min_length_ft": 10, "max_length_ft": 15, "min_width_ft": 3, "max_width_ft": 4, "flow_gpm_nominal": 0.98, "precip_avg": 1.58},
+          {"model": "15LCSC1", "mode": "corner", "mirror": "left", "min_length_ft": 10, "max_length_ft": 15, "min_width_ft": 3, "max_width_ft": 4, "flow_gpm_nominal": 0.98, "precip_avg": 1.58}
+        ],
         "u_series_fixed_mpr": [
           {"series": "U-15", "arc": "90", "radius_ft": 15, "flow_gpm": 0.92, "precip_in_hr": 1.58},
           {"series": "U-15", "arc": "180", "radius_ft": 15, "flow_gpm": 1.85, "precip_in_hr": 1.58},

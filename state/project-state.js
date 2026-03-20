@@ -147,7 +147,9 @@ function applyAction(state, action) {
       }
       return state;
     case "SET_PLACEMENT_PATTERN":
-      state.ui.placementPattern = action.payload.pattern;
+      state.ui.placementPattern = ["full", "arc", "strip"].includes(action.payload.pattern)
+        ? action.payload.pattern
+        : "full";
       return state;
     case "SET_CURSOR_WORLD":
       state.ui.cursorWorld = action.payload.point;
@@ -240,11 +242,17 @@ function applyAction(state, action) {
         id: action.payload.id,
         x: action.payload.x,
         y: action.payload.y,
+        coverageModel: normalizeCoverageModel(action.payload.coverageModel),
         radius: action.payload.radius ?? 12,
         pattern: action.payload.pattern ?? "full",
         startDeg: normalizeAngle(Math.round((action.payload.startDeg ?? 0) + (action.payload.rotationDeg ?? 0))),
         sweepDeg: clamp(Math.round(action.payload.sweepDeg ?? 360), 1, 360),
         rotationDeg: 0,
+        stripMode: normalizeStripMode(action.payload.stripMode),
+        stripMirror: normalizeStripMirror(action.payload.stripMirror),
+        stripLength: Math.max(0.1, Number(action.payload.stripLength ?? action.payload.radius ?? 15)),
+        stripWidth: Math.max(0.1, Number(action.payload.stripWidth ?? 4)),
+        stripRotationDeg: normalizeAngle(Math.round(Number(action.payload.stripRotationDeg ?? action.payload.startDeg ?? 0))),
         hidden: Boolean(action.payload.hidden),
         label: action.payload.label || `S-${state.sprinklers.length + 1}`,
         zoneId: action.payload.zoneId ?? state.ui.activeZoneId ?? null,
@@ -351,6 +359,9 @@ function sanitizePatch(patch) {
   if ("radius" in patch) {
     sanitized.radius = Math.max(0.1, Number(patch.radius));
   }
+  if ("coverageModel" in patch) {
+    sanitized.coverageModel = normalizeCoverageModel(patch.coverageModel);
+  }
   if ("pattern" in patch) {
     sanitized.pattern = patch.pattern === "arc" ? "arc" : "full";
   }
@@ -365,6 +376,21 @@ function sanitizePatch(patch) {
   }
   if ("hidden" in patch) {
     sanitized.hidden = Boolean(patch.hidden);
+  }
+  if ("stripMode" in patch) {
+    sanitized.stripMode = normalizeStripMode(patch.stripMode);
+  }
+  if ("stripMirror" in patch) {
+    sanitized.stripMirror = normalizeStripMirror(patch.stripMirror);
+  }
+  if ("stripLength" in patch) {
+    sanitized.stripLength = Math.max(0.1, Number(patch.stripLength));
+  }
+  if ("stripWidth" in patch) {
+    sanitized.stripWidth = Math.max(0.1, Number(patch.stripWidth));
+  }
+  if ("stripRotationDeg" in patch) {
+    sanitized.stripRotationDeg = normalizeAngle(Math.round(Number(patch.stripRotationDeg ?? 0)));
   }
   if ("zoneId" in patch) {
     sanitized.zoneId = patch.zoneId || null;
@@ -446,6 +472,9 @@ function buildHint(state) {
   if (!hasHydraulics(state)) {
     return "Enter line size and pressure before layout review.";
   }
+  if (state.ui.activeTool === "place" && state.ui.placementPattern === "strip") {
+    return "Click and drag to place a strip sprinkler, then fine-tune width or type from the selected head controls.";
+  }
   return `Ready to place sprinklers. ${state.sprinklers.length} head${state.sprinklers.length === 1 ? "" : "s"} on plan.`;
 }
 
@@ -465,6 +494,9 @@ function normalizeLoadedProject(project) {
     ui: { ...initial.ui, ...project.ui, measurePreviewPoint: null },
     sprinklers: Array.isArray(project.sprinklers) ? project.sprinklers.map(normalizeSprinkler) : [],
   };
+  merged.ui.placementPattern = ["full", "arc", "strip"].includes(merged.ui.placementPattern)
+    ? merged.ui.placementPattern
+    : "full";
   merged.history = { undoStack: [], redoStack: [] };
   return merged;
 }
@@ -541,11 +573,17 @@ function normalizeSprinkler(sprinkler) {
     id: sprinkler?.id || crypto.randomUUID(),
     x: Number.isFinite(x) ? x : 0,
     y: Number.isFinite(y) ? y : 0,
+    coverageModel: normalizeCoverageModel(sprinkler?.coverageModel),
     radius: Number.isFinite(radius) ? Math.max(0.1, radius) : 12,
     pattern: sprinkler?.pattern === "arc" ? "arc" : "full",
     startDeg: effectiveStartDeg,
     sweepDeg: Number.isFinite(sweepDeg) ? clamp(Math.round(sweepDeg), 1, 360) : 360,
     rotationDeg: 0,
+    stripMode: normalizeStripMode(sprinkler?.stripMode),
+    stripMirror: normalizeStripMirror(sprinkler?.stripMirror),
+    stripLength: Number.isFinite(Number(sprinkler?.stripLength)) ? Math.max(0.1, Number(sprinkler.stripLength)) : 15,
+    stripWidth: Number.isFinite(Number(sprinkler?.stripWidth)) ? Math.max(0.1, Number(sprinkler.stripWidth)) : 4,
+    stripRotationDeg: normalizeAngle(Number(sprinkler?.stripRotationDeg ?? startDeg ?? 0)),
     hidden: Boolean(sprinkler?.hidden),
     label: sprinkler?.label || "Sprinkler",
     zoneId: sprinkler?.zoneId || null,
@@ -592,4 +630,16 @@ function normalizeView(view) {
     : 3;
 
   return normalized;
+}
+
+function normalizeCoverageModel(value) {
+  return value === "strip" ? "strip" : "sector";
+}
+
+function normalizeStripMode(value) {
+  return ["end", "side", "center", "corner"].includes(value) ? value : "end";
+}
+
+function normalizeStripMirror(value) {
+  return value === "left" ? "left" : "right";
 }

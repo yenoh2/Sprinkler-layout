@@ -1,4 +1,5 @@
 import { clamp, normalizeAngle } from "../geometry/arcs.js";
+import { getCoverageModel, pointFallsWithinCoverage, resolveCoverageBounds, resolveStripConfiguration } from "../geometry/coverage.js";
 
 const DEFAULT_ASSUMPTIONS = {
   sprayArcNormalizeToleranceDeg: 10,
@@ -216,6 +217,7 @@ function enrichSprinkler(sprinkler) {
   const desiredArcDeg = sprinkler.pattern === "full" || sprinkler.sweepDeg >= 360 ? 360 : sprinkler.sweepDeg;
   return {
     ...sprinkler,
+    coverageModel: getCoverageModel(sprinkler),
     desiredArcDeg,
     startDeg: normalizeAngle(Number(sprinkler.startDeg ?? 0) + Number(sprinkler.rotationDeg ?? 0)),
   };
@@ -290,6 +292,10 @@ function analyzeZone(zone, sprinklers, zonesById, context) {
 }
 
 function recommendSpray(sprinkler, zone, zonesById, context) {
+  if (sprinkler.coverageModel === "strip") {
+    return recommendStripSpray(sprinkler, zone, zonesById, context);
+  }
+
   const desiredRadius = sprinkler.radius;
   const desiredArc = sprinkler.desiredArcDeg;
   const radiusClass = pickRadiusClass(
@@ -349,6 +355,48 @@ function recommendSpray(sprinkler, zone, zonesById, context) {
     flowGpm: calculateAdjustableSprayFlow(variable, desiredArc),
     catalogPrecipInHr: variable.precipInHr,
     comment: "Variable arc kept because the drawn arc is not close to a fixed spray pattern.",
+  });
+}
+
+function recommendStripSpray(sprinkler, zone, zonesById, context) {
+  const strip = resolveStripConfiguration(sprinkler);
+  const candidate = pickStripCandidate(strip, context.sprayData.stripSeries);
+  if (!candidate) {
+    const fallbackFlow = calculateActualStripFlowGpm(1.58, strip.lengthFt, strip.widthFt);
+    return buildRecommendationBase(sprinkler, zone, zonesById, {
+      coverageModel: "strip",
+      family: "spray",
+      body: "Rain Bird 1800 PRS",
+      nozzle: `Custom ${capitalize(strip.mode)} strip`,
+      nozzleType: "strip",
+      skuFamily: "generic_strip",
+      flowGpm: fallbackFlow,
+      catalogPrecipInHr: 1.58,
+      selectedStripLengthFt: strip.lengthFt,
+      selectedStripWidthFt: strip.widthFt,
+      stripMode: strip.mode,
+      stripMirror: strip.mirror,
+      stripRotationDeg: strip.rotationDeg,
+      comment: "No matching strip nozzle data fit the drawn footprint, so a generic strip placeholder was used for analysis.",
+    });
+  }
+
+  const footprintNote = candidate.footprintNote ? ` ${candidate.footprintNote}.` : "";
+  return buildRecommendationBase(sprinkler, zone, zonesById, {
+    coverageModel: "strip",
+    family: "spray",
+    body: "Rain Bird 1800 PRS",
+    nozzle: candidate.model,
+    nozzleType: "strip",
+    skuFamily: candidate.model,
+    flowGpm: candidate.flowGpmNominal,
+    catalogPrecipInHr: candidate.precipInHr,
+    selectedStripLengthFt: candidate.maxLengthFt,
+    selectedStripWidthFt: candidate.maxWidthFt,
+    stripMode: strip.mode,
+    stripMirror: candidate.mirror === "both" ? strip.mirror : candidate.mirror,
+    stripRotationDeg: strip.rotationDeg,
+    comment: `Strip nozzle ${candidate.model} selected for a ${candidate.maxWidthFt.toFixed(0)} x ${candidate.maxLengthFt.toFixed(0)} ft ${strip.mode} strip.${footprintNote}`,
   });
 }
 
@@ -509,9 +557,19 @@ function optimizeRotorAssignmentsBeam(candidateMatrix, assumptions) {
 }
 
 function buildRecommendationBase(sprinkler, zone, zonesById, details) {
+  const coverageModel = details.coverageModel ?? sprinkler.coverageModel ?? "sector";
   const installedArcDeg = details.selectedArcDeg ?? sprinkler.desiredArcDeg;
   const flowGpm = Number(details.flowGpm) || 0;
-  const actualPrecipInHr = calculateActualPrecipInHr(flowGpm, sprinkler.radius, installedArcDeg);
+  const strip = coverageModel === "strip" ? resolveStripConfiguration({
+    stripMode: details.stripMode ?? sprinkler.stripMode,
+    stripMirror: details.stripMirror ?? sprinkler.stripMirror,
+    stripLength: details.selectedStripLengthFt ?? sprinkler.stripLength,
+    stripWidth: details.selectedStripWidthFt ?? sprinkler.stripWidth,
+    stripRotationDeg: details.stripRotationDeg ?? sprinkler.stripRotationDeg,
+  }) : null;
+  const actualPrecipInHr = coverageModel === "strip"
+    ? calculateActualStripPrecipInHr(flowGpm, sprinkler.stripLength, sprinkler.stripWidth)
+    : calculateActualPrecipInHr(flowGpm, sprinkler.radius, installedArcDeg);
 
   return {
     id: sprinkler.id,
@@ -522,6 +580,7 @@ function buildRecommendationBase(sprinkler, zone, zonesById, details) {
     hidden: Boolean(sprinkler.hidden),
     x: sprinkler.x,
     y: sprinkler.y,
+    coverageModel,
     startDeg: sprinkler.startDeg,
     sweepDeg: installedArcDeg,
     pattern: sprinkler.pattern,
@@ -532,15 +591,32 @@ function buildRecommendationBase(sprinkler, zone, zonesById, details) {
     skuFamily: details.skuFamily ?? details.nozzle,
     radiusClassFt: details.radiusClassFt,
     desiredRadiusFt: sprinkler.radius,
-    selectedRadiusFt: details.selectedRadiusFt,
-    radiusAdjustmentPct: pctReduction(details.selectedRadiusFt, sprinkler.radius),
+    selectedRadiusFt: details.selectedRadiusFt ?? null,
+    radiusAdjustmentPct: Number.isFinite(Number(details.selectedRadiusFt))
+      ? pctReduction(details.selectedRadiusFt, sprinkler.radius)
+      : 0,
     desiredArcDeg: sprinkler.desiredArcDeg,
     selectedArcDeg: installedArcDeg,
     arcNormalized: Boolean(details.arcNormalized),
+    desiredStripLengthFt: sprinkler.stripLength ?? null,
+    desiredStripWidthFt: sprinkler.stripWidth ?? null,
+    selectedStripLengthFt: strip?.lengthFt ?? null,
+    selectedStripWidthFt: strip?.widthFt ?? null,
+    stripLength: strip?.lengthFt ?? sprinkler.stripLength ?? null,
+    stripWidth: strip?.widthFt ?? sprinkler.stripWidth ?? null,
+    stripMode: strip?.mode ?? null,
+    stripMirror: strip?.mirror ?? null,
+    stripRotationDeg: strip?.rotationDeg ?? null,
     flowGpm,
     catalogPrecipInHr: details.catalogPrecipInHr ?? null,
     actualPrecipInHr,
-    coverageReserveFt: Math.max(0, details.selectedRadiusFt - sprinkler.radius),
+    coverageReserveFt: coverageModel === "strip"
+      ? Math.max(
+        0,
+        (details.selectedStripLengthFt ?? sprinkler.stripLength ?? 0) - (sprinkler.stripLength ?? 0),
+        (details.selectedStripWidthFt ?? sprinkler.stripWidth ?? 0) - (sprinkler.stripWidth ?? 0),
+      )
+      : Math.max(0, (details.selectedRadiusFt ?? 0) - sprinkler.radius),
     comment: details.comment,
   };
 }
@@ -564,6 +640,18 @@ function buildSprayDatabase(series) {
     radiusClasses: [...new Set([...fixedByRadius.keys(), ...variableByRadius.keys()])].sort((a, b) => a - b),
     fixedByRadius,
     variableByRadius,
+    stripSeries: (series?.mpr_strip_series ?? []).map((nozzle) => ({
+      model: nozzle.model,
+      mode: nozzle.mode,
+      mirror: nozzle.mirror ?? "both",
+      minLengthFt: Number(nozzle.min_length_ft),
+      maxLengthFt: Number(nozzle.max_length_ft),
+      minWidthFt: Number(nozzle.min_width_ft),
+      maxWidthFt: Number(nozzle.max_width_ft),
+      flowGpmNominal: Number(nozzle.flow_gpm_nominal),
+      precipInHr: Number(nozzle.precip_avg),
+      footprintNote: nozzle.footprint_note ?? "",
+    })),
   };
 }
 
@@ -587,6 +675,9 @@ function addFixedSpraySeries(fixedByRadius, nozzles, { overwriteExisting }) {
 }
 
 function sprinklerCanUseSpray(sprinkler, sprayData, assumptions) {
+  if (sprinkler?.coverageModel === "strip") {
+    return true;
+  }
   const desiredRadius = Number(sprinkler?.radius);
   if (!Number.isFinite(desiredRadius) || desiredRadius <= 0) {
     return false;
@@ -890,6 +981,13 @@ function buildZoneCompatibility(recommendation, sprinkler, zone, zoneReport, zon
 }
 
 function describeSprayFit(sprinkler, sprayData, assumptions) {
+  if (sprinkler.coverageModel === "strip") {
+    const strip = resolveStripConfiguration(sprinkler);
+    const candidate = pickStripCandidate(strip, sprayData.stripSeries);
+    return candidate
+      ? { canFit: true, label: `Rain Bird 1800 PRS ${candidate.model}` }
+      : { canFit: false, label: "No valid strip fit" };
+  }
   const radiusClass = pickRadiusClass(
     sprinkler.radius,
     sprayData.radiusClasses,
@@ -911,6 +1009,9 @@ function describeSprayFit(sprinkler, sprayData, assumptions) {
 }
 
 function describeRotorFit(sprinkler, zone, zonesById, context) {
+  if (sprinkler.coverageModel === "strip") {
+    return { canFit: false, label: "No valid rotor fit for strip coverage" };
+  }
   const candidates = buildRotorCandidatesForHead(sprinkler, zone, zonesById, context);
   const bestCandidate = candidates[0] ?? null;
   return bestCandidate
@@ -1118,7 +1219,7 @@ function buildAnalysisGrid(state, recommendations, zones, targetDepthInches) {
       let totalRateInHr = 0;
 
       for (const recommendation of visibleRecommendations) {
-        if (pointFallsWithinSector(x, y, recommendation, pixelsPerUnit)) {
+        if (pointFallsWithinCoverage(x, y, recommendation, pixelsPerUnit)) {
           totalRateInHr += recommendation.actualPrecipInHr;
         }
       }
@@ -1127,7 +1228,7 @@ function buildAnalysisGrid(state, recommendations, zones, targetDepthInches) {
       for (const zoneLayer of zoneRateLayers) {
         let zoneRateInHr = 0;
         for (const recommendation of zoneLayer.recommendations) {
-          if (pointFallsWithinSector(x, y, recommendation, pixelsPerUnit)) {
+          if (pointFallsWithinCoverage(x, y, recommendation, pixelsPerUnit)) {
             zoneRateInHr += recommendation.actualPrecipInHr;
           }
         }
@@ -1377,12 +1478,7 @@ function resolveHeatmapBounds(state, recommendations) {
   }
 
   const pixelsPerUnit = Number(state.scale.pixelsPerUnit);
-  const extents = recommendations.map((recommendation) => ({
-    minX: recommendation.x - recommendation.desiredRadiusFt * pixelsPerUnit,
-    maxX: recommendation.x + recommendation.desiredRadiusFt * pixelsPerUnit,
-    minY: recommendation.y - recommendation.desiredRadiusFt * pixelsPerUnit,
-    maxY: recommendation.y + recommendation.desiredRadiusFt * pixelsPerUnit,
-  }));
+  const extents = recommendations.map((recommendation) => resolveCoverageBounds(recommendation, pixelsPerUnit));
 
   const minX = Math.min(...extents.map((extent) => extent.minX));
   const maxX = Math.max(...extents.map((extent) => extent.maxX));
@@ -1391,31 +1487,50 @@ function resolveHeatmapBounds(state, recommendations) {
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
 
-function pointFallsWithinSector(xWorld, yWorld, recommendation, pixelsPerUnit) {
-  const dx = xWorld - recommendation.x;
-  const dy = yWorld - recommendation.y;
-  const distanceFt = Math.hypot(dx, dy) / pixelsPerUnit;
-  if (distanceFt > recommendation.desiredRadiusFt) {
-    return false;
-  }
-  if (recommendation.pattern === "full" || recommendation.sweepDeg >= 360) {
-    return true;
-  }
-
-  const angle = normalizeAngle((Math.atan2(dy, dx) * 180) / Math.PI);
-  const start = normalizeAngle(recommendation.startDeg);
-  const end = normalizeAngle(start + recommendation.sweepDeg);
-  if (start <= end && recommendation.sweepDeg < 360) {
-    return angle >= start && angle <= end;
-  }
-  return angle >= start || angle <= end;
-}
-
 function calculateActualPrecipInHr(flowGpm, radiusFt, arcDeg) {
   const clampedArc = clamp(Number(arcDeg) || 360, 0.1, 360);
   const safeRadius = Math.max(0.1, Number(radiusFt) || 0.1);
   const sectorAreaSqFt = Math.PI * safeRadius * safeRadius * (clampedArc / 360);
   return 96.3 * flowGpm / sectorAreaSqFt;
+}
+
+function calculateActualStripPrecipInHr(flowGpm, lengthFt, widthFt) {
+  const areaSqFt = Math.max(0.1, Number(lengthFt) || 0.1) * Math.max(0.1, Number(widthFt) || 0.1);
+  return 96.3 * flowGpm / areaSqFt;
+}
+
+function calculateActualStripFlowGpm(precipInHr, lengthFt, widthFt) {
+  return (Math.max(0.1, Number(precipInHr) || 0.1) * Math.max(0.1, Number(lengthFt) || 0.1) * Math.max(0.1, Number(widthFt) || 0.1)) / 96.3;
+}
+
+function pickStripCandidate(strip, candidates = []) {
+  const matches = candidates.filter((candidate) =>
+    candidate.mode === strip.mode &&
+    (candidate.mirror === "both" || candidate.mirror === strip.mirror) &&
+    stripDimensionsFit(strip.lengthFt, strip.widthFt, candidate),
+  );
+
+  return matches.reduce((best, current) =>
+    best === null || scoreStripCandidate(current, strip) < scoreStripCandidate(best, strip)
+      ? current
+      : best,
+  null);
+}
+
+function stripDimensionsFit(lengthFt, widthFt, candidate) {
+  return (
+    lengthFt <= candidate.maxLengthFt &&
+    lengthFt >= candidate.minLengthFt &&
+    widthFt <= candidate.maxWidthFt &&
+    widthFt >= candidate.minWidthFt
+  );
+}
+
+function scoreStripCandidate(candidate, strip) {
+  return (
+    ((candidate.maxLengthFt - strip.lengthFt) / Math.max(strip.lengthFt, 0.1)) +
+    ((candidate.maxWidthFt - strip.widthFt) / Math.max(strip.widthFt, 0.1))
+  );
 }
 
 function compareSprinklers(a, b) {

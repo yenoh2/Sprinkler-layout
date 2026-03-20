@@ -53,6 +53,7 @@ function bindElements() {
     historySummary: document.getElementById("history-summary"),
     selectionEmpty: document.getElementById("selection-empty"),
     selectionForm: document.getElementById("selection-form"),
+    sprinklerCoverageModel: document.getElementById("sprinkler-coverage-model"),
     sprinklerLabel: document.getElementById("sprinkler-label"),
     sprinklerX: document.getElementById("sprinkler-x"),
     sprinklerY: document.getElementById("sprinkler-y"),
@@ -60,6 +61,15 @@ function bindElements() {
     sprinklerPattern: document.getElementById("sprinkler-pattern"),
     sprinklerStart: document.getElementById("sprinkler-start"),
     sprinklerSweep: document.getElementById("sprinkler-sweep"),
+    sectorRadiusPattern: document.getElementById("sector-radius-pattern"),
+    sectorAngleFields: document.getElementById("sector-angle-fields"),
+    stripFields: document.getElementById("strip-fields"),
+    sprinklerStripMode: document.getElementById("sprinkler-strip-mode"),
+    sprinklerStripMirrorField: document.getElementById("sprinkler-strip-mirror-field"),
+    sprinklerStripMirror: document.getElementById("sprinkler-strip-mirror"),
+    sprinklerStripLength: document.getElementById("sprinkler-strip-length"),
+    sprinklerStripWidth: document.getElementById("sprinkler-strip-width"),
+    sprinklerStripRotation: document.getElementById("sprinkler-strip-rotation"),
     sprinklerZone: document.getElementById("sprinkler-zone"),
     sprinklerZonePicker: document.getElementById("sprinkler-zone-picker"),
     sprinklerZoneButton: document.getElementById("sprinkler-zone-button"),
@@ -215,6 +225,7 @@ function bindEvents(elements, store, renderer, interactions, io) {
   });
 
   [
+    elements.sprinklerCoverageModel,
     elements.sprinklerLabel,
     elements.sprinklerX,
     elements.sprinklerY,
@@ -222,6 +233,11 @@ function bindEvents(elements, store, renderer, interactions, io) {
     elements.sprinklerPattern,
     elements.sprinklerStart,
     elements.sprinklerSweep,
+    elements.sprinklerStripMode,
+    elements.sprinklerStripMirror,
+    elements.sprinklerStripLength,
+    elements.sprinklerStripWidth,
+    elements.sprinklerStripRotation,
     elements.sprinklerHidden,
   ].forEach((element) => {
     const eventName = element.type === "checkbox" || element.tagName === "SELECT" ? "change" : "input";
@@ -289,6 +305,8 @@ function updateSelection(elements, store) {
   if (!selected) {
     return;
   }
+  const coverageValue = elements.sprinklerCoverageModel.value;
+  const isStrip = coverageValue === "strip";
   store.dispatch({
     type: "UPDATE_SPRINKLER",
     payload: {
@@ -297,11 +315,17 @@ function updateSelection(elements, store) {
         label: elements.sprinklerLabel.value,
         x: Number(elements.sprinklerX.value),
         y: Number(elements.sprinklerY.value),
+        coverageModel: isStrip ? "strip" : "sector",
         radius: Number(elements.sprinklerRadius.value),
-        pattern: elements.sprinklerPattern.value,
+        pattern: coverageValue === "arc" ? "arc" : "full",
         startDeg: Number(elements.sprinklerStart.value),
         sweepDeg: clamp(Number(elements.sprinklerSweep.value), 1, 360),
         rotationDeg: 0,
+        stripMode: elements.sprinklerStripMode.value,
+        stripMirror: elements.sprinklerStripMirror.value,
+        stripLength: Number(elements.sprinklerStripLength.value),
+        stripWidth: Number(elements.sprinklerStripWidth.value),
+        stripRotationDeg: Number(elements.sprinklerStripRotation.value),
         zoneId: elements.sprinklerZone.value || null,
         hidden: elements.sprinklerHidden.checked,
       },
@@ -351,15 +375,37 @@ function updateUi(elements, state, renderer, analyzer) {
   elements.selectionEmpty.hidden = Boolean(selected);
   elements.selectionForm.hidden = !selected;
   if (selected) {
+    const coverageValue = selected.coverageModel === "strip"
+      ? "strip"
+      : selected.pattern === "arc"
+        ? "arc"
+        : "full";
     elements.sprinklerLabel.value = selected.label ?? "";
     elements.sprinklerX.value = formatEditableNumber(selected.x);
     elements.sprinklerY.value = formatEditableNumber(selected.y);
+    elements.sprinklerCoverageModel.value = coverageValue;
     elements.sprinklerRadius.value = formatEditableNumber(selected.radius);
     elements.sprinklerPattern.value = selected.pattern;
     elements.sprinklerStart.value = String((selected.startDeg + selected.rotationDeg) % 360);
     elements.sprinklerSweep.value = String(selected.sweepDeg);
+    elements.sprinklerStripMode.value = selected.stripMode ?? "end";
+    elements.sprinklerStripMirror.value = selected.stripMirror ?? "right";
+    elements.sprinklerStripLength.value = formatEditableNumber(selected.stripLength ?? 15);
+    elements.sprinklerStripWidth.value = formatEditableNumber(selected.stripWidth ?? 4);
+    elements.sprinklerStripRotation.value = String(Math.round(selected.stripRotationDeg ?? 0));
     elements.sprinklerZone.value = selected.zoneId ?? "";
     elements.sprinklerHidden.checked = selected.hidden;
+
+    const isStrip = coverageValue === "strip";
+    elements.sectorRadiusPattern.hidden = isStrip;
+    elements.sectorAngleFields.hidden = isStrip;
+    elements.stripFields.hidden = !isStrip;
+    elements.sprinklerStripMirrorField.hidden = !isStrip || elements.sprinklerStripMode.value !== "corner";
+  } else {
+    elements.sectorRadiusPattern.hidden = false;
+    elements.sectorAngleFields.hidden = false;
+    elements.stripFields.hidden = true;
+    elements.sprinklerStripMirrorField.hidden = true;
   }
 
   renderSprinklerAnalysis(elements.sprinklerAnalysis, selected, analysis);
@@ -374,7 +420,7 @@ function updateUi(elements, state, renderer, analyzer) {
     ["Background", state.background.name || "None"],
     ["Scale", state.scale.calibrated ? `${state.scale.pixelsPerUnit.toFixed(2)} px/${state.scale.units}` : "Not calibrated"],
     ["Heads", String(summary.sprinklerCount)],
-    ["Mean radius", summary.meanRadius ? `${summary.meanRadius.toFixed(1)} ${state.scale.units}` : "--"],
+    ["Mean size", summary.meanRadius ? `${summary.meanRadius.toFixed(1)} ${state.scale.units}` : "--"],
     ["Peak rate", analysis?.summary.applicationRateMaxInHr ? `${analysis.summary.applicationRateMaxInHr.toFixed(2)} in/hr` : "--"],
     ["Avg rate", analysis?.summary.applicationRateAverageInHr ? `${analysis.summary.applicationRateAverageInHr.toFixed(2)} in/hr` : "--"],
     ["Target depth", `${(analysis?.targetDepthInches ?? state.analysis.targetDepthInches ?? 1).toFixed(2)} in`],
@@ -745,17 +791,30 @@ function renderSprinklerAnalysis(node, selected, analysis) {
   }
 
   const zoneSummary = analysis?.zones?.find((zone) => zone.zoneId === recommendation.zoneId) ?? null;
+  const detailRows = recommendation.coverageModel === "strip"
+    ? [
+      `<div><dt>Body</dt><dd>${escapeHtml(recommendation.body)}</dd></div>`,
+      `<div><dt>Nozzle</dt><dd>${escapeHtml(recommendation.nozzle)}</dd></div>`,
+      `<div><dt>Flow</dt><dd>${recommendation.flowGpm.toFixed(2)} GPM</dd></div>`,
+      `<div><dt>Actual PR</dt><dd>${recommendation.actualPrecipInHr.toFixed(2)} in/hr</dd></div>`,
+      `<div><dt>Strip type</dt><dd>${escapeHtml(capitalize(recommendation.stripMode))}</dd></div>`,
+      `<div><dt>Footprint</dt><dd>${recommendation.desiredStripWidthFt.toFixed(1)} x ${recommendation.desiredStripLengthFt.toFixed(1)} ft on ${recommendation.selectedStripWidthFt.toFixed(1)} x ${recommendation.selectedStripLengthFt.toFixed(1)} ft nozzle</dd></div>`,
+      `<div><dt>Rotation</dt><dd>${Math.round(recommendation.stripRotationDeg)} deg</dd></div>`,
+    ]
+    : [
+      `<div><dt>Body</dt><dd>${escapeHtml(recommendation.body)}</dd></div>`,
+      `<div><dt>Nozzle</dt><dd>${escapeHtml(recommendation.nozzle)}</dd></div>`,
+      `<div><dt>Flow</dt><dd>${recommendation.flowGpm.toFixed(2)} GPM</dd></div>`,
+      `<div><dt>Actual PR</dt><dd>${recommendation.actualPrecipInHr.toFixed(2)} in/hr</dd></div>`,
+      `<div><dt>Throw</dt><dd>${recommendation.desiredRadiusFt.toFixed(2)} ft on ${recommendation.selectedRadiusFt.toFixed(0)} ft nozzle</dd></div>`,
+      `<div><dt>Adjustment</dt><dd>${recommendation.radiusAdjustmentPct.toFixed(1)}%</dd></div>`,
+    ];
   node.hidden = false;
   node.innerHTML = [
     '<div class="analysis-card">',
     '<div class="analysis-card-title">Recommended Head Logic</div>',
     '<dl class="analysis-grid">',
-    `<div><dt>Body</dt><dd>${escapeHtml(recommendation.body)}</dd></div>`,
-    `<div><dt>Nozzle</dt><dd>${escapeHtml(recommendation.nozzle)}</dd></div>`,
-    `<div><dt>Flow</dt><dd>${recommendation.flowGpm.toFixed(2)} GPM</dd></div>`,
-    `<div><dt>Actual PR</dt><dd>${recommendation.actualPrecipInHr.toFixed(2)} in/hr</dd></div>`,
-    `<div><dt>Throw</dt><dd>${recommendation.desiredRadiusFt.toFixed(2)} ft on ${recommendation.selectedRadiusFt.toFixed(0)} ft nozzle</dd></div>`,
-    `<div><dt>Adjustment</dt><dd>${recommendation.radiusAdjustmentPct.toFixed(1)}%</dd></div>`,
+    ...detailRows,
     '</dl>',
     zoneSummary
       ? `<div class="analysis-note">${escapeHtml(zoneSummary.zoneName)} runtime ${zoneSummary.effectiveRuntimeMinutes?.toFixed(1) ?? "--"} min (suggested ${zoneSummary.suggestedRuntimeMinutes?.toFixed(1) ?? "--"} min), average zone rate ${zoneSummary.averageRateInHr.toFixed(2)} in/hr.</div>`

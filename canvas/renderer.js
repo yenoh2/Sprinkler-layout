@@ -1,4 +1,5 @@
 import { pointFromAngle, pointInSprinkler, toRadians } from "../geometry/arcs.js";
+import { buildStripFootprintWorldPoints, buildStripHandleWorldPoints, isStripCoverage } from "../geometry/coverage.js";
 import { toPixels, worldToScreen } from "../geometry/scale.js";
 import { findSelectedSprinkler, getZoneById, hasHydraulics, isProjectReady } from "../state/project-state.js";
 
@@ -66,7 +67,7 @@ export function createRenderer(canvas, store, analyzer) {
       drawCoverage(state, analysis);
     }
     drawSprinklers(state);
-    drawSelectedArcHandles(state);
+    drawSelectedHandles(state);
     drawOverlayWarnings(state);
   }
 
@@ -303,9 +304,18 @@ export function createRenderer(canvas, store, analyzer) {
     });
   }
 
-  function drawSelectedArcHandles(state) {
+  function drawSelectedHandles(state) {
     const selected = findSelectedSprinkler(state);
-    if (!selected || selected.pattern !== "arc" || selected.sweepDeg >= 360 || !state.scale.pixelsPerUnit) {
+    if (!selected || !state.scale.pixelsPerUnit) {
+      return;
+    }
+
+    if (isStripCoverage(selected)) {
+      drawSelectedStripHandles(state, selected);
+      return;
+    }
+
+    if (selected.pattern !== "arc" || selected.sweepDeg >= 360) {
       return;
     }
 
@@ -325,10 +335,36 @@ export function createRenderer(canvas, store, analyzer) {
     ctx.restore();
   }
 
+  function drawSelectedStripHandles(state, selected) {
+    const handles = buildStripHandlePositions(state, selected);
+    ctx.save();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(255,255,255,0.88)";
+    ctx.beginPath();
+    ctx.moveTo(handles.center.x, handles.center.y);
+    ctx.lineTo(handles.primary.x, handles.primary.y);
+    ctx.moveTo(handles.center.x, handles.center.y);
+    ctx.lineTo(handles.secondary.x, handles.secondary.y);
+    ctx.stroke();
+    drawHandle(handles.primary, "#d55d3f");
+    drawHandle(handles.secondary, "#4f5bff");
+    ctx.restore();
+  }
+
   function drawSprinklerShape(state, sprinkler) {
+    ctx.beginPath();
+    if (isStripCoverage(sprinkler) && state.scale.pixelsPerUnit) {
+      const points = buildStripFootprintWorldPoints(sprinkler, state.scale.pixelsPerUnit).map((point) =>
+        worldToScreen(point, state.view),
+      );
+      ctx.moveTo(points[0].x, points[0].y);
+      points.slice(1).forEach((point) => ctx.lineTo(point.x, point.y));
+      ctx.closePath();
+      return;
+    }
+
     const center = worldToScreen({ x: sprinkler.x, y: sprinkler.y }, state.view);
     const radius = toPixels(sprinkler.radius, state.scale) * state.view.zoom;
-    ctx.beginPath();
     if (sprinkler.pattern === "full" || sprinkler.sweepDeg >= 360) {
       ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
       return;
@@ -471,7 +507,7 @@ export function createRenderer(canvas, store, analyzer) {
   function getArcHandleHit(worldPoint) {
     const state = store.getState();
     const selected = findSelectedSprinkler(state);
-    if (!selected || selected.pattern !== "arc" || selected.sweepDeg >= 360 || !state.scale.pixelsPerUnit) {
+    if (!selected || isStripCoverage(selected) || selected.pattern !== "arc" || selected.sweepDeg >= 360 || !state.scale.pixelsPerUnit) {
       return null;
     }
 
@@ -489,7 +525,7 @@ export function createRenderer(canvas, store, analyzer) {
   function getRadiusHandleHit(worldPoint) {
     const state = store.getState();
     const selected = findSelectedSprinkler(state);
-    if (!selected || selected.pattern !== "arc" || selected.sweepDeg >= 360 || !state.scale.pixelsPerUnit) {
+    if (!selected || isStripCoverage(selected) || selected.pattern !== "arc" || selected.sweepDeg >= 360 || !state.scale.pixelsPerUnit) {
       return null;
     }
 
@@ -501,12 +537,32 @@ export function createRenderer(canvas, store, analyzer) {
     return null;
   }
 
+  function getStripHandleHit(worldPoint) {
+    const state = store.getState();
+    const selected = findSelectedSprinkler(state);
+    if (!selected || !isStripCoverage(selected) || !state.scale.pixelsPerUnit) {
+      return null;
+    }
+
+    const handles = buildStripHandlePositions(state, selected);
+    const worldHitRadius = Math.max(10 / state.view.zoom, 6 / state.scale.pixelsPerUnit);
+    if (distanceSquared(worldPoint, handles.primaryWorld) <= worldHitRadius * worldHitRadius) {
+      return { id: selected.id, edge: "primary" };
+    }
+    if (distanceSquared(worldPoint, handles.secondaryWorld) <= worldHitRadius * worldHitRadius) {
+      return { id: selected.id, edge: "secondary" };
+    }
+    return null;
+  }
+
   function buildExportSummary() {
     const state = store.getState();
     return {
       sprinklerCount: state.sprinklers.length,
       meanRadius: state.sprinklers.length
-        ? state.sprinklers.reduce((sum, sprinkler) => sum + sprinkler.radius, 0) / state.sprinklers.length
+        ? state.sprinklers.reduce((sum, sprinkler) =>
+          sum + (isStripCoverage(sprinkler) ? Math.max(sprinkler.stripLength ?? 0, sprinkler.stripWidth ?? 0) : sprinkler.radius), 0,
+        ) / state.sprinklers.length
         : 0,
       backgroundSize:
         state.scale.calibrated && state.background.width && state.background.height
@@ -521,7 +577,19 @@ export function createRenderer(canvas, store, analyzer) {
     getHitSprinkler,
     getArcHandleHit,
     getRadiusHandleHit,
+    getStripHandleHit,
     buildExportSummary,
+  };
+}
+
+function buildStripHandlePositions(state, sprinkler) {
+  const worldHandles = buildStripHandleWorldPoints(sprinkler, state.scale.pixelsPerUnit);
+  return {
+    center: worldToScreen({ x: sprinkler.x, y: sprinkler.y }, state.view),
+    primary: worldToScreen(worldHandles.primaryWorld, state.view),
+    secondary: worldToScreen(worldHandles.secondaryWorld, state.view),
+    primaryWorld: worldHandles.primaryWorld,
+    secondaryWorld: worldHandles.secondaryWorld,
   };
 }
 
