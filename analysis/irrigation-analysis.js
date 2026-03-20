@@ -547,18 +547,8 @@ function buildRecommendationBase(sprinkler, zone, zonesById, details) {
 
 function buildSprayDatabase(series) {
   const fixedByRadius = new Map();
-  for (const nozzle of series?.u_series_fixed_mpr ?? []) {
-    const radius = Number(nozzle.radius_ft);
-    if (!fixedByRadius.has(radius)) {
-      fixedByRadius.set(radius, new Map());
-    }
-    fixedByRadius.get(radius).set(Number(nozzle.arc), {
-      series: nozzle.series,
-      radiusFt: Number(nozzle.radius_ft),
-      flowGpm: Number(nozzle.flow_gpm),
-      precipInHr: Number(nozzle.precip_in_hr),
-    });
-  }
+  addFixedSpraySeries(fixedByRadius, series?.mpr_series_fixed ?? [], { overwriteExisting: true });
+  addFixedSpraySeries(fixedByRadius, series?.u_series_fixed_mpr ?? [], { overwriteExisting: false });
 
   const variableByRadius = new Map();
   for (const nozzle of series?.he_van_high_efficiency ?? []) {
@@ -575,6 +565,25 @@ function buildSprayDatabase(series) {
     fixedByRadius,
     variableByRadius,
   };
+}
+
+function addFixedSpraySeries(fixedByRadius, nozzles, { overwriteExisting }) {
+  for (const nozzle of nozzles) {
+    const radius = Number(nozzle.radius_ft);
+    const arc = Number(nozzle.arc);
+    if (!fixedByRadius.has(radius)) {
+      fixedByRadius.set(radius, new Map());
+    }
+    if (!overwriteExisting && fixedByRadius.get(radius).has(arc)) {
+      continue;
+    }
+    fixedByRadius.get(radius).set(arc, {
+      series: nozzle.series,
+      radiusFt: Number(nozzle.radius_ft),
+      flowGpm: Number(nozzle.flow_gpm),
+      precipInHr: Number(nozzle.precip_in_hr),
+    });
+  }
 }
 
 function sprinklerCanUseSpray(sprinkler, sprayData, assumptions) {

@@ -7,6 +7,7 @@ Generated from `sprinkler-layout.json` and `sprinkler_data.json`.
 - Design flow cap: 14.00 GPM per zone.
 - Spray versus rotor classification is based on whether any spray radius class in the dataset can meet the head under the no-undershoot plus allowed reduction rule, so larger spray options like `18-VAN` are preferred over mixing in rotors when they fit.
 - Fixed spray arcs are normalized when the drawn arc is within +/-10 degrees of 90, 180, or 360 and that radius class has a fixed nozzle option.
+- Fixed spray preference order is Rain Bird MPR first, then U-Series as a fallback when no matching MPR fixed nozzle exists at that radius and arc.
 - All head types are assumed to allow up to 25% radius reduction with the screw adjustment.
 - Rotor optimization compares Rain Bird 5004 PRS MPR pre-balanced sets plus the standard-angle 25 degree and low-angle 10 degree nozzle families.
 - The 5004 PRS Red, Green, and Beige pre-balanced sets are treated as discrete fixed-flow nozzle choices: `Q_90`, `T_120`, `H_180`, and `F_360`.
@@ -20,21 +21,21 @@ Generated from `sprinkler-layout.json` and `sprinkler_data.json`.
 ## Zone East
 
 - Heads analyzed: 6
-- Estimated zone flow: 6.56 GPM
+- Estimated zone flow: 6.80 GPM
 - Flow status: Within 14 GPM
 
 | Head | Location | Family | Body | Nozzle | Arc | Radius | Flow | Actual PR | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| S-21 | (669.6, 893.1) | spray | Rain Bird 1800 PRS | U-12 | 90 deg | 12.00 ft -> 12 ft | 0.60 GPM | 0.511 in/hr | Fixed arc U-12 selected for 90 degrees. |
+| S-21 | (669.6, 893.1) | spray | Rain Bird 1800 PRS | 12Q | 90 deg | 12.00 ft -> 12 ft | 0.65 GPM | 0.553 in/hr | Fixed arc 12Q selected for 90 degrees. |
 | S-22 | (875.6, 891.0) | spray | Rain Bird 1800 PRS | HE-VAN-15 | 54 deg | 12.05 ft -> 15 ft | 0.56 GPM | 0.785 in/hr | Variable arc selected because the drawn arc is not close to a fixed pattern or the radius class is variable-only. |
-| S-23 | (761.8, 888.5) | spray | Rain Bird 1800 PRS | HE-VAN-10 | 178 deg | 10.00 ft -> 10 ft | 0.80 GPM | 0.497 in/hr | Variable arc selected because the drawn arc is not close to a fixed pattern or the radius class is variable-only. |
-| S-24 | (806.7, 802.9) | spray | Rain Bird 1800 PRS | U-12 | 180 deg | 10.07 ft -> 12 ft | 1.20 GPM | 0.725 in/hr | Fixed arc U-12 selected for 180 degrees. |
+| S-23 | (761.8, 888.5) | spray | Rain Bird 1800 PRS | 10H | 178 deg -> 180 deg | 10.00 ft -> 10 ft | 0.79 GPM | 0.484 in/hr | Fixed arc 10H selected for 180 degrees. |
+| S-24 | (806.7, 802.9) | spray | Rain Bird 1800 PRS | 12H | 180 deg | 10.07 ft -> 12 ft | 1.30 GPM | 0.786 in/hr | Fixed arc 12H selected for 180 degrees. |
 | S-25 | (777.8, 758.6) | spray | Rain Bird 1800 PRS | HE-VAN-15 | 213 deg | 12.53 ft -> 15 ft | 2.20 GPM | 0.726 in/hr | Variable arc selected because the drawn arc is not close to a fixed pattern or the radius class is variable-only. |
-| S-26 | (669.5, 757.6) | spray | Rain Bird 1800 PRS | U-12 | 180 deg | 12.00 ft -> 12 ft | 1.20 GPM | 0.511 in/hr | Fixed arc U-12 selected for 180 degrees. |
+| S-26 | (669.5, 757.6) | spray | Rain Bird 1800 PRS | 12H | 180 deg | 12.00 ft -> 12 ft | 1.30 GPM | 0.553 in/hr | Fixed arc 12H selected for 180 degrees. |
 
 ### Notes
 
-- Recommended precipitation values span 0.29 in/hr. Review for cross-family mismatch.
+- Recommended precipitation values span 0.30 in/hr. Review for cross-family mismatch.
 
 ## Zone NE
 
@@ -58,58 +59,58 @@ Generated from `sprinkler-layout.json` and `sprinkler_data.json`.
 ## Zone North
 
 - Heads analyzed: 11
-- Estimated zone flow: 16.03 GPM
+- Estimated zone flow: 16.19 GPM
 - Flow status: Over 14 GPM
 
 | Head | Location | Family | Body | Nozzle | Arc | Radius | Flow | Actual PR | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| S-16 | (512.1, 454.0) | spray | Rain Bird 1800 PRS | U-15 | 180 deg | 15.00 ft -> 15 ft | 1.85 GPM | 0.504 in/hr | Fixed arc U-15 selected for 180 degrees. |
-| S-16 copy | (535.5, 630.0) | spray | Rain Bird 1800 PRS | U-15 | 90 deg | 15.00 ft -> 15 ft | 0.92 GPM | 0.501 in/hr | Fixed arc U-15 selected for 90 degrees. |
-| S-16 copy | (370.8, 486.9) | spray | Rain Bird 1800 PRS | U-15 | 180 deg | 15.00 ft -> 15 ft | 1.85 GPM | 0.504 in/hr | Fixed arc U-15 selected for 180 degrees. |
-| S-16 copy copy | (397.1, 630.0) | spray | Rain Bird 1800 PRS | U-15 | 181 deg -> 180 deg | 15.00 ft -> 15 ft | 1.85 GPM | 0.504 in/hr | Fixed arc U-15 selected for 180 degrees. |
-| S-19 | (494.5, 543.9) | spray | Rain Bird 1800 PRS | HE-VAN-10 | 360 deg | 10.00 ft -> 10 ft | 1.62 GPM | 0.497 in/hr | Variable arc selected because the drawn arc is not close to a fixed pattern or the radius class is variable-only. |
-| S-27 | (277.6, 632.1) | spray | Rain Bird 1800 PRS | U-15 | 180 deg | 12.84 ft -> 15 ft | 1.85 GPM | 0.688 in/hr | Fixed arc U-15 selected for 180 degrees. |
-| S-28 | (258.0, 511.2) | spray | Rain Bird 1800 PRS | U-15 | 180 deg | 12.67 ft -> 15 ft | 1.85 GPM | 0.707 in/hr | Fixed arc U-15 selected for 180 degrees. |
-| S-29 | (145.8, 524.7) | spray | Rain Bird 1800 PRS | U-12 | 180 deg | 12.00 ft -> 12 ft | 1.20 GPM | 0.511 in/hr | Fixed arc U-12 selected for 180 degrees. |
-| S-30 | (165.2, 634.4) | spray | Rain Bird 1800 PRS | U-12 | 180 deg | 11.85 ft -> 12 ft | 1.20 GPM | 0.524 in/hr | Fixed arc U-12 selected for 180 degrees. |
-| S-31 | (46.9, 658.8) | spray | Rain Bird 1800 PRS | U-15 | 90 deg | 12.65 ft -> 15 ft | 0.92 GPM | 0.705 in/hr | Fixed arc U-15 selected for 90 degrees. |
-| S-32 | (45.7, 536.7) | spray | Rain Bird 1800 PRS | U-15 | 95 deg -> 90 deg | 13.08 ft -> 15 ft | 0.92 GPM | 0.659 in/hr | Fixed arc U-15 selected for 90 degrees. |
+| S-16 | (512.1, 454.0) | spray | Rain Bird 1800 PRS | 15H | 180 deg | 15.00 ft -> 15 ft | 1.85 GPM | 0.504 in/hr | Fixed arc 15H selected for 180 degrees. |
+| S-16 copy | (535.5, 630.0) | spray | Rain Bird 1800 PRS | 15Q | 90 deg | 15.00 ft -> 15 ft | 0.92 GPM | 0.501 in/hr | Fixed arc 15Q selected for 90 degrees. |
+| S-16 copy | (370.8, 486.9) | spray | Rain Bird 1800 PRS | 15H | 180 deg | 15.00 ft -> 15 ft | 1.85 GPM | 0.504 in/hr | Fixed arc 15H selected for 180 degrees. |
+| S-16 copy copy | (397.1, 630.0) | spray | Rain Bird 1800 PRS | 15H | 181 deg -> 180 deg | 15.00 ft -> 15 ft | 1.85 GPM | 0.504 in/hr | Fixed arc 15H selected for 180 degrees. |
+| S-19 | (494.5, 543.9) | spray | Rain Bird 1800 PRS | 10F | 360 deg | 10.00 ft -> 10 ft | 1.58 GPM | 0.484 in/hr | Fixed arc 10F selected for 360 degrees. |
+| S-27 | (277.6, 632.1) | spray | Rain Bird 1800 PRS | 15H | 180 deg | 12.84 ft -> 15 ft | 1.85 GPM | 0.688 in/hr | Fixed arc 15H selected for 180 degrees. |
+| S-28 | (258.0, 511.2) | spray | Rain Bird 1800 PRS | 15H | 180 deg | 12.67 ft -> 15 ft | 1.85 GPM | 0.707 in/hr | Fixed arc 15H selected for 180 degrees. |
+| S-29 | (145.8, 524.7) | spray | Rain Bird 1800 PRS | 12H | 180 deg | 12.00 ft -> 12 ft | 1.30 GPM | 0.553 in/hr | Fixed arc 12H selected for 180 degrees. |
+| S-30 | (165.2, 634.4) | spray | Rain Bird 1800 PRS | 12H | 180 deg | 11.85 ft -> 12 ft | 1.30 GPM | 0.568 in/hr | Fixed arc 12H selected for 180 degrees. |
+| S-31 | (46.9, 658.8) | spray | Rain Bird 1800 PRS | 15Q | 90 deg | 12.65 ft -> 15 ft | 0.92 GPM | 0.705 in/hr | Fixed arc 15Q selected for 90 degrees. |
+| S-32 | (45.7, 536.7) | spray | Rain Bird 1800 PRS | 15Q | 95 deg -> 90 deg | 13.08 ft -> 15 ft | 0.92 GPM | 0.659 in/hr | Fixed arc 15Q selected for 90 degrees. |
 
 ### Notes
 
-- Zone exceeds the 14.00 GPM design cap by 2.03 GPM.
-- Recommended precipitation values span 0.21 in/hr. Review for cross-family mismatch.
+- Zone exceeds the 14.00 GPM design cap by 2.19 GPM.
+- Recommended precipitation values span 0.22 in/hr. Review for cross-family mismatch.
 
 ### Suggested Split
 
 - spray-15 group: 12.01 GPM (S-16, S-16 copy, S-16 copy, S-16 copy copy, S-27, S-28, S-31, S-32).
-- spray-12 + spray-10 group: 4.02 GPM (S-29, S-30, S-19).
+- spray-12 + spray-10 group: 4.18 GPM (S-29, S-30, S-19).
 
 ## Zone W
 
 - Heads analyzed: 9
-- Estimated zone flow: 5.83 GPM
+- Estimated zone flow: 6.00 GPM
 - Flow status: Within 14 GPM
 
 | Head | Location | Family | Body | Nozzle | Arc | Radius | Flow | Actual PR | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| S-12 | (161.5, 787.6) | spray | Rain Bird 1800 PRS | U-12 | 90 deg | 12.00 ft -> 12 ft | 0.60 GPM | 0.511 in/hr | Fixed arc U-12 selected for 90 degrees. |
-| S-13 | (45.7, 786.9) | spray | Rain Bird 1800 PRS | U-12 | 90 deg | 12.00 ft -> 12 ft | 0.60 GPM | 0.511 in/hr | Fixed arc U-12 selected for 90 degrees. |
-| S-14 | (161.5, 920.9) | spray | Rain Bird 1800 PRS | U-12 | 90 deg | 12.00 ft -> 12 ft | 0.60 GPM | 0.511 in/hr | Fixed arc U-12 selected for 90 degrees. |
-| S-15 | (138.1, 920.9) | spray | Rain Bird 1800 PRS | HE-VAN-10 | 90 deg | 10.00 ft -> 10 ft | 0.41 GPM | 0.497 in/hr | Variable arc selected because the drawn arc is not close to a fixed pattern or the radius class is variable-only. |
-| S-7 | (44.7, 1121.1) | spray | Rain Bird 1800 PRS | HE-VAN-10 | 89 deg | 9.75 ft -> 10 ft | 0.40 GPM | 0.522 in/hr | Variable arc selected because the drawn arc is not close to a fixed pattern or the radius class is variable-only. |
-| S-7 copy | (138.1, 1121.1) | spray | Rain Bird 1800 PRS | HE-VAN-10 | 91 deg | 9.75 ft -> 10 ft | 0.41 GPM | 0.522 in/hr | Variable arc selected because the drawn arc is not close to a fixed pattern or the radius class is variable-only. |
-| S-7 copy | (44.3, 1029.5) | spray | Rain Bird 1800 PRS | HE-VAN-10 | 180 deg | 9.91 ft -> 10 ft | 0.81 GPM | 0.506 in/hr | Variable arc selected because the drawn arc is not close to a fixed pattern or the radius class is variable-only. |
-| S-7 copy copy | (138.0, 1027.0) | spray | Rain Bird 1800 PRS | HE-VAN-10 | 180 deg | 9.94 ft -> 10 ft | 0.81 GPM | 0.503 in/hr | Variable arc selected because the drawn arc is not close to a fixed pattern or the radius class is variable-only. |
-| S-7 copy copy | (47.2, 936.3) | spray | Rain Bird 1800 PRS | U-12 | 180 deg | 10.08 ft -> 12 ft | 1.20 GPM | 0.724 in/hr | Fixed arc U-12 selected for 180 degrees. |
+| S-12 | (161.5, 787.6) | spray | Rain Bird 1800 PRS | 12Q | 90 deg | 12.00 ft -> 12 ft | 0.65 GPM | 0.553 in/hr | Fixed arc 12Q selected for 90 degrees. |
+| S-13 | (45.7, 786.9) | spray | Rain Bird 1800 PRS | 12Q | 90 deg | 12.00 ft -> 12 ft | 0.65 GPM | 0.553 in/hr | Fixed arc 12Q selected for 90 degrees. |
+| S-14 | (161.5, 920.9) | spray | Rain Bird 1800 PRS | 12Q | 90 deg | 12.00 ft -> 12 ft | 0.65 GPM | 0.553 in/hr | Fixed arc 12Q selected for 90 degrees. |
+| S-15 | (138.1, 920.9) | spray | Rain Bird 1800 PRS | 10Q | 90 deg | 10.00 ft -> 10 ft | 0.39 GPM | 0.478 in/hr | Fixed arc 10Q selected for 90 degrees. |
+| S-7 | (44.7, 1121.1) | spray | Rain Bird 1800 PRS | 10Q | 89 deg -> 90 deg | 9.75 ft -> 10 ft | 0.39 GPM | 0.503 in/hr | Fixed arc 10Q selected for 90 degrees. |
+| S-7 copy | (138.1, 1121.1) | spray | Rain Bird 1800 PRS | 10Q | 91 deg -> 90 deg | 9.75 ft -> 10 ft | 0.39 GPM | 0.503 in/hr | Fixed arc 10Q selected for 90 degrees. |
+| S-7 copy | (44.3, 1029.5) | spray | Rain Bird 1800 PRS | 10H | 180 deg | 9.91 ft -> 10 ft | 0.79 GPM | 0.493 in/hr | Fixed arc 10H selected for 180 degrees. |
+| S-7 copy copy | (138.0, 1027.0) | spray | Rain Bird 1800 PRS | 10H | 180 deg | 9.94 ft -> 10 ft | 0.79 GPM | 0.490 in/hr | Fixed arc 10H selected for 180 degrees. |
+| S-7 copy copy | (47.2, 936.3) | spray | Rain Bird 1800 PRS | 12H | 180 deg | 10.08 ft -> 12 ft | 1.30 GPM | 0.784 in/hr | Fixed arc 12H selected for 180 degrees. |
 
 ### Notes
 
-- Recommended precipitation values span 0.23 in/hr. Review for cross-family mismatch.
+- Recommended precipitation values span 0.31 in/hr. Review for cross-family mismatch.
 
 ## Summary
 
-- East: 6.56 GPM, OK.
+- East: 6.80 GPM, OK.
 - NE: 10.99 GPM, OK.
-- North: 16.03 GPM, Over 14 GPM.
-- W: 5.83 GPM, OK.
+- North: 16.19 GPM, Over 14 GPM.
+- W: 6.00 GPM, OK.

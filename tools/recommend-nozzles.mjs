@@ -39,6 +39,7 @@ reportLines.push("");
 reportLines.push(`- Design flow cap: ${ASSUMPTIONS.designFlowLimitGpm.toFixed(2)} GPM per zone.`);
 reportLines.push("- Spray versus rotor classification is based on whether any spray radius class in the dataset can meet the head under the no-undershoot plus allowed reduction rule, so larger spray options like `18-VAN` are preferred over mixing in rotors when they fit.");
 reportLines.push(`- Fixed spray arcs are normalized when the drawn arc is within +/-${ASSUMPTIONS.sprayArcNormalizeToleranceDeg} degrees of 90, 180, or 360 and that radius class has a fixed nozzle option.`);
+reportLines.push("- Fixed spray preference order is Rain Bird MPR first, then U-Series as a fallback when no matching MPR fixed nozzle exists at that radius and arc.");
 reportLines.push(`- All head types are assumed to allow up to ${(ASSUMPTIONS.universalMaxRadiusReductionPct * 100).toFixed(0)}% radius reduction with the screw adjustment.`);
 reportLines.push("- Rotor optimization compares Rain Bird 5004 PRS MPR pre-balanced sets plus the standard-angle 25 degree and low-angle 10 degree nozzle families.");
 reportLines.push("- The 5004 PRS Red, Green, and Beige pre-balanced sets are treated as discrete fixed-flow nozzle choices: `Q_90`, `T_120`, `H_180`, and `F_360`.");
@@ -361,18 +362,8 @@ function appendZoneReport(lines, zoneReport) {
 
 function buildSprayDatabase(series) {
   const fixedByRadius = new Map();
-  for (const nozzle of series.u_series_fixed_mpr) {
-    const radius = nozzle.radius_ft;
-    if (!fixedByRadius.has(radius)) {
-      fixedByRadius.set(radius, new Map());
-    }
-    fixedByRadius.get(radius).set(Number(nozzle.arc), {
-      series: nozzle.series,
-      radiusFt: nozzle.radius_ft,
-      flowGpm: nozzle.flow_gpm,
-      precipInHr: nozzle.precip_in_hr,
-    });
-  }
+  addFixedSpraySeries(fixedByRadius, series.mpr_series_fixed ?? [], { overwriteExisting: true });
+  addFixedSpraySeries(fixedByRadius, series.u_series_fixed_mpr ?? [], { overwriteExisting: false });
 
   const variableByRadius = new Map();
   for (const nozzle of series.he_van_high_efficiency) {
@@ -389,6 +380,25 @@ function buildSprayDatabase(series) {
     fixedByRadius,
     variableByRadius,
   };
+}
+
+function addFixedSpraySeries(fixedByRadius, nozzles, { overwriteExisting }) {
+  for (const nozzle of nozzles) {
+    const radius = Number(nozzle.radius_ft);
+    const arc = Number(nozzle.arc);
+    if (!fixedByRadius.has(radius)) {
+      fixedByRadius.set(radius, new Map());
+    }
+    if (!overwriteExisting && fixedByRadius.get(radius).has(arc)) {
+      continue;
+    }
+    fixedByRadius.get(radius).set(arc, {
+      series: nozzle.series,
+      radiusFt: Number(nozzle.radius_ft),
+      flowGpm: Number(nozzle.flow_gpm),
+      precipInHr: Number(nozzle.precip_in_hr),
+    });
+  }
 }
 
 function sprinklerCanUseSpray(sprinkler, sprayData, assumptions) {
