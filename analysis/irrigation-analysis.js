@@ -50,6 +50,20 @@ function buildEmptySnapshot(designFlowLimitGpm, targetDepthInches = 1) {
     zones: [],
     selectedZoneId: null,
     selectedZone: null,
+    parts: {
+      groupBy: "body_nozzle_split",
+      includedZoneIds: [],
+      excludedZoneIds: [],
+      zones: [],
+      rows: [],
+      bodyRows: [],
+      nozzleRows: [],
+      showZoneUsage: true,
+      includedHeadCount: 0,
+      lineItemCount: 0,
+      totalBodyQuantity: 0,
+      totalNozzleQuantity: 0,
+    },
     grid: null,
     summary: {
       analyzedHeads: 0,
@@ -76,6 +90,10 @@ function buildCacheKey(state) {
     analysis: {
       targetDepthInches: state.analysis?.targetDepthInches,
     },
+    parts: {
+      groupBy: state.parts?.groupBy,
+      showZoneUsage: state.parts?.showZoneUsage,
+    },
     view: {
       heatmapCellPx: state.view?.heatmapCellPx,
       analysisZoneId: state.view?.analysisZoneId,
@@ -88,6 +106,7 @@ function buildCacheKey(state) {
       name: zone.name,
       color: zone.color,
       runtimeMinutes: zone.runtimeMinutes ?? null,
+      includeInPartsList: zone.includeInPartsList !== false,
     })),
     sprinklers: (state.sprinklers ?? []).map((sprinkler) => ({
       id: sprinkler.id,
@@ -101,6 +120,12 @@ function buildCacheKey(state) {
       hidden: sprinkler.hidden,
       label: sprinkler.label,
       zoneId: sprinkler.zoneId,
+      coverageModel: sprinkler.coverageModel,
+      stripMode: sprinkler.stripMode,
+      stripMirror: sprinkler.stripMirror,
+      stripLength: sprinkler.stripLength,
+      stripWidth: sprinkler.stripWidth,
+      stripRotationDeg: sprinkler.stripRotationDeg,
     })),
   });
 }
@@ -181,6 +206,7 @@ function analyzeProject(state, context) {
       )];
     }),
   );
+  const parts = buildPartsSnapshot(state, recommendations, zonesById);
 
   return {
     designFlowLimitGpm: context.assumptions.designFlowLimitGpm,
@@ -191,6 +217,7 @@ function analyzeProject(state, context) {
     zones: zoneSummaries,
     selectedZoneId,
     selectedZone,
+    parts,
     grid,
     summary: {
       analyzedHeads: recommendations.length,
@@ -201,6 +228,48 @@ function analyzeProject(state, context) {
       fullScheduleMaxDepthInches: grid?.fullScheduleDepth.maxInches ?? 0,
       overLimitZones: zoneSummaries.filter((zone) => zone.isOverLimit).length,
     },
+  };
+}
+
+function buildPartsSnapshot(state, recommendations, zonesById) {
+  const groupBy = ["exact_sku", "sku_family", "body_nozzle_split"].includes(state.parts?.groupBy)
+    ? state.parts.groupBy
+    : "body_nozzle_split";
+  const showZoneUsage = state.parts?.showZoneUsage !== false;
+  const includedZoneIds = new Set(
+    (state.zones ?? [])
+      .filter((zone) => zone.includeInPartsList !== false)
+      .map((zone) => zone.id),
+  );
+  const zoneOrder = new Map((state.zones ?? []).map((zone, index) => [zone.id, index]));
+  const zoneSummaries = (state.zones ?? []).map((zone) => ({
+    id: zone.id,
+    name: zone.name,
+    color: zone.color,
+    included: zone.includeInPartsList !== false,
+    headCount: recommendations.filter((recommendation) => recommendation.zoneId === zone.id).length,
+  }));
+
+  const filteredRecommendations = recommendations.filter((recommendation) =>
+    recommendation.zoneId ? includedZoneIds.has(recommendation.zoneId) : true,
+  );
+  const rows = buildPartsRows(filteredRecommendations, groupBy, zoneOrder, zonesById);
+  const bodyRows = rows.filter((row) => row.category === "Body");
+  const nozzleRows = rows.filter((row) => row.category === "Nozzle");
+
+  return {
+    groupBy,
+    showZoneUsage,
+    includedZoneIds: zoneSummaries.filter((zone) => zone.included).map((zone) => zone.id),
+    excludedZoneIds: zoneSummaries.filter((zone) => !zone.included).map((zone) => zone.id),
+    zones: zoneSummaries,
+    rows,
+    bodyRows,
+    nozzleRows,
+    includedHeadCount: filteredRecommendations.length,
+    lineItemCount: rows.length,
+    totalBodyQuantity: bodyRows.reduce((sum, row) => sum + row.quantity, 0),
+    totalNozzleQuantity: nozzleRows.reduce((sum, row) => sum + row.quantity, 0),
   };
 }
 
@@ -1501,6 +1570,130 @@ function calculateActualStripPrecipInHr(flowGpm, lengthFt, widthFt) {
 
 function calculateActualStripFlowGpm(precipInHr, lengthFt, widthFt) {
   return (Math.max(0.1, Number(precipInHr) || 0.1) * Math.max(0.1, Number(lengthFt) || 0.1) * Math.max(0.1, Number(widthFt) || 0.1)) / 96.3;
+}
+
+function buildPartsRows(recommendations, groupBy, zoneOrder, zonesById) {
+  const rows = new Map();
+
+  for (const recommendation of recommendations) {
+    const zoneName = recommendation.zoneId
+      ? zonesById.get(recommendation.zoneId)?.name ?? recommendation.zoneName ?? "Unassigned"
+      : recommendation.zoneName ?? "Unassigned";
+    addPartRow(rows, {
+      category: "Body",
+      itemKey: `body:${recommendation.body}`,
+      itemLabel: recommendation.body,
+      zoneName,
+      zoneOrderValue: recommendation.zoneId ? (zoneOrder.get(recommendation.zoneId) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER,
+      note: buildBodyPartNote(recommendation),
+      variant: recommendation.body,
+    });
+
+    const nozzleLabel = resolveNozzlePartLabel(recommendation, groupBy);
+    addPartRow(rows, {
+      category: "Nozzle",
+      itemKey: `nozzle:${nozzleLabel}`,
+      itemLabel: nozzleLabel,
+      zoneName,
+      zoneOrderValue: recommendation.zoneId ? (zoneOrder.get(recommendation.zoneId) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER,
+      note: buildNozzlePartNote(recommendation),
+      variant: recommendation.nozzle,
+      exactLabel: recommendation.nozzle,
+    });
+  }
+
+  return [...rows.values()]
+    .map((row) => finalizePartRow(row, groupBy))
+    .sort((a, b) => comparePartRows(a, b));
+}
+
+function addPartRow(rows, input) {
+  const existing = rows.get(input.itemKey) ?? {
+    category: input.category,
+    itemKey: input.itemKey,
+    itemLabel: input.itemLabel,
+    quantity: 0,
+    zones: new Map(),
+    notes: new Set(),
+    variants: new Set(),
+  };
+
+  existing.quantity += 1;
+  existing.zones.set(input.zoneName, input.zoneOrderValue);
+  if (input.note) {
+    existing.notes.add(input.note);
+  }
+  if (input.variant && input.exactLabel && input.itemLabel !== input.exactLabel) {
+    existing.variants.add(input.exactLabel);
+  }
+  rows.set(input.itemKey, existing);
+}
+
+function finalizePartRow(row, groupBy) {
+  const zones = [...row.zones.entries()]
+    .sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0]))
+    .map(([zoneName]) => zoneName);
+  const notes = [...row.notes];
+  if (groupBy === "sku_family" && row.category === "Nozzle" && row.variants.size) {
+    notes.push(`Variants: ${[...row.variants].sort().join(", ")}`);
+  }
+
+  return {
+    category: row.category,
+    itemKey: row.itemKey,
+    itemLabel: row.itemLabel,
+    quantity: row.quantity,
+    zones,
+    zonesLabel: zones.join(", "),
+    notes: notes.join(" | "),
+  };
+}
+
+function comparePartRows(a, b) {
+  if (a.category !== b.category) {
+    return a.category.localeCompare(b.category);
+  }
+  return a.itemLabel.localeCompare(b.itemLabel, undefined, { numeric: true, sensitivity: "base" });
+}
+
+function resolveNozzlePartLabel(recommendation, groupBy) {
+  if (groupBy === "sku_family") {
+    return recommendation.skuFamily ?? recommendation.nozzle;
+  }
+  return recommendation.nozzle;
+}
+
+function buildBodyPartNote(recommendation) {
+  if (recommendation.coverageModel === "strip") {
+    return "Used with strip nozzles";
+  }
+  if (recommendation.family === "rotor") {
+    return "Rotor body";
+  }
+  return "";
+}
+
+function buildNozzlePartNote(recommendation) {
+  const notes = [];
+  if (recommendation.coverageModel === "strip") {
+    notes.push(`${capitalize(recommendation.stripMode ?? "strip")} strip`);
+  }
+  if (recommendation.nozzleType === "variable") {
+    notes.push("Variable spray");
+  } else if (recommendation.nozzleType === "fixed") {
+    notes.push("Fixed spray");
+  } else if (recommendation.nozzleType === "strip") {
+    notes.push("Strip nozzle");
+  } else if (recommendation.nozzleType === "pre-balanced rotor") {
+    notes.push("Pre-balanced rotor");
+  } else if (recommendation.nozzleType === "standard-angle rotor") {
+    notes.push("Standard-angle rotor");
+  } else if (recommendation.nozzleType === "low-angle rotor") {
+    notes.push("Low-angle rotor");
+  } else if (recommendation.nozzleType === "adjustable rotor") {
+    notes.push("Adjustable rotor");
+  }
+  return notes.join(" | ");
 }
 
 function pickStripCandidate(strip, candidates = []) {

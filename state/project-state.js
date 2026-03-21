@@ -17,6 +17,7 @@ const HISTORY_ACTIONS = new Set([
   "SET_ACTIVE_ZONE",
   "SET_ZONE_VIEW_MODE",
   "SET_FOCUSED_ZONE",
+  "SET_ALL_ZONES_PARTS_INCLUSION",
 ]);
 
 const ZONE_COLORS = ["#d55d3f", "#4d8b31", "#3876b4", "#9d59c1", "#d18e2f", "#2e8b85"];
@@ -48,6 +49,11 @@ export function createInitialState() {
     },
     analysis: {
       targetDepthInches: 1,
+    },
+    parts: {
+      groupBy: "body_nozzle_split",
+      scopeMode: "included_zones_only",
+      showZoneUsage: true,
     },
     zones: [],
     sprinklers: [],
@@ -82,6 +88,7 @@ export function createInitialState() {
       cursorWorld: null,
       activeZoneId: null,
       focusedZoneId: null,
+      appScreen: "layout",
     },
   };
 }
@@ -151,6 +158,9 @@ function applyAction(state, action) {
         ? action.payload.pattern
         : "full";
       return state;
+    case "SET_APP_SCREEN":
+      state.ui.appScreen = action.payload.screen === "parts" ? "parts" : "layout";
+      return state;
     case "SET_CURSOR_WORLD":
       state.ui.cursorWorld = action.payload.point;
       return state;
@@ -197,6 +207,12 @@ function applyAction(state, action) {
         ...sanitizeAnalysisPatch(action.payload),
       };
       return state;
+    case "SET_PARTS_VIEW":
+      state.parts = {
+        ...state.parts,
+        ...sanitizePartsPatch(action.payload),
+      };
+      return state;
     case "CREATE_ZONE": {
       const zone = {
         id: action.payload.id,
@@ -204,6 +220,7 @@ function applyAction(state, action) {
         color: action.payload.color,
         visible: true,
         runtimeMinutes: null,
+        includeInPartsList: true,
       };
       state.zones.push(zone);
       state.ui.activeZoneId = zone.id;
@@ -236,6 +253,11 @@ function applyAction(state, action) {
       return state;
     case "SET_FOCUSED_ZONE":
       state.ui.focusedZoneId = action.payload.id || null;
+      return state;
+    case "SET_ALL_ZONES_PARTS_INCLUSION":
+      state.zones.forEach((zone) => {
+        zone.includeInPartsList = Boolean(action.payload.includeInPartsList);
+      });
       return state;
     case "ADD_SPRINKLER":
       state.sprinklers.push({
@@ -422,6 +444,9 @@ function sanitizeZonePatch(patch) {
     const runtime = Number(patch.runtimeMinutes);
     sanitized.runtimeMinutes = Number.isFinite(runtime) && runtime > 0 ? runtime : null;
   }
+  if ("includeInPartsList" in patch) {
+    sanitized.includeInPartsList = Boolean(patch.includeInPartsList);
+  }
 
   return sanitized;
 }
@@ -435,6 +460,28 @@ function sanitizeAnalysisPatch(patch) {
   if ("targetDepthInches" in patch) {
     const targetDepth = Number(patch.targetDepthInches);
     sanitized.targetDepthInches = Number.isFinite(targetDepth) && targetDepth > 0 ? targetDepth : 1;
+  }
+  return sanitized;
+}
+
+function sanitizePartsPatch(patch) {
+  if (!patch) {
+    return {};
+  }
+
+  const sanitized = {};
+  if ("groupBy" in patch) {
+    sanitized.groupBy = ["exact_sku", "sku_family", "body_nozzle_split"].includes(patch.groupBy)
+      ? patch.groupBy
+      : "body_nozzle_split";
+  }
+  if ("scopeMode" in patch) {
+    sanitized.scopeMode = patch.scopeMode === "included_zones_only"
+      ? "included_zones_only"
+      : "included_zones_only";
+  }
+  if ("showZoneUsage" in patch) {
+    sanitized.showZoneUsage = Boolean(patch.showZoneUsage);
   }
   return sanitized;
 }
@@ -489,6 +536,7 @@ function normalizeLoadedProject(project) {
     scale: { ...initial.scale, ...project.scale },
     hydraulics: { ...initial.hydraulics, ...project.hydraulics },
     analysis: { ...initial.analysis, ...sanitizeAnalysisPatch(project.analysis) },
+    parts: { ...initial.parts, ...sanitizePartsPatch(project.parts) },
     zones: Array.isArray(project.zones) ? project.zones.map(normalizeZone) : [],
     view: normalizedView,
     ui: { ...initial.ui, ...project.ui, measurePreviewPoint: null },
@@ -497,6 +545,7 @@ function normalizeLoadedProject(project) {
   merged.ui.placementPattern = ["full", "arc", "strip"].includes(merged.ui.placementPattern)
     ? merged.ui.placementPattern
     : "full";
+  merged.ui.appScreen = merged.ui.appScreen === "parts" ? "parts" : "layout";
   merged.history = { undoStack: [], redoStack: [] };
   return merged;
 }
@@ -599,6 +648,7 @@ function normalizeZone(zone) {
     runtimeMinutes: Number.isFinite(Number(zone?.runtimeMinutes)) && Number(zone.runtimeMinutes) > 0
       ? Number(zone.runtimeMinutes)
       : null,
+    includeInPartsList: "includeInPartsList" in (zone ?? {}) ? Boolean(zone.includeInPartsList) : true,
   };
 }
 

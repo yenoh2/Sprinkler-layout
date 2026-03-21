@@ -13,6 +13,10 @@
         <p class="eyebrow">Local MVP</p>
         <h1>Sprinkler Layout Tool</h1>
       </div>
+      <div class="screen-switch" role="tablist" aria-label="App screens">
+        <button type="button" data-screen="layout" class="screen-switch-button is-active">Layout</button>
+        <button type="button" data-screen="parts" class="screen-switch-button">Parts</button>
+      </div>
       <div class="topbar-tools">
         <div class="tool-grid topbar-tool-grid">
           <button type="button" data-tool="select" class="tool-button is-active">Select</button>
@@ -37,7 +41,7 @@
       </div>
     </header>
 
-    <main class="workspace">
+    <main id="layout-screen" class="workspace">
       <aside class="toolbar-panel">
         <section class="panel">
           <h2>Project</h2>
@@ -354,6 +358,46 @@
         </section>
       </aside>
     </main>
+
+    <section id="parts-screen" class="parts-screen" hidden>
+      <aside class="parts-sidebar">
+        <section class="panel">
+          <h2>Parts Scope</h2>
+          <div class="button-row">
+            <button id="parts-include-all" type="button">Include All</button>
+            <button id="parts-exclude-all" type="button">Exclude All</button>
+          </div>
+          <div id="parts-zone-filters" class="parts-zone-filters"></div>
+        </section>
+
+        <section class="panel">
+          <h2>Grouping</h2>
+          <label class="field">
+            <span>Group by</span>
+            <select id="parts-group-by">
+              <option value="body_nozzle_split" selected>Body / nozzle split</option>
+              <option value="exact_sku">Exact SKU</option>
+              <option value="sku_family">SKU family</option>
+            </select>
+          </label>
+          <label class="checkbox-row">
+            <input id="parts-show-zone-usage" type="checkbox" checked>
+            <span>Show zone usage</span>
+          </label>
+          <p id="parts-summary" class="muted-line">Parts list will populate from the current recommendations.</p>
+        </section>
+      </aside>
+
+      <section class="parts-main panel">
+        <div class="parts-header">
+          <div>
+            <h2>Parts List</h2>
+            <p id="parts-empty" class="muted-line">No included recommended heads yet.</p>
+          </div>
+        </div>
+        <div id="parts-table" class="parts-table-wrap"></div>
+      </section>
+    </section>
   </div>
 
   <script type="module" src="./src/main.js"></script>

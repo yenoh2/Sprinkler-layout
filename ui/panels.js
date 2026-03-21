@@ -12,6 +12,10 @@ export function bindPanels({ store, renderer, analyzer, interactions, io }) {
 
 function bindElements() {
   return {
+    screenButtons: [...document.querySelectorAll("[data-screen]")],
+    topbarTools: document.querySelector(".topbar-tools"),
+    layoutScreen: document.getElementById("layout-screen"),
+    partsScreen: document.getElementById("parts-screen"),
     toolButtons: [...document.querySelectorAll("[data-tool]")],
     placementPattern: document.getElementById("placement-pattern"),
     projectName: document.getElementById("project-name"),
@@ -84,10 +88,24 @@ function bindElements() {
     hydraulicsStatus: document.getElementById("hydraulics-status"),
     readyStatus: document.getElementById("ready-status"),
     projectSummary: document.getElementById("project-summary"),
+    partsIncludeAll: document.getElementById("parts-include-all"),
+    partsExcludeAll: document.getElementById("parts-exclude-all"),
+    partsZoneFilters: document.getElementById("parts-zone-filters"),
+    partsGroupBy: document.getElementById("parts-group-by"),
+    partsShowZoneUsage: document.getElementById("parts-show-zone-usage"),
+    partsSummary: document.getElementById("parts-summary"),
+    partsEmpty: document.getElementById("parts-empty"),
+    partsTable: document.getElementById("parts-table"),
   };
 }
 
 function bindEvents(elements, store, renderer, interactions, io) {
+  elements.screenButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      store.dispatch({ type: "SET_APP_SCREEN", payload: { screen: button.dataset.screen } });
+    });
+  });
+
   elements.toolButtons.forEach((button) => {
     button.addEventListener("click", () => {
       store.dispatch({ type: "SET_ACTIVE_TOOL", payload: { tool: button.dataset.tool } });
@@ -223,6 +241,18 @@ function bindEvents(elements, store, renderer, interactions, io) {
     const value = Math.max(0.1, Number(elements.analysisRateScaleMax.value) || 3);
     store.dispatch({ type: "SET_VIEW", payload: { heatmapScaleMaxInHr: value } });
   });
+  elements.partsGroupBy.addEventListener("change", () => {
+    store.dispatch({ type: "SET_PARTS_VIEW", payload: { groupBy: elements.partsGroupBy.value } });
+  });
+  elements.partsShowZoneUsage.addEventListener("change", () => {
+    store.dispatch({ type: "SET_PARTS_VIEW", payload: { showZoneUsage: elements.partsShowZoneUsage.checked } });
+  });
+  elements.partsIncludeAll.addEventListener("click", () => {
+    store.dispatch({ type: "SET_ALL_ZONES_PARTS_INCLUSION", payload: { includeInPartsList: true } });
+  });
+  elements.partsExcludeAll.addEventListener("click", () => {
+    store.dispatch({ type: "SET_ALL_ZONES_PARTS_INCLUSION", payload: { includeInPartsList: false } });
+  });
 
   [
     elements.sprinklerCoverageModel,
@@ -335,6 +365,14 @@ function updateSelection(elements, store) {
 
 function updateUi(elements, state, renderer, analyzer) {
   const analysis = analyzer?.getSnapshot(state) ?? null;
+  const isPartsScreen = state.ui.appScreen === "parts";
+
+  elements.screenButtons.forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.screen === state.ui.appScreen);
+  });
+  elements.layoutScreen.hidden = isPartsScreen;
+  elements.partsScreen.hidden = !isPartsScreen;
+  elements.topbarTools.hidden = isPartsScreen;
 
   elements.toolButtons.forEach((button) => {
     button.classList.toggle("is-active", button.dataset.tool === state.ui.activeTool);
@@ -355,6 +393,8 @@ function updateUi(elements, state, renderer, analyzer) {
   elements.analysisCellPx.value = String(state.view.heatmapCellPx ?? 18);
   elements.analysisRateScaleMode.value = state.view.heatmapScaleMode ?? "zone";
   elements.analysisRateScaleMax.value = formatEditableNumber(state.view.heatmapScaleMaxInHr ?? 3);
+  elements.partsGroupBy.value = state.parts.groupBy ?? "body_nozzle_split";
+  elements.partsShowZoneUsage.checked = state.parts.showZoneUsage !== false;
   elements.analysisRateScaleMode.disabled = (state.view.analysisOverlayMode ?? "application_rate") !== "application_rate";
   elements.analysisRateScaleMax.disabled = elements.analysisRateScaleMode.disabled || (state.view.heatmapScaleMode ?? "zone") !== "fixed";
   elements.calibrationPointsLabel.textContent = `Calibration points: ${state.scale.calibrationPoints.length} selected`;
@@ -410,6 +450,7 @@ function updateUi(elements, state, renderer, analyzer) {
 
   renderSprinklerAnalysis(elements.sprinklerAnalysis, selected, analysis);
   renderAnalysisLegend(elements, state, analysis);
+  renderPartsScreen(elements, state, analysis);
 
   applyStatus(elements.scaleStatus, state.scale.calibrated ? "Calibrated" : "Uncalibrated", state.scale.calibrated);
   applyStatus(elements.hydraulicsStatus, hasHydraulics(state) ? "Hydraulics set" : "Hydraulics missing", hasHydraulics(state));
@@ -509,6 +550,9 @@ function renderZonesList(elements, state, analysis) {
     const metaBits = [state.ui.activeZoneId === zone.id ? "Active zone" : `${count} head${count === 1 ? "" : "s"}`];
     if (metrics?.isOverLimit) {
       metaBits.push("Over flow limit");
+    }
+    if (zone.includeInPartsList === false) {
+      metaBits.push("Excluded from parts");
     }
     if (zone.runtimeMinutes) {
       metaBits.push("Manual runtime");
@@ -758,6 +802,110 @@ function renderApplicationRateLegend(elements, state, analysis, scaleMode, scale
     .join(", ");
   const extraCount = Math.max(0, visibleZoneLayers.length - 4);
   elements.analysisSummary.textContent = `Each zone auto-scales to its own peak while all zones stay visible. Current peaks: ${peakPreview}${extraCount ? `, +${extraCount} more` : ""}.`;
+}
+
+function renderPartsScreen(elements, state, analysis) {
+  const parts = analysis?.parts ?? null;
+  renderPartsZoneFilters(elements, parts);
+
+  if (!parts) {
+    elements.partsSummary.textContent = "Parts list will populate from the current recommendations.";
+    elements.partsEmpty.hidden = false;
+    elements.partsEmpty.textContent = "No recommendation snapshot is available yet.";
+    elements.partsTable.innerHTML = "";
+    return;
+  }
+
+  const includedZoneCount = parts.zones.filter((zone) => zone.included).length;
+  const excludedZoneCount = parts.zones.length - includedZoneCount;
+  elements.partsSummary.textContent = `${parts.includedHeadCount} included head${parts.includedHeadCount === 1 ? "" : "s"}, ${parts.lineItemCount} line item${parts.lineItemCount === 1 ? "" : "s"}, ${parts.totalBodyQuantity} bodies, ${parts.totalNozzleQuantity} nozzles. ${includedZoneCount} zone${includedZoneCount === 1 ? "" : "s"} included${excludedZoneCount ? `, ${excludedZoneCount} excluded` : ""}.`;
+
+  const rows = parts.groupBy === "body_nozzle_split" ? parts.bodyRows.concat(parts.nozzleRows) : parts.rows;
+  const hasRows = rows.length > 0;
+  elements.partsEmpty.hidden = hasRows;
+  elements.partsEmpty.textContent = hasRows ? "" : "No included recommended heads yet.";
+  elements.partsTable.innerHTML = hasRows
+    ? renderPartsTables(parts)
+    : "";
+}
+
+function renderPartsZoneFilters(elements, parts) {
+  if (!parts?.zones?.length) {
+    elements.partsZoneFilters.innerHTML = '<div class="empty-card">Create zones to filter the purchasing scope.</div>';
+    return;
+  }
+
+  elements.partsZoneFilters.innerHTML = parts.zones.map((zone) => `
+    <label class="parts-zone-toggle">
+      <input type="checkbox" data-parts-zone="${zone.id}" ${zone.included ? "checked" : ""}>
+      <span class="parts-zone-copy">
+        <strong>${escapeHtml(zone.name)}</strong>
+        <span>${zone.headCount} recommended head${zone.headCount === 1 ? "" : "s"}</span>
+      </span>
+    </label>
+  `).join("");
+
+  elements.partsZoneFilters.querySelectorAll("[data-parts-zone]").forEach((input) => {
+    input.addEventListener("change", () => {
+      storeSafeDispatch(elements, "UPDATE_ZONE", {
+        id: input.dataset.partsZone,
+        patch: { includeInPartsList: input.checked },
+      });
+    });
+  });
+}
+
+function renderPartsTables(parts) {
+  if (parts.groupBy === "body_nozzle_split") {
+    return [
+      renderPartsTableSection("Bodies", parts.bodyRows, parts.showZoneUsage),
+      renderPartsTableSection("Nozzles", parts.nozzleRows, parts.showZoneUsage),
+    ].join("");
+  }
+
+  return renderPartsTable(parts.rows, parts.showZoneUsage);
+}
+
+function renderPartsTableSection(title, rows, showZoneUsage) {
+  return `
+    <div class="parts-table-section">
+      <h3>${title}</h3>
+      ${renderPartsTable(rows, showZoneUsage)}
+    </div>
+  `;
+}
+
+function renderPartsTable(rows, showZoneUsage) {
+  const zoneHeader = showZoneUsage ? "<th>Zones</th>" : "";
+  const zoneCells = showZoneUsage
+    ? (row) => `<td>${escapeHtml(row.zonesLabel || "--")}</td>`
+    : () => "";
+
+  return `
+    <table class="parts-table">
+      <thead>
+        <tr>
+          <th>Category</th>
+          <th>Item</th>
+          <th>Qty</th>
+          ${zoneHeader}
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map((row) => `
+          <tr>
+            <td>${escapeHtml(row.category)}</td>
+            <td>
+              <div class="parts-item-label">${escapeHtml(row.itemLabel)}</div>
+              ${row.notes ? `<div class="parts-item-notes">${escapeHtml(row.notes)}</div>` : ""}
+            </td>
+            <td>${row.quantity}</td>
+            ${zoneCells(row)}
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
 }
 
 function buildLegendBar(gradient, labels) {
