@@ -744,12 +744,12 @@ function buildRotorCandidatesForHead(sprinkler, rotorData, assumptions) {
     desiredArcDeg: sprinkler.desiredArcDeg,
     selectedArcDeg: sprinkler.desiredArcDeg,
     arcNormalized: false,
-    flowGpm: nozzle.flowGpm * (sprinkler.desiredArcDeg / 360),
+    flowGpm: nozzle.flowGpm,
     precipInHr: nozzle.precipInHr,
     precipGroup: nozzle.precipGroup,
     skuFamily: "3504_standard",
     coverageReserveFt: nozzle.radiusFt - sprinkler.radius,
-    actualPrecipInHr: calculateActualPrecipInHr(nozzle.flowGpm * (sprinkler.desiredArcDeg / 360), sprinkler.radius, sprinkler.desiredArcDeg),
+    actualPrecipInHr: calculateActualPrecipInHr(nozzle.flowGpm, sprinkler.radius, sprinkler.desiredArcDeg),
     comment: "Rotor arc stays adjustable. External regulation is still needed above 55 PSI with the 3504.",
   }];
 }

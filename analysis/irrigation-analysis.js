@@ -950,7 +950,7 @@ function buildRotorCandidatesForHead(sprinkler, zone, zonesById, context) {
     skuFamily: "3504_standard",
     radiusClassFt: fallback3504.radiusFt,
     selectedRadiusFt: fallback3504.radiusFt,
-    flowGpm: fallback3504.flowGpm * (sprinkler.desiredArcDeg / 360),
+    flowGpm: fallback3504.flowGpm,
     catalogPrecipInHr: fallback3504.precipInHr,
     comment: "3504 fallback rotor.",
   })];
