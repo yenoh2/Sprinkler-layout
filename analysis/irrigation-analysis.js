@@ -88,6 +88,9 @@ function buildCacheKey(state) {
       width: state.background?.width,
       height: state.background?.height,
     },
+    hydraulics: {
+      designFlowLimitGpm: state.hydraulics?.designFlowLimitGpm,
+    },
     analysis: {
       targetDepthInches: state.analysis?.targetDepthInches,
     },
@@ -133,6 +136,16 @@ function buildCacheKey(state) {
 }
 
 function analyzeProject(state, context) {
+  const designFlowLimitGpm = Number.isFinite(Number(state.hydraulics?.designFlowLimitGpm)) && Number(state.hydraulics.designFlowLimitGpm) > 0
+    ? Number(state.hydraulics.designFlowLimitGpm)
+    : context.assumptions.designFlowLimitGpm;
+  const analysisContext = {
+    ...context,
+    assumptions: {
+      ...context.assumptions,
+      designFlowLimitGpm,
+    },
+  };
   const targetDepthInches = Math.max(0.1, Number(state.analysis?.targetDepthInches) || 1);
   const zonesById = new Map((state.zones ?? []).map((zone) => [zone.id, zone]));
   const grouped = new Map();
@@ -150,7 +163,7 @@ function analyzeProject(state, context) {
 
   const zoneReports = [...grouped.values()]
     .sort((a, b) => a.zone.name.localeCompare(b.zone.name))
-    .map(({ zone, sprinklers }) => analyzeZone(zone, sprinklers, zonesById, context));
+    .map(({ zone, sprinklers }) => analyzeZone(zone, sprinklers, zonesById, analysisContext));
 
   const recommendations = zoneReports
     .flatMap((zoneReport) => zoneReport.recommendations)
@@ -176,7 +189,7 @@ function analyzeProject(state, context) {
       preferredFamily: report?.preferredFamily ?? "mixed",
       sprayHeadCount: report?.familyCounts?.spray ?? 0,
       rotorHeadCount: report?.familyCounts?.rotor ?? 0,
-      isOverLimit: (report?.totalFlowGpm ?? 0) > context.assumptions.designFlowLimitGpm,
+      isOverLimit: (report?.totalFlowGpm ?? 0) > analysisContext.assumptions.designFlowLimitGpm,
       notes: report?.notes ?? [],
       runtimeMinutesOverride: Number.isFinite(Number(zone.runtimeMinutes)) && Number(zone.runtimeMinutes) > 0
         ? Number(zone.runtimeMinutes)
@@ -211,14 +224,14 @@ function analyzeProject(state, context) {
         sprinklerRecord?.zone ?? null,
         report,
         zonesById,
-        context,
+        analysisContext,
       )];
     }),
   );
   const parts = buildPartsSnapshot(state, recommendations, zonesById);
 
   return {
-    designFlowLimitGpm: context.assumptions.designFlowLimitGpm,
+    designFlowLimitGpm: analysisContext.assumptions.designFlowLimitGpm,
     targetDepthInches,
     recommendations,
     recommendationsById,

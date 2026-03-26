@@ -46,6 +46,7 @@ export function createInitialState() {
     hydraulics: {
       lineSizeInches: null,
       pressurePsi: null,
+      designFlowLimitGpm: null,
     },
     analysis: {
       targetDepthInches: 1,
@@ -198,8 +199,8 @@ function applyAction(state, action) {
       return state;
     case "SET_HYDRAULICS":
       state.hydraulics = {
-        lineSizeInches: action.payload.lineSizeInches ?? null,
-        pressurePsi: action.payload.pressurePsi ?? null,
+        ...state.hydraulics,
+        ...sanitizeHydraulicsPatch(action.payload),
       };
       return state;
     case "SET_ANALYSIS":
@@ -485,6 +486,27 @@ function sanitizeAnalysisPatch(patch) {
   return sanitized;
 }
 
+function sanitizeHydraulicsPatch(patch) {
+  if (!patch) {
+    return {};
+  }
+
+  const sanitized = {};
+  if ("lineSizeInches" in patch) {
+    const lineSize = Number(patch.lineSizeInches);
+    sanitized.lineSizeInches = Number.isFinite(lineSize) && lineSize > 0 ? lineSize : null;
+  }
+  if ("pressurePsi" in patch) {
+    const pressure = Number(patch.pressurePsi);
+    sanitized.pressurePsi = Number.isFinite(pressure) && pressure > 0 ? pressure : null;
+  }
+  if ("designFlowLimitGpm" in patch) {
+    const flowLimit = Number(patch.designFlowLimitGpm);
+    sanitized.designFlowLimitGpm = Number.isFinite(flowLimit) && flowLimit > 0 ? flowLimit : null;
+  }
+  return sanitized;
+}
+
 function sanitizePartsPatch(patch) {
   if (!patch) {
     return {};
@@ -555,7 +577,7 @@ function normalizeLoadedProject(project) {
     meta: { ...initial.meta, ...project.meta },
     background: { ...initial.background, ...project.background },
     scale: { ...initial.scale, ...project.scale },
-    hydraulics: { ...initial.hydraulics, ...project.hydraulics },
+    hydraulics: { ...initial.hydraulics, ...sanitizeHydraulicsPatch(project.hydraulics) },
     analysis: { ...initial.analysis, ...sanitizeAnalysisPatch(project.analysis) },
     parts: { ...initial.parts, ...sanitizePartsPatch(project.parts) },
     zones: Array.isArray(project.zones) ? project.zones.map(normalizeZone) : [],

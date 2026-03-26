@@ -36,6 +36,7 @@ function bindElements() {
     calibrationPointsLabel: document.getElementById("calibration-points-label"),
     lineSizeSelect: document.getElementById("line-size-select"),
     pressureInput: document.getElementById("pressure-input"),
+    designFlowLimitInput: document.getElementById("design-flow-limit-input"),
     zoneViewMode: document.getElementById("zone-view-mode"),
     activeZoneSelect: document.getElementById("active-zone-select"),
     createZoneButton: document.getElementById("create-zone-button"),
@@ -227,11 +228,13 @@ function bindEvents(elements, store, renderer, interactions, io) {
       payload: {
         lineSizeInches: elements.lineSizeSelect.value ? Number(elements.lineSizeSelect.value) : null,
         pressurePsi: elements.pressureInput.value ? Number(elements.pressureInput.value) : null,
+        designFlowLimitGpm: elements.designFlowLimitInput.value ? Number(elements.designFlowLimitInput.value) : null,
       },
     });
   };
   elements.lineSizeSelect.addEventListener("change", updateHydraulics);
   elements.pressureInput.addEventListener("input", updateHydraulics);
+  elements.designFlowLimitInput.addEventListener("change", updateHydraulics);
 
   elements.zoneViewMode.addEventListener("change", () => {
     store.dispatch({ type: "SET_ZONE_VIEW_MODE", payload: { mode: elements.zoneViewMode.value } });
@@ -429,6 +432,8 @@ function updateUi(elements, state, renderer, analyzer) {
   elements.placementPattern.value = state.ui.placementPattern;
   elements.lineSizeSelect.value = state.hydraulics.lineSizeInches ? String(state.hydraulics.lineSizeInches) : "";
   elements.pressureInput.value = state.hydraulics.pressurePsi ?? "";
+  elements.designFlowLimitInput.value = state.hydraulics.designFlowLimitGpm ?? "";
+  elements.designFlowLimitInput.placeholder = `Uses default cap (${formatEditableNumber(analysis?.designFlowLimitGpm ?? 14)} GPM)`;
   elements.zoneViewMode.value = state.view.zoneViewMode;
   elements.toggleCoverage.checked = state.view.showCoverage;
   elements.toggleGrid.checked = state.view.showGrid;
@@ -522,6 +527,7 @@ function updateUi(elements, state, renderer, analyzer) {
     ["Over-limit zones", String(analysis?.summary.overLimitZones ?? 0)],
     ["Line size", state.hydraulics.lineSizeInches ? `${state.hydraulics.lineSizeInches} in` : "--"],
     ["Pressure", state.hydraulics.pressurePsi ? `${state.hydraulics.pressurePsi} psi` : "--"],
+    ["Flow cap", analysis?.designFlowLimitGpm ? `${analysis.designFlowLimitGpm.toFixed(2)} GPM` : "--"],
     ["Plan size", summary.backgroundSize],
   ];
   elements.projectSummary.innerHTML = lines.map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`).join("");
