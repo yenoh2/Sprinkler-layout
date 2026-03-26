@@ -776,7 +776,17 @@ canvas {
   font-weight: 600;
 }
 
+.zone-fields-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem 0.75rem;
+}
+
 .zone-runtime-field {
+  margin-bottom: 0;
+}
+
+.zone-runtime-group-field {
   margin-bottom: 0;
 }
 
@@ -817,6 +827,10 @@ canvas {
 
   .canvas-panel {
     min-height: 60vh;
+  }
+
+  .zone-fields-grid {
+    grid-template-columns: 1fr;
   }
 
   .topbar {

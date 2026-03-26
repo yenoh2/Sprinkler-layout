@@ -36,34 +36,56 @@
     "analysis": {
       "targetDepthInches": 1
     },
+    "parts": {
+      "groupBy": "body_nozzle_split",
+      "scopeMode": "included_zones_only",
+      "showZoneUsage": true
+    },
     "zones": [
       {
         "id": "a6115698-d745-41ee-ba29-f9b01b478e87",
         "name": "NE",
         "color": "#3fd5af",
         "visible": true,
-        "runtimeMinutes": null
+        "runtimeMinutes": null,
+        "runtimeGroupName": null,
+        "includeInPartsList": true
       },
       {
         "id": "41592c43-ba38-4780-a3d4-eb151a34d061",
         "name": "W",
         "color": "#78318c",
         "visible": true,
-        "runtimeMinutes": null
+        "runtimeMinutes": null,
+        "runtimeGroupName": null,
+        "includeInPartsList": true
       },
       {
         "id": "57ea6064-5e3f-4695-9431-2a56cbef8fdb",
         "name": "North",
         "color": "#3876b4",
         "visible": true,
-        "runtimeMinutes": null
+        "runtimeMinutes": null,
+        "runtimeGroupName": "N",
+        "includeInPartsList": true
       },
       {
         "id": "4897d3ce-4108-4b01-b95f-8c86a093342f",
         "name": "East",
         "color": "#9d59c1",
         "visible": true,
-        "runtimeMinutes": null
+        "runtimeMinutes": null,
+        "runtimeGroupName": null,
+        "includeInPartsList": true
+      },
+      {
+        "id": "e696f5cc-8f48-4ff2-9fa9-5f4090e4466e",
+        "name": "North2",
+        "color": "#d18e2f",
+        "visible": true,
+        "runtimeMinutes": null,
+        "runtimeGroupName": "N",
+        "includeInPartsList": true
       }
     ],
     "sprinklers": [
@@ -350,7 +372,7 @@
         "stripRotationDeg": 76,
         "hidden": false,
         "label": "S-16",
-        "zoneId": "57ea6064-5e3f-4695-9431-2a56cbef8fdb"
+        "zoneId": "e696f5cc-8f48-4ff2-9fa9-5f4090e4466e"
       },
       {
         "id": "07f70478-75f3-4987-89a6-96d5a05c254b",
@@ -373,8 +395,8 @@
       },
       {
         "id": "cc6b11cd-b413-4087-aff5-b43dfacb4e2f",
-        "x": 370.783877030314,
-        "y": 486.90438475165166,
+        "x": 370.78,
+        "y": 486.9,
         "coverageModel": "sector",
         "radius": 15,
         "pattern": "arc",
@@ -388,7 +410,7 @@
         "stripRotationDeg": 348,
         "hidden": false,
         "label": "S-16 copy",
-        "zoneId": "57ea6064-5e3f-4695-9431-2a56cbef8fdb"
+        "zoneId": "e696f5cc-8f48-4ff2-9fa9-5f4090e4466e"
       },
       {
         "id": "bd2c376b-2329-4be9-9dd9-4bb12c7ad515",
@@ -559,7 +581,7 @@
         "stripRotationDeg": 350,
         "hidden": false,
         "label": "S-28",
-        "zoneId": "57ea6064-5e3f-4695-9431-2a56cbef8fdb"
+        "zoneId": "e696f5cc-8f48-4ff2-9fa9-5f4090e4466e"
       },
       {
         "id": "427e9663-2718-45f4-bbc5-16678ac1505e",
@@ -578,7 +600,7 @@
         "stripRotationDeg": 353,
         "hidden": false,
         "label": "S-29",
-        "zoneId": "57ea6064-5e3f-4695-9431-2a56cbef8fdb"
+        "zoneId": "e696f5cc-8f48-4ff2-9fa9-5f4090e4466e"
       },
       {
         "id": "df0707e5-341c-4929-a254-2d72b124a3ff",
@@ -635,7 +657,7 @@
         "stripRotationDeg": 354,
         "hidden": false,
         "label": "S-32",
-        "zoneId": "57ea6064-5e3f-4695-9431-2a56cbef8fdb"
+        "zoneId": "e696f5cc-8f48-4ff2-9fa9-5f4090e4466e"
       },
       {
         "id": "4d4e16f6-6c82-4f7e-8a8f-0f752f043452",
@@ -677,9 +699,9 @@
       }
     ],
     "view": {
-      "offsetX": 160.02694805527392,
-      "offsetY": -238.49877848243028,
-      "zoom": 0.8259278787818268,
+      "offsetX": 340.8113931500835,
+      "offsetY": -67.97649202980779,
+      "zoom": 0.5444471935830915,
       "showCoverage": true,
       "showGrid": true,
       "showLabels": true,
@@ -705,8 +727,9 @@
       "measurePreviewPoint": null,
       "measureDistance": null,
       "cursorWorld": null,
-      "activeZoneId": "4897d3ce-4108-4b01-b95f-8c86a093342f",
-      "focusedZoneId": null
+      "activeZoneId": "e696f5cc-8f48-4ff2-9fa9-5f4090e4466e",
+      "focusedZoneId": null,
+      "appScreen": "layout"
     }
   }
 }

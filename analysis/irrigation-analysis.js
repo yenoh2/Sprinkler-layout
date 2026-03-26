@@ -73,6 +73,7 @@ function buildEmptySnapshot(designFlowLimitGpm, targetDepthInches = 1) {
       fullScheduleAverageDepthInches: 0,
       fullScheduleMaxDepthInches: 0,
       overLimitZones: 0,
+      sharedRuntimeAreaCount: 0,
     },
   };
 }
@@ -106,6 +107,7 @@ function buildCacheKey(state) {
       name: zone.name,
       color: zone.color,
       runtimeMinutes: zone.runtimeMinutes ?? null,
+      runtimeGroupName: zone.runtimeGroupName ?? null,
       includeInPartsList: zone.includeInPartsList !== false,
     })),
     sprinklers: (state.sprinklers ?? []).map((sprinkler) => ({
@@ -180,7 +182,14 @@ function analyzeProject(state, context) {
         ? Number(zone.runtimeMinutes)
         : null,
       suggestedRuntimeMinutes: depthLayer?.suggestedRuntimeMinutes ?? null,
+      independentSuggestedRuntimeMinutes: depthLayer?.independentSuggestedRuntimeMinutes ?? null,
       effectiveRuntimeMinutes: depthLayer?.effectiveRuntimeMinutes ?? null,
+      runtimeGroupName: depthLayer?.runtimeGroupName ?? zone.runtimeGroupName ?? null,
+      runtimeGroupZoneCount: depthLayer?.runtimeGroupZoneCount ?? (zone.runtimeGroupName ? 1 : 0),
+      runtimeGroupScaleFactor: depthLayer?.runtimeGroupScaleFactor ?? null,
+      runtimeGroupAverageDepthInches: depthLayer?.runtimeGroupAverageDepthInches ?? null,
+      runtimeGroupWateredAreaSqFt: depthLayer?.runtimeGroupWateredAreaSqFt ?? 0,
+      runtimeGroupManualOverrideCount: depthLayer?.runtimeGroupManualOverrideCount ?? 0,
       averageRateInHr: rateLayer?.averageInHr ?? 0,
       minPositiveRateInHr: rateLayer?.minPositiveInHr ?? 0,
       maxRateInHr: rateLayer?.maxInHr ?? 0,
@@ -227,6 +236,7 @@ function analyzeProject(state, context) {
       fullScheduleAverageDepthInches: grid?.fullScheduleDepth.averageInches ?? 0,
       fullScheduleMaxDepthInches: grid?.fullScheduleDepth.maxInches ?? 0,
       overLimitZones: zoneSummaries.filter((zone) => zone.isOverLimit).length,
+      sharedRuntimeAreaCount: countSharedRuntimeAreas(zoneSummaries),
     },
   };
 }
@@ -1319,13 +1329,13 @@ function buildAnalysisGrid(state, recommendations, zones, targetDepthInches) {
     ...summarizePositiveGrid(zoneLayer.values, cellAreaSqFt),
   }));
 
+  const runtimePlansByZoneId = buildRuntimePlans(summarizedZoneRateLayers, zones, targetDepthInches, cellAreaSqFt);
   const zoneDepthLayers = summarizedZoneRateLayers.map((zoneLayer) => {
-    const zoneModel = zones.find((zone) => zone.id === zoneLayer.zoneId) ?? null;
-    const suggestedRuntimeMinutes = calculateSuggestedRuntimeMinutes(zoneLayer.averageInHr, targetDepthInches);
-    const runtimeMinutesOverride = Number.isFinite(Number(zoneModel?.runtimeMinutes)) && Number(zoneModel.runtimeMinutes) > 0
-      ? Number(zoneModel.runtimeMinutes)
-      : null;
-    const effectiveRuntimeMinutes = runtimeMinutesOverride ?? suggestedRuntimeMinutes;
+    const runtimePlan = runtimePlansByZoneId.get(zoneLayer.zoneId) ?? null;
+    const suggestedRuntimeMinutes = runtimePlan?.suggestedRuntimeMinutes ?? null;
+    const independentSuggestedRuntimeMinutes = runtimePlan?.independentSuggestedRuntimeMinutes ?? null;
+    const runtimeMinutesOverride = runtimePlan?.runtimeMinutesOverride ?? null;
+    const effectiveRuntimeMinutes = runtimePlan?.effectiveRuntimeMinutes ?? suggestedRuntimeMinutes;
     const depthValues = multiplyGrid(zoneLayer.values, effectiveRuntimeMinutes / 60);
     return {
       zoneId: zoneLayer.zoneId,
@@ -1334,7 +1344,14 @@ function buildAnalysisGrid(state, recommendations, zones, targetDepthInches) {
       values: depthValues,
       runtimeMinutesOverride,
       suggestedRuntimeMinutes,
+      independentSuggestedRuntimeMinutes,
       effectiveRuntimeMinutes,
+      runtimeGroupName: runtimePlan?.runtimeGroupName ?? null,
+      runtimeGroupZoneCount: runtimePlan?.runtimeGroupZoneCount ?? 0,
+      runtimeGroupScaleFactor: runtimePlan?.runtimeGroupScaleFactor ?? null,
+      runtimeGroupAverageDepthInches: runtimePlan?.runtimeGroupAverageDepthInches ?? null,
+      runtimeGroupWateredAreaSqFt: runtimePlan?.runtimeGroupWateredAreaSqFt ?? 0,
+      runtimeGroupManualOverrideCount: runtimePlan?.runtimeGroupManualOverrideCount ?? 0,
       ...summarizePositiveGrid(depthValues, cellAreaSqFt, "Inches"),
     };
   });
@@ -1375,6 +1392,157 @@ function buildAnalysisGrid(state, recommendations, zones, targetDepthInches) {
     fullScheduleDepth,
     targetError,
   };
+}
+
+function buildRuntimePlans(zoneRateLayers, zones, targetDepthInches, cellAreaSqFt) {
+  const zonesById = new Map((zones ?? []).map((zone) => [zone.id, zone]));
+  const plans = zoneRateLayers.map((zoneLayer) => {
+    const zoneModel = zonesById.get(zoneLayer.zoneId) ?? null;
+    const independentSuggestedRuntimeMinutes = calculateSuggestedRuntimeMinutes(zoneLayer.averageInHr, targetDepthInches);
+    const runtimeMinutesOverride = Number.isFinite(Number(zoneModel?.runtimeMinutes)) && Number(zoneModel.runtimeMinutes) > 0
+      ? Number(zoneModel.runtimeMinutes)
+      : null;
+    const runtimeGroupName = zoneModel?.runtimeGroupName ?? null;
+    return {
+      zoneId: zoneLayer.zoneId,
+      zoneLayer,
+      independentSuggestedRuntimeMinutes,
+      runtimeMinutesOverride,
+      runtimeGroupName,
+      runtimeGroupKey: buildRuntimeGroupKey(runtimeGroupName),
+      runtimeGroupZoneCount: runtimeGroupName ? 1 : 0,
+      runtimeGroupScaleFactor: null,
+      runtimeGroupAverageDepthInches: null,
+      runtimeGroupWateredAreaSqFt: 0,
+      runtimeGroupManualOverrideCount: runtimeMinutesOverride ? 1 : 0,
+      suggestedRuntimeMinutes: independentSuggestedRuntimeMinutes,
+      effectiveRuntimeMinutes: runtimeMinutesOverride ?? independentSuggestedRuntimeMinutes,
+    };
+  });
+
+  const plansByZoneId = new Map(plans.map((plan) => [plan.zoneId, plan]));
+  const groupedPlans = new Map();
+
+  for (const plan of plans) {
+    if (!plan.runtimeGroupKey) {
+      continue;
+    }
+    if (!groupedPlans.has(plan.runtimeGroupKey)) {
+      groupedPlans.set(plan.runtimeGroupKey, []);
+    }
+    groupedPlans.get(plan.runtimeGroupKey).push(plan);
+  }
+
+  for (const groupPlans of groupedPlans.values()) {
+    if (!groupPlans.length) {
+      continue;
+    }
+
+    const sampleLength = groupPlans[0].zoneLayer.values.length;
+    const groupRateValues = new Float32Array(sampleLength);
+    const manualDepthValues = new Float32Array(sampleLength);
+    const autoBaseDepthValues = new Float32Array(sampleLength);
+    let autoPlanCount = 0;
+    let manualOverrideCount = 0;
+
+    for (const plan of groupPlans) {
+      const { values } = plan.zoneLayer;
+      for (let index = 0; index < sampleLength; index += 1) {
+        groupRateValues[index] += values[index];
+      }
+
+      if (plan.runtimeMinutesOverride) {
+        manualOverrideCount += 1;
+        const factor = plan.runtimeMinutesOverride / 60;
+        for (let index = 0; index < sampleLength; index += 1) {
+          manualDepthValues[index] += values[index] * factor;
+        }
+        continue;
+      }
+
+      if (!(plan.independentSuggestedRuntimeMinutes > 0)) {
+        continue;
+      }
+
+      autoPlanCount += 1;
+      const factor = plan.independentSuggestedRuntimeMinutes / 60;
+      for (let index = 0; index < sampleLength; index += 1) {
+        autoBaseDepthValues[index] += values[index] * factor;
+      }
+    }
+
+    const manualSummary = summarizeGridOverMask(manualDepthValues, groupRateValues, cellAreaSqFt, "Inches");
+    const autoBaseSummary = summarizeGridOverMask(autoBaseDepthValues, groupRateValues, cellAreaSqFt, "Inches");
+    const runtimeGroupScaleFactor = autoPlanCount > 0 && autoBaseSummary.averageInches > 0
+      ? clamp((targetDepthInches - manualSummary.averageInches) / autoBaseSummary.averageInches, 0, 1)
+      : 1;
+
+    const effectiveGroupDepthValues = new Float32Array(sampleLength);
+    for (const plan of groupPlans) {
+      const sharedSuggestedRuntimeMinutes = plan.independentSuggestedRuntimeMinutes
+        ? plan.independentSuggestedRuntimeMinutes * runtimeGroupScaleFactor
+        : null;
+      plan.runtimeGroupZoneCount = groupPlans.length;
+      plan.runtimeGroupScaleFactor = runtimeGroupScaleFactor;
+      plan.runtimeGroupManualOverrideCount = manualOverrideCount;
+      plan.suggestedRuntimeMinutes = sharedSuggestedRuntimeMinutes ?? plan.independentSuggestedRuntimeMinutes;
+      plan.effectiveRuntimeMinutes = plan.runtimeMinutesOverride ?? plan.suggestedRuntimeMinutes;
+
+      const factor = Number(plan.effectiveRuntimeMinutes) > 0 ? Number(plan.effectiveRuntimeMinutes) / 60 : 0;
+      if (!(factor > 0)) {
+        continue;
+      }
+      for (let index = 0; index < sampleLength; index += 1) {
+        effectiveGroupDepthValues[index] += plan.zoneLayer.values[index] * factor;
+      }
+    }
+
+    const effectiveSummary = summarizeGridOverMask(effectiveGroupDepthValues, groupRateValues, cellAreaSqFt, "Inches");
+    for (const plan of groupPlans) {
+      plan.runtimeGroupAverageDepthInches = effectiveSummary.averageInches;
+      plan.runtimeGroupWateredAreaSqFt = effectiveSummary.wateredAreaSqFt;
+    }
+  }
+
+  return plansByZoneId;
+}
+
+function buildRuntimeGroupKey(name) {
+  return name ? String(name).trim().toLocaleLowerCase() : "";
+}
+
+function summarizeGridOverMask(values, maskValues, cellAreaSqFt, suffix = "InHr") {
+  let maskCount = 0;
+  let sumValue = 0;
+  let maxValue = 0;
+  let minValue = Number.POSITIVE_INFINITY;
+
+  for (let index = 0; index < values.length; index += 1) {
+    if (!(maskValues[index] > 0)) {
+      continue;
+    }
+    maskCount += 1;
+    const value = values[index];
+    sumValue += value;
+    maxValue = Math.max(maxValue, value);
+    minValue = Math.min(minValue, value);
+  }
+
+  const summary = {
+    wateredAreaSqFt: maskCount * cellAreaSqFt,
+  };
+
+  if (suffix === "Inches") {
+    summary.averageInches = maskCount ? sumValue / maskCount : 0;
+    summary.maxInches = maxValue;
+    summary.minInches = Number.isFinite(minValue) ? minValue : 0;
+    return summary;
+  }
+
+  summary.averageInHr = maskCount ? sumValue / maskCount : 0;
+  summary.maxInHr = maxValue;
+  summary.minInHr = Number.isFinite(minValue) ? minValue : 0;
+  return summary;
 }
 
 function summarizePositiveGrid(values, cellAreaSqFt, suffix = "InHr") {
@@ -1440,6 +1608,17 @@ function multiplyGrid(values, factor) {
     multiplied[index] = values[index] * factor;
   }
   return multiplied;
+}
+
+function countSharedRuntimeAreas(zoneSummaries) {
+  const sharedKeys = new Set();
+  for (const zone of zoneSummaries ?? []) {
+    if (!(zone?.runtimeGroupName && zone.runtimeGroupZoneCount > 1)) {
+      continue;
+    }
+    sharedKeys.add(buildRuntimeGroupKey(zone.runtimeGroupName));
+  }
+  return sharedKeys.size;
 }
 
 function calculateSuggestedRuntimeMinutes(averageRateInHr, targetDepthInches) {

@@ -465,6 +465,7 @@ function updateUi(elements, state, renderer, analyzer) {
     ["Peak rate", analysis?.summary.applicationRateMaxInHr ? `${analysis.summary.applicationRateMaxInHr.toFixed(2)} in/hr` : "--"],
     ["Avg rate", analysis?.summary.applicationRateAverageInHr ? `${analysis.summary.applicationRateAverageInHr.toFixed(2)} in/hr` : "--"],
     ["Target depth", `${(analysis?.targetDepthInches ?? state.analysis.targetDepthInches ?? 1).toFixed(2)} in`],
+    ["Shared depth areas", String(analysis?.summary.sharedRuntimeAreaCount ?? 0)],
     ["Avg schedule depth", analysis?.summary.fullScheduleAverageDepthInches ? `${analysis.summary.fullScheduleAverageDepthInches.toFixed(2)} in` : "--"],
     ["Peak schedule depth", analysis?.summary.fullScheduleMaxDepthInches ? `${analysis.summary.fullScheduleMaxDepthInches.toFixed(2)} in` : "--"],
     ["Over-limit zones", String(analysis?.summary.overLimitZones ?? 0)],
@@ -542,11 +543,19 @@ function renderZonesList(elements, state, analysis) {
   }
 
   const metricsById = new Map((analysis?.zones ?? []).map((zone) => [zone.zoneId, zone]));
-  elements.zonesList.innerHTML = state.zones.map((zone) => {
+  const runtimeGroupCounts = collectRuntimeGroupCounts(state.zones);
+  const runtimeGroupOptions = buildRuntimeGroupOptionsList(state.zones);
+  const targetDepth = analysis?.targetDepthInches ?? state.analysis.targetDepthInches ?? 1;
+  elements.zonesList.innerHTML = [
+    runtimeGroupOptions,
+    ...state.zones.map((zone) => {
     const count = state.sprinklers.filter((sprinkler) => sprinkler.zoneId === zone.id).length;
     const metrics = metricsById.get(zone.id) ?? null;
     const isDimmed = state.ui.focusedZoneId && state.ui.focusedZoneId !== zone.id;
     const isFocused = state.ui.focusedZoneId === zone.id;
+    const runtimeGroupCount = zone.runtimeGroupName
+      ? (runtimeGroupCounts.get(buildRuntimeGroupKey(zone.runtimeGroupName)) ?? 1)
+      : 0;
     const metaBits = [state.ui.activeZoneId === zone.id ? "Active zone" : `${count} head${count === 1 ? "" : "s"}`];
     if (metrics?.isOverLimit) {
       metaBits.push("Over flow limit");
@@ -556,6 +565,9 @@ function renderZonesList(elements, state, analysis) {
     }
     if (zone.runtimeMinutes) {
       metaBits.push("Manual runtime");
+    }
+    if (zone.runtimeGroupName) {
+      metaBits.push(runtimeGroupCount > 1 ? `Shared area ${zone.runtimeGroupName}` : `Area ${zone.runtimeGroupName}`);
     }
     return `
       <div class="zone-card ${isDimmed ? "is-dimmed" : ""}" data-zone-id="${zone.id}">
@@ -567,7 +579,7 @@ function renderZonesList(elements, state, analysis) {
           <input data-zone-color="${zone.id}" type="color" value="${zone.color}">
         </div>
         <div class="zone-meta">${metaBits.join(" | ")}</div>
-        ${renderZoneAnalysisBlock(zone, metrics)}
+        ${renderZoneAnalysisBlock(zone, metrics, targetDepth, runtimeGroupCount)}
         <div class="zone-card-actions">
           <button type="button" data-zone-focus="${zone.id}">${isFocused ? "Focused" : "Focus"}</button>
           <button type="button" data-zone-active="${zone.id}">Set Active</button>
@@ -575,7 +587,8 @@ function renderZonesList(elements, state, analysis) {
         </div>
       </div>
     `;
-  }).join("");
+  }),
+  ].join("");
 
   elements.zonesList.querySelectorAll("[data-zone-name]").forEach((input) => {
     input.addEventListener("input", () => {
@@ -594,6 +607,14 @@ function renderZonesList(elements, state, analysis) {
       storeSafeDispatch(elements, "UPDATE_ZONE", {
         id: input.dataset.zoneRuntime,
         patch: { runtimeMinutes: Number.isFinite(runtimeMinutes) && runtimeMinutes > 0 ? runtimeMinutes : null },
+      });
+    });
+  });
+  elements.zonesList.querySelectorAll("[data-zone-runtime-group]").forEach((input) => {
+    input.addEventListener("change", () => {
+      storeSafeDispatch(elements, "UPDATE_ZONE", {
+        id: input.dataset.zoneRuntimeGroup,
+        patch: { runtimeGroupName: input.value || null },
       });
     });
   });
@@ -620,14 +641,18 @@ function renderZonesList(elements, state, analysis) {
   elements.zonesList.dataset.focusedZoneId = state.ui.focusedZoneId || "";
 }
 
-function renderZoneAnalysisBlock(zone, metrics) {
+function renderZoneAnalysisBlock(zone, metrics, targetDepth, runtimeGroupCount) {
+  const runtimeFieldHtml = renderZoneSchedulingFields(
+    zone,
+    Number.isFinite(metrics?.suggestedRuntimeMinutes) ? metrics.suggestedRuntimeMinutes.toFixed(1) : "Auto",
+  );
+  const schedulingNote = buildZoneSchedulingNote(zone, metrics, targetDepth, runtimeGroupCount);
+
   if (!metrics) {
     return `
       <div class="zone-analysis-block">
-        <label class="field zone-runtime-field">
-          <span>Runtime min</span>
-          <input data-zone-runtime="${zone.id}" type="number" min="0.1" step="0.1" value="${zone.runtimeMinutes ?? ""}" placeholder="Auto">
-        </label>
+        ${runtimeFieldHtml}
+        <div class="zone-meta">${schedulingNote}</div>
         <div class="zone-meta">Calibrate scale and add heads to generate catch-can stats.</div>
       </div>
     `;
@@ -640,7 +665,6 @@ function renderZoneAnalysisBlock(zone, metrics) {
   const wateredArea = formatMaybeNumber(metrics.wateredAreaSqFt, "sq ft", 0);
   const flow = formatMaybeNumber(metrics.totalFlowGpm, "GPM");
   const spread = formatMaybeNumber(metrics.precipSpreadInHr, "in/hr");
-  const placeholder = Number.isFinite(metrics.suggestedRuntimeMinutes) ? metrics.suggestedRuntimeMinutes.toFixed(1) : "Auto";
 
   return `
     <div class="zone-analysis-block">
@@ -648,15 +672,100 @@ function renderZoneAnalysisBlock(zone, metrics) {
         <div><span>Suggested</span><strong>${suggested}</strong></div>
         <div><span>Effective</span><strong>${effective}</strong></div>
         <div><span>Avg rate</span><strong>${avgRate}</strong></div>
-        <div><span>Avg depth</span><strong>${avgDepth}</strong></div>
+        <div><span>Zone depth</span><strong>${avgDepth}</strong></div>
       </div>
-      <label class="field zone-runtime-field">
-        <span>Runtime min</span>
-        <input data-zone-runtime="${zone.id}" type="number" min="0.1" step="0.1" value="${zone.runtimeMinutes ?? ""}" placeholder="${placeholder}">
-      </label>
+      ${runtimeFieldHtml}
+      <div class="zone-meta">${schedulingNote}</div>
       <div class="zone-meta">Flow ${flow} | PR spread ${spread} | Watered ${wateredArea}</div>
     </div>
   `;
+}
+
+function renderZoneSchedulingFields(zone, runtimePlaceholder) {
+  return `
+    <div class="zone-fields-grid">
+      <label class="field zone-runtime-field">
+        <span>Runtime min</span>
+        <input data-zone-runtime="${zone.id}" type="number" min="0.1" step="0.1" value="${zone.runtimeMinutes ?? ""}" placeholder="${runtimePlaceholder}">
+      </label>
+      <label class="field zone-runtime-group-field">
+        <span>Auto depth area</span>
+        <input
+          data-zone-runtime-group="${zone.id}"
+          type="text"
+          value="${escapeHtml(zone.runtimeGroupName ?? "")}"
+          list="zone-runtime-group-options"
+          placeholder="Independent"
+        >
+      </label>
+    </div>
+  `;
+}
+
+function buildZoneSchedulingNote(zone, metrics, targetDepth, runtimeGroupCount) {
+  const targetDepthText = `${targetDepth.toFixed(2)} in`;
+  if (!zone.runtimeGroupName) {
+    return `Leave Auto depth area blank to size this zone on its own, or reuse one area name on split zones to share a single ${targetDepthText} target.`;
+  }
+
+  const displayName = escapeHtml(zone.runtimeGroupName);
+  if (runtimeGroupCount < 2) {
+    return `${displayName} is only assigned to this zone right now. Add the same area name to another split zone to share one ${targetDepthText} target.`;
+  }
+
+  const combinedDepthText = Number.isFinite(metrics?.runtimeGroupAverageDepthInches)
+    ? ` The combined area is averaging ${metrics.runtimeGroupAverageDepthInches.toFixed(2)} in.`
+    : "";
+  if (zone.runtimeMinutes) {
+    return `Shared area ${displayName} balances ${runtimeGroupCount} zones toward one ${targetDepthText} target. This zone is manually overridden, so the remaining auto zones adjust around it.${combinedDepthText}`;
+  }
+
+  const scaleText = Number.isFinite(metrics?.runtimeGroupScaleFactor) && metrics.runtimeGroupScaleFactor < 0.995
+    ? ` Auto runtimes are scaled to ${formatPercentWhole(metrics.runtimeGroupScaleFactor)} of independent time.`
+    : " Auto runtimes are staying at full zone time.";
+  return `Shared area ${displayName} balances ${runtimeGroupCount} zones toward one ${targetDepthText} target.${scaleText}${combinedDepthText}`;
+}
+
+function buildRuntimeGroupOptionsList(zones) {
+  const names = collectRuntimeGroupNames(zones);
+  if (!names.length) {
+    return "";
+  }
+  return `
+    <datalist id="zone-runtime-group-options">
+      ${names.map((name) => `<option value="${escapeHtml(name)}"></option>`).join("")}
+    </datalist>
+  `;
+}
+
+function collectRuntimeGroupCounts(zones) {
+  const counts = new Map();
+  for (const zone of zones ?? []) {
+    if (!zone?.runtimeGroupName) {
+      continue;
+    }
+    const key = buildRuntimeGroupKey(zone.runtimeGroupName);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function collectRuntimeGroupNames(zones) {
+  const namesByKey = new Map();
+  for (const zone of zones ?? []) {
+    if (!zone?.runtimeGroupName) {
+      continue;
+    }
+    const key = buildRuntimeGroupKey(zone.runtimeGroupName);
+    if (!namesByKey.has(key)) {
+      namesByKey.set(key, zone.runtimeGroupName);
+    }
+  }
+  return [...namesByKey.values()].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+}
+
+function buildRuntimeGroupKey(name) {
+  return name ? String(name).trim().toLocaleLowerCase() : "";
 }
 
 function storeSafeDispatch(elements, type, payload) {
@@ -687,6 +796,28 @@ function formatSignedPercent(value) {
     return "--";
   }
   return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(0)}%`;
+}
+
+function formatPercentWhole(value) {
+  if (!Number.isFinite(value)) {
+    return "--";
+  }
+  return `${Math.round(value * 100)}%`;
+}
+
+function buildSharedRuntimeAnalysisNote(zoneSummary, targetDepth) {
+  if (!(zoneSummary?.runtimeGroupName && zoneSummary.runtimeGroupZoneCount > 1)) {
+    return "";
+  }
+
+  const groupName = escapeHtml(zoneSummary.runtimeGroupName);
+  const scaleText = Number.isFinite(zoneSummary.runtimeGroupScaleFactor) && zoneSummary.runtimeGroupScaleFactor < 0.995
+    ? ` Auto runtimes are scaled to ${formatPercentWhole(zoneSummary.runtimeGroupScaleFactor)} of independent time.`
+    : "";
+  const averageText = Number.isFinite(zoneSummary.runtimeGroupAverageDepthInches)
+    ? ` Shared area ${groupName} averages ${zoneSummary.runtimeGroupAverageDepthInches.toFixed(2)} in across ${zoneSummary.runtimeGroupZoneCount} zones toward the ${targetDepth.toFixed(2)} in target.`
+    : ` Shared area ${groupName} balances ${zoneSummary.runtimeGroupZoneCount} zones toward the ${targetDepth.toFixed(2)} in target.`;
+  return `${averageText}${scaleText}`;
 }
 
 function capitalize(value) {
@@ -731,7 +862,11 @@ function renderAnalysisLegend(elements, state, analysis) {
     const overrideNote = selectedZone.runtimeMinutesOverride
       ? ` Manual override ${selectedZone.runtimeMinutesOverride.toFixed(1)} min is in effect.`
       : "";
-    elements.analysisSummary.textContent = `${selectedZone.zoneName} averages ${selectedZone.averageDepthInches.toFixed(2)} in over ${selectedZone.wateredAreaSqFt.toFixed(0)} sq ft at ${selectedZone.effectiveRuntimeMinutes?.toFixed(1) ?? "--"} min. Positive cells range ${selectedZone.minPositiveDepthInches.toFixed(2)} to ${selectedZone.maxDepthInches.toFixed(2)} in. Suggested runtime is ${selectedZone.suggestedRuntimeMinutes?.toFixed(1) ?? "--"} min.${overrideNote}`;
+    const sharedAreaNote = buildSharedRuntimeAnalysisNote(selectedZone, targetDepth);
+    const lead = selectedZone.runtimeGroupName && selectedZone.runtimeGroupZoneCount > 1
+      ? `${selectedZone.zoneName} contributes ${selectedZone.averageDepthInches.toFixed(2)} in over ${selectedZone.wateredAreaSqFt.toFixed(0)} sq ft at ${selectedZone.effectiveRuntimeMinutes?.toFixed(1) ?? "--"} min.`
+      : `${selectedZone.zoneName} averages ${selectedZone.averageDepthInches.toFixed(2)} in over ${selectedZone.wateredAreaSqFt.toFixed(0)} sq ft at ${selectedZone.effectiveRuntimeMinutes?.toFixed(1) ?? "--"} min.`;
+    elements.analysisSummary.textContent = `${lead} Positive cells range ${selectedZone.minPositiveDepthInches.toFixed(2)} to ${selectedZone.maxDepthInches.toFixed(2)} in. Suggested runtime is ${selectedZone.suggestedRuntimeMinutes?.toFixed(1) ?? "--"} min.${overrideNote}${sharedAreaNote}`;
     return;
   }
 
@@ -741,7 +876,10 @@ function renderAnalysisLegend(elements, state, analysis) {
       ["0.00", `${targetDepth.toFixed(2)} in`, `${(targetDepth * 2).toFixed(2)} in`],
     );
     const grid = analysis.grid.fullScheduleDepth;
-    elements.analysisSummary.textContent = `The full schedule averages ${grid.averageInches.toFixed(2)} in over ${grid.wateredAreaSqFt.toFixed(0)} sq ft. Positive cells range ${grid.minPositiveInches.toFixed(2)} to ${grid.maxInches.toFixed(2)} in against a ${targetDepth.toFixed(2)} in target.`;
+    const sharedAreaSuffix = analysis.summary.sharedRuntimeAreaCount > 0
+      ? ` ${analysis.summary.sharedRuntimeAreaCount} shared depth area${analysis.summary.sharedRuntimeAreaCount === 1 ? "" : "s"} ${analysis.summary.sharedRuntimeAreaCount === 1 ? "is" : "are"} balancing split zones in the schedule.`
+      : "";
+    elements.analysisSummary.textContent = `The full schedule averages ${grid.averageInches.toFixed(2)} in over ${grid.wateredAreaSqFt.toFixed(0)} sq ft. Positive cells range ${grid.minPositiveInches.toFixed(2)} to ${grid.maxInches.toFixed(2)} in against a ${targetDepth.toFixed(2)} in target.${sharedAreaSuffix}`;
     return;
   }
 
@@ -751,7 +889,10 @@ function renderAnalysisLegend(elements, state, analysis) {
   );
   const targetError = analysis.grid.targetError;
   const grid = analysis.grid.fullScheduleDepth;
-  elements.analysisSummary.textContent = `Target error compares the full schedule against ${targetDepth.toFixed(2)} in. Wetted cells currently range from ${formatSignedPercent(targetError.minRatio)} to ${formatSignedPercent(targetError.maxRatio)}, with total depth spanning ${grid.minPositiveInches.toFixed(2)} to ${grid.maxInches.toFixed(2)} in.`;
+  const sharedAreaSuffix = analysis.summary.sharedRuntimeAreaCount > 0
+    ? ` ${analysis.summary.sharedRuntimeAreaCount} shared depth area${analysis.summary.sharedRuntimeAreaCount === 1 ? "" : "s"} ${analysis.summary.sharedRuntimeAreaCount === 1 ? "is" : "are"} contributing to that balance.`
+    : "";
+  elements.analysisSummary.textContent = `Target error compares the full schedule against ${targetDepth.toFixed(2)} in. Wetted cells currently range from ${formatSignedPercent(targetError.minRatio)} to ${formatSignedPercent(targetError.maxRatio)}, with total depth spanning ${grid.minPositiveInches.toFixed(2)} to ${grid.maxInches.toFixed(2)} in.${sharedAreaSuffix}`;
 }
 
 function renderApplicationRateLegend(elements, state, analysis, scaleMode, scaleMaxInHr) {
@@ -965,7 +1106,7 @@ function renderSprinklerAnalysis(node, selected, analysis) {
     ...detailRows,
     '</dl>',
     zoneSummary
-      ? `<div class="analysis-note">${escapeHtml(zoneSummary.zoneName)} runtime ${zoneSummary.effectiveRuntimeMinutes?.toFixed(1) ?? "--"} min (suggested ${zoneSummary.suggestedRuntimeMinutes?.toFixed(1) ?? "--"} min), average zone rate ${zoneSummary.averageRateInHr.toFixed(2)} in/hr.</div>`
+      ? `<div class="analysis-note">${escapeHtml(zoneSummary.zoneName)} runtime ${zoneSummary.effectiveRuntimeMinutes?.toFixed(1) ?? "--"} min (suggested ${zoneSummary.suggestedRuntimeMinutes?.toFixed(1) ?? "--"} min), average zone rate ${zoneSummary.averageRateInHr.toFixed(2)} in/hr.${buildSharedRuntimeAnalysisNote(zoneSummary, analysis?.targetDepthInches ?? 1)}</div>`
       : "",
     `<div class="analysis-note">${escapeHtml(recommendation.comment)}</div>`,
     `${selected.hidden ? '<div class="analysis-note">This sprinkler is hidden from the coverage and analysis overlays.</div>' : ""}`,

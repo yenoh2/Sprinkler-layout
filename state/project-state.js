@@ -220,6 +220,7 @@ function applyAction(state, action) {
         color: action.payload.color,
         visible: true,
         runtimeMinutes: null,
+        runtimeGroupName: null,
         includeInPartsList: true,
       };
       state.zones.push(zone);
@@ -444,6 +445,9 @@ function sanitizeZonePatch(patch) {
     const runtime = Number(patch.runtimeMinutes);
     sanitized.runtimeMinutes = Number.isFinite(runtime) && runtime > 0 ? runtime : null;
   }
+  if ("runtimeGroupName" in patch) {
+    sanitized.runtimeGroupName = sanitizeRuntimeGroupName(patch.runtimeGroupName);
+  }
   if ("includeInPartsList" in patch) {
     sanitized.includeInPartsList = Boolean(patch.includeInPartsList);
   }
@@ -648,8 +652,16 @@ function normalizeZone(zone) {
     runtimeMinutes: Number.isFinite(Number(zone?.runtimeMinutes)) && Number(zone.runtimeMinutes) > 0
       ? Number(zone.runtimeMinutes)
       : null,
+    runtimeGroupName: sanitizeRuntimeGroupName(zone?.runtimeGroupName),
     includeInPartsList: "includeInPartsList" in (zone ?? {}) ? Boolean(zone.includeInPartsList) : true,
   };
+}
+
+function sanitizeRuntimeGroupName(value) {
+  const normalized = String(value ?? "")
+    .trim()
+    .replace(/\s+/g, " ");
+  return normalized || null;
 }
 
 function normalizeView(view) {
