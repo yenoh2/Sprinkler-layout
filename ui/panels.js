@@ -5,6 +5,7 @@ import { cloneProjectSnapshot, findSelectedSprinkler, getNextZoneSeed, hasHydrau
 export function bindPanels({ store, renderer, analyzer, interactions, io }) {
   const elements = bindElements();
   elements.__store = store;
+  initializeToolbarPanels(elements);
   bindEvents(elements, store, renderer, interactions, io);
   store.subscribe((state) => updateUi(elements, state, renderer, analyzer));
   updateUi(elements, store.getState(), renderer, analyzer);
@@ -16,6 +17,7 @@ function bindElements() {
     topbarTools: document.querySelector(".topbar-tools"),
     layoutScreen: document.getElementById("layout-screen"),
     partsScreen: document.getElementById("parts-screen"),
+    toolbarPanels: [...document.querySelectorAll(".toolbar-panel > .panel")],
     toolButtons: [...document.querySelectorAll("[data-tool]")],
     placementPattern: document.getElementById("placement-pattern"),
     projectName: document.getElementById("project-name"),
@@ -97,6 +99,49 @@ function bindElements() {
     partsEmpty: document.getElementById("parts-empty"),
     partsTable: document.getElementById("parts-table"),
   };
+}
+
+function initializeToolbarPanels(elements) {
+  elements.toolbarPanels.forEach((panel, index) => {
+    const heading = panel.querySelector("h2");
+    if (!heading || panel.dataset.collapsibleReady === "true") {
+      return;
+    }
+
+    const title = heading.textContent?.trim() || `Panel ${index + 1}`;
+    const panelId = `toolbar-panel-${slugifyPanelTitle(title)}-${index + 1}`;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "panel-toggle";
+    button.setAttribute("aria-expanded", "true");
+    button.setAttribute("aria-controls", panelId);
+    button.innerHTML = `
+      <span>${escapeHtml(title)}</span>
+      <span class="panel-toggle-icon" aria-hidden="true"></span>
+    `;
+
+    heading.classList.add("panel-heading");
+    heading.textContent = "";
+    heading.appendChild(button);
+
+    const body = document.createElement("div");
+    body.id = panelId;
+    body.className = "panel-body";
+
+    const nodesToMove = [...panel.childNodes].filter((node) => node !== heading);
+    nodesToMove.forEach((node) => body.appendChild(node));
+    panel.appendChild(body);
+    panel.classList.add("panel-collapsible", "is-open");
+    panel.dataset.collapsibleReady = "true";
+
+    button.addEventListener("click", () => {
+      const isExpanded = button.getAttribute("aria-expanded") === "true";
+      button.setAttribute("aria-expanded", isExpanded ? "false" : "true");
+      body.hidden = isExpanded;
+      panel.classList.toggle("is-open", !isExpanded);
+      panel.classList.toggle("is-collapsed", isExpanded);
+    });
+  });
 }
 
 function bindEvents(elements, store, renderer, interactions, io) {
@@ -848,6 +893,14 @@ function focusPendingZoneName(elements) {
     input.focus({ preventScroll: false });
     input.select();
   });
+}
+
+function slugifyPanelTitle(title) {
+  return String(title ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "panel";
 }
 
 function buildZonesListRenderKey(state, analysis) {

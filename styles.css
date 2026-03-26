@@ -316,6 +316,54 @@ hr {
   font-size: 1rem;
 }
 
+.panel-collapsible {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.panel-heading {
+  margin: 0;
+}
+
+.panel-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  text-align: left;
+}
+
+.panel-toggle:hover,
+.panel-toggle:focus-visible {
+  color: var(--accent-strong);
+  outline: none;
+}
+
+.panel-toggle-icon {
+  width: 0.72rem;
+  height: 0.72rem;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 120ms ease;
+  flex-shrink: 0;
+}
+
+.panel-toggle[aria-expanded="false"] .panel-toggle-icon {
+  transform: rotate(-45deg);
+}
+
+.panel-body[hidden] {
+  display: none;
+}
+
 .panel-copy,
 .muted-line,
 .advisory {
