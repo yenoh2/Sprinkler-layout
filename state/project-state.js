@@ -88,6 +88,7 @@ export function createInitialState() {
       cursorWorld: null,
       activeZoneId: null,
       focusedZoneId: null,
+      expandedZoneIds: [],
       appScreen: "layout",
     },
   };
@@ -248,6 +249,7 @@ function applyAction(state, action) {
       if (state.ui.focusedZoneId === action.payload.id) {
         state.ui.focusedZoneId = null;
       }
+      state.ui.expandedZoneIds = (state.ui.expandedZoneIds ?? []).filter((zoneId) => zoneId !== action.payload.id);
       return state;
     case "SET_ACTIVE_ZONE":
       state.ui.activeZoneId = action.payload.id || null;
@@ -255,6 +257,20 @@ function applyAction(state, action) {
     case "SET_FOCUSED_ZONE":
       state.ui.focusedZoneId = action.payload.id || null;
       return state;
+    case "SET_ZONE_PANEL_EXPANDED": {
+      const zoneId = action.payload.id;
+      if (!zoneId) {
+        return state;
+      }
+      const expandedIds = new Set(state.ui.expandedZoneIds ?? []);
+      if (action.payload.expanded) {
+        expandedIds.add(zoneId);
+      } else {
+        expandedIds.delete(zoneId);
+      }
+      state.ui.expandedZoneIds = [...expandedIds];
+      return state;
+    }
     case "SET_ALL_ZONES_PARTS_INCLUSION":
       state.zones.forEach((zone) => {
         zone.includeInPartsList = Boolean(action.payload.includeInPartsList);
@@ -543,7 +559,7 @@ function normalizeLoadedProject(project) {
     parts: { ...initial.parts, ...sanitizePartsPatch(project.parts) },
     zones: Array.isArray(project.zones) ? project.zones.map(normalizeZone) : [],
     view: normalizedView,
-    ui: { ...initial.ui, ...project.ui, measurePreviewPoint: null },
+    ui: { ...initial.ui, ...project.ui, measurePreviewPoint: null, expandedZoneIds: [] },
     sprinklers: Array.isArray(project.sprinklers) ? project.sprinklers.map(normalizeSprinkler) : [],
   };
   merged.ui.placementPattern = ["full", "arc", "strip"].includes(merged.ui.placementPattern)

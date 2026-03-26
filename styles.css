@@ -642,7 +642,6 @@ canvas {
   opacity: 0.55;
 }
 
-.zone-card-head,
 .zone-card-actions {
   display: flex;
   align-items: center;
@@ -650,11 +649,76 @@ canvas {
   gap: 0.6rem;
 }
 
+.zone-accordion-heading {
+  margin: 0;
+}
+
+.zone-accordion-trigger {
+  width: 100%;
+  display: grid;
+  gap: 0.35rem;
+  text-align: left;
+  padding: 0.78rem 0.82rem;
+  border-radius: 14px;
+  border: 1px solid rgba(47, 36, 24, 0.12);
+  background: rgba(250, 246, 238, 0.92);
+}
+
+.zone-accordion-trigger:hover,
+.zone-accordion-trigger:focus-visible {
+  border-color: rgba(125, 52, 17, 0.32);
+  box-shadow: 0 0 0 3px rgba(182, 92, 42, 0.1);
+  outline: none;
+}
+
+.zone-accordion-trigger[aria-expanded="true"] {
+  border-color: rgba(125, 52, 17, 0.38);
+  background: rgba(182, 92, 42, 0.1);
+}
+
+.zone-accordion-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.zone-accordion-meta {
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
 .zone-chip {
   display: inline-flex;
   align-items: center;
   gap: 0.55rem;
   font-size: 0.92rem;
+}
+
+.zone-accordion-chevron {
+  width: 0.72rem;
+  height: 0.72rem;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  color: var(--muted);
+  transform: rotate(-45deg);
+  transition: transform 120ms ease, color 120ms ease;
+  flex-shrink: 0;
+}
+
+.zone-accordion-trigger[aria-expanded="true"] .zone-accordion-chevron {
+  transform: rotate(45deg);
+  color: var(--accent-strong);
+}
+
+.zone-card-body {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.zone-card-body[hidden] {
+  display: none;
 }
 
 .zone-picker {
@@ -746,6 +810,22 @@ canvas {
   font-size: 0.88rem;
 }
 
+.zone-identity-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 110px;
+  gap: 0.55rem 0.75rem;
+}
+
+.zone-name-field,
+.zone-color-field {
+  margin-bottom: 0;
+}
+
+.zone-color-field input {
+  padding: 0.25rem;
+  min-height: 2.9rem;
+}
+
 .zone-analysis-block {
   display: grid;
   gap: 0.55rem;
@@ -830,6 +910,10 @@ canvas {
   }
 
   .zone-fields-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .zone-identity-fields {
     grid-template-columns: 1fr;
   }
 

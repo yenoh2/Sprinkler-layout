@@ -39,5 +39,6 @@ function sanitizeForAutosave(state) {
   snapshot.ui.cursorWorld = null;
   snapshot.ui.hint = "Autosaved project restored.";
   snapshot.ui.activeTool = "select";
+  snapshot.ui.expandedZoneIds = [];
   return snapshot;
 }

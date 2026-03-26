@@ -549,45 +549,68 @@ function renderZonesList(elements, state, analysis) {
   elements.zonesList.innerHTML = [
     runtimeGroupOptions,
     ...state.zones.map((zone) => {
-    const count = state.sprinklers.filter((sprinkler) => sprinkler.zoneId === zone.id).length;
-    const metrics = metricsById.get(zone.id) ?? null;
-    const isDimmed = state.ui.focusedZoneId && state.ui.focusedZoneId !== zone.id;
-    const isFocused = state.ui.focusedZoneId === zone.id;
-    const runtimeGroupCount = zone.runtimeGroupName
-      ? (runtimeGroupCounts.get(buildRuntimeGroupKey(zone.runtimeGroupName)) ?? 1)
-      : 0;
-    const metaBits = [state.ui.activeZoneId === zone.id ? "Active zone" : `${count} head${count === 1 ? "" : "s"}`];
-    if (metrics?.isOverLimit) {
-      metaBits.push("Over flow limit");
-    }
-    if (zone.includeInPartsList === false) {
-      metaBits.push("Excluded from parts");
-    }
-    if (zone.runtimeMinutes) {
-      metaBits.push("Manual runtime");
-    }
-    if (zone.runtimeGroupName) {
-      metaBits.push(runtimeGroupCount > 1 ? `Shared area ${zone.runtimeGroupName}` : `Area ${zone.runtimeGroupName}`);
-    }
-    return `
-      <div class="zone-card ${isDimmed ? "is-dimmed" : ""}" data-zone-id="${zone.id}">
-        <div class="zone-card-head">
-          <label class="zone-chip">
-            <span class="zone-swatch" style="background:${zone.color}"></span>
-            <input data-zone-name="${zone.id}" type="text" value="${escapeHtml(zone.name)}">
-          </label>
-          <input data-zone-color="${zone.id}" type="color" value="${zone.color}">
+      const count = state.sprinklers.filter((sprinkler) => sprinkler.zoneId === zone.id).length;
+      const metrics = metricsById.get(zone.id) ?? null;
+      const isDimmed = state.ui.focusedZoneId && state.ui.focusedZoneId !== zone.id;
+      const isFocused = state.ui.focusedZoneId === zone.id;
+      const isExpanded = isZonePanelExpanded(state, zone.id);
+      const panelBodyId = `zone-panel-body-${zone.id}`;
+      const panelButtonId = `zone-panel-button-${zone.id}`;
+      const runtimeGroupCount = zone.runtimeGroupName
+        ? (runtimeGroupCounts.get(buildRuntimeGroupKey(zone.runtimeGroupName)) ?? 1)
+        : 0;
+      const metaBits = [state.ui.activeZoneId === zone.id ? "Active zone" : `${count} head${count === 1 ? "" : "s"}`];
+      if (metrics?.isOverLimit) {
+        metaBits.push("Over flow limit");
+      }
+      if (zone.includeInPartsList === false) {
+        metaBits.push("Excluded from parts");
+      }
+      if (zone.runtimeMinutes) {
+        metaBits.push("Manual runtime");
+      }
+      if (zone.runtimeGroupName) {
+        metaBits.push(runtimeGroupCount > 1 ? `Shared area ${zone.runtimeGroupName}` : `Area ${zone.runtimeGroupName}`);
+      }
+      return `
+        <div class="zone-card ${isDimmed ? "is-dimmed" : ""} ${isExpanded ? "is-expanded" : "is-collapsed"}" data-zone-id="${zone.id}">
+          <h3 class="zone-accordion-heading">
+            <button
+              id="${panelButtonId}"
+              type="button"
+              class="zone-accordion-trigger"
+              data-zone-toggle="${zone.id}"
+              aria-expanded="${isExpanded ? "true" : "false"}"
+              aria-controls="${panelBodyId}"
+            >
+              <span class="zone-accordion-title-row">
+                <span class="zone-chip">
+                  <span class="zone-swatch" style="background:${zone.color}"></span>
+                  <span>${escapeHtml(zone.name)}</span>
+                </span>
+                <span class="zone-accordion-chevron" aria-hidden="true"></span>
+              </span>
+              <span class="zone-accordion-meta">${escapeHtml(metaBits.join(" | "))}</span>
+            </button>
+          </h3>
+          <div
+            id="${panelBodyId}"
+            class="zone-card-body"
+            role="region"
+            aria-labelledby="${panelButtonId}"
+            ${isExpanded ? "" : "hidden"}
+          >
+            ${renderZoneIdentityFields(zone)}
+            ${renderZoneAnalysisBlock(zone, metrics, targetDepth, runtimeGroupCount)}
+            <div class="zone-card-actions">
+              <button type="button" data-zone-focus="${zone.id}">${isFocused ? "Focused" : "Focus"}</button>
+              <button type="button" data-zone-active="${zone.id}">Set Active</button>
+              <button type="button" data-zone-delete="${zone.id}" class="danger-button">Delete</button>
+            </div>
+          </div>
         </div>
-        <div class="zone-meta">${metaBits.join(" | ")}</div>
-        ${renderZoneAnalysisBlock(zone, metrics, targetDepth, runtimeGroupCount)}
-        <div class="zone-card-actions">
-          <button type="button" data-zone-focus="${zone.id}">${isFocused ? "Focused" : "Focus"}</button>
-          <button type="button" data-zone-active="${zone.id}">Set Active</button>
-          <button type="button" data-zone-delete="${zone.id}" class="danger-button">Delete</button>
-        </div>
-      </div>
-    `;
-  }),
+      `;
+    }),
   ].join("");
 
   elements.zonesList.querySelectorAll("[data-zone-name]").forEach((input) => {
@@ -598,6 +621,14 @@ function renderZonesList(elements, state, analysis) {
   elements.zonesList.querySelectorAll("[data-zone-color]").forEach((input) => {
     input.addEventListener("input", () => {
       storeSafeDispatch(elements, "UPDATE_ZONE", { id: input.dataset.zoneColor, patch: { color: input.value } });
+    });
+  });
+  elements.zonesList.querySelectorAll("[data-zone-toggle]").forEach((button) => {
+    button.addEventListener("click", () => {
+      storeSafeDispatch(elements, "SET_ZONE_PANEL_EXPANDED", {
+        id: button.dataset.zoneToggle,
+        expanded: button.getAttribute("aria-expanded") !== "true",
+      });
     });
   });
   elements.zonesList.querySelectorAll("[data-zone-runtime]").forEach((input) => {
@@ -677,6 +708,21 @@ function renderZoneAnalysisBlock(zone, metrics, targetDepth, runtimeGroupCount) 
       ${runtimeFieldHtml}
       <div class="zone-meta">${schedulingNote}</div>
       <div class="zone-meta">Flow ${flow} | PR spread ${spread} | Watered ${wateredArea}</div>
+    </div>
+  `;
+}
+
+function renderZoneIdentityFields(zone) {
+  return `
+    <div class="zone-identity-fields">
+      <label class="field zone-name-field">
+        <span>Zone name</span>
+        <input data-zone-name="${zone.id}" type="text" value="${escapeHtml(zone.name)}">
+      </label>
+      <label class="field zone-color-field">
+        <span>Color</span>
+        <input data-zone-color="${zone.id}" type="color" value="${zone.color}">
+      </label>
     </div>
   `;
 }
@@ -766,6 +812,10 @@ function collectRuntimeGroupNames(zones) {
 
 function buildRuntimeGroupKey(name) {
   return name ? String(name).trim().toLocaleLowerCase() : "";
+}
+
+function isZonePanelExpanded(state, zoneId) {
+  return (state.ui?.expandedZoneIds ?? []).includes(zoneId);
 }
 
 function storeSafeDispatch(elements, type, payload) {
