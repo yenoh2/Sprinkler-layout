@@ -21,6 +21,7 @@
         <div class="tool-grid topbar-tool-grid">
           <button type="button" data-tool="select" class="tool-button is-active">Select</button>
           <button type="button" data-tool="place" class="tool-button">Place</button>
+          <button type="button" data-tool="valve-box" class="tool-button">Valve Box</button>
           <button type="button" data-tool="calibrate" class="tool-button">Calibrate</button>
           <button type="button" data-tool="measure" class="tool-button">Measure</button>
           <button type="button" data-tool="pan" class="tool-button">Pan</button>
@@ -220,8 +221,8 @@
 
       <aside class="details-panel">
         <section class="panel">
-          <h2>Selected Sprinkler</h2>
-          <div id="selection-empty" class="empty-card">Select a sprinkler to edit its properties.</div>
+          <h2 id="selection-title">Selected Item</h2>
+          <div id="selection-empty" class="empty-card">Select a sprinkler or valve box to edit its properties.</div>
           <div id="selection-form" hidden>
             <label class="field">
               <span>Coverage</span>
@@ -329,6 +330,29 @@
             <div class="button-row">
               <button id="duplicate-sprinkler-button" type="button">Duplicate</button>
               <button id="delete-sprinkler-button" type="button" class="danger-button">Delete</button>
+            </div>
+          </div>
+          <div id="valve-box-form" hidden>
+            <label class="field">
+              <span>Label</span>
+              <input id="valve-box-label" type="text">
+            </label>
+            <div class="field-group">
+              <label class="field">
+                <span>X</span>
+                <input id="valve-box-x" type="number" step="0.01">
+              </label>
+              <label class="field">
+                <span>Y</span>
+                <input id="valve-box-y" type="number" step="0.01">
+              </label>
+            </div>
+            <label class="field">
+              <span>Assigned zones</span>
+              <div id="valve-box-zones" class="valve-box-zone-list"></div>
+            </label>
+            <div class="button-row">
+              <button id="delete-valve-box-button" type="button" class="danger-button">Delete</button>
             </div>
           </div>
         </section>

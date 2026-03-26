@@ -1,4 +1,4 @@
-import { buildCopiedSprinklerLabel, createInitialState, createStore, findSelectedSprinkler } from "../state/project-state.js";
+import { buildCopiedSprinklerLabel, createInitialState, createStore, findSelectedSprinkler, findSelectedValveBox } from "../state/project-state.js";
 import { createRenderer } from "../canvas/renderer.js";
 import { createInteractionController } from "../canvas/interactions.js";
 import { bindPanels } from "../ui/panels.js";
@@ -86,10 +86,15 @@ document.addEventListener("keydown", (event) => {
   }
 
   if (event.key === "Delete" || event.key === "Backspace") {
-    const selectedId = store.getState().ui.selectedSprinklerId;
-    if (selectedId) {
+    const state = store.getState();
+    if (state.ui.selectedSprinklerId) {
       event.preventDefault();
-      store.dispatch({ type: "DELETE_SPRINKLER", payload: { id: selectedId } });
+      store.dispatch({ type: "DELETE_SPRINKLER", payload: { id: state.ui.selectedSprinklerId } });
+      return;
+    }
+    if (state.ui.selectedValveBoxId) {
+      event.preventDefault();
+      store.dispatch({ type: "DELETE_VALVE_BOX", payload: { id: state.ui.selectedValveBoxId } });
     }
   }
 
@@ -183,6 +188,10 @@ function copySelectedSprinkler() {
 
 function pasteSprinklerFromClipboard() {
   if (!sprinklerClipboard) {
+    return false;
+  }
+
+  if (findSelectedValveBox(store.getState())) {
     return false;
   }
 

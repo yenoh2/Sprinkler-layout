@@ -1,7 +1,7 @@
 import { pointFromAngle, pointInSprinkler, toRadians } from "../geometry/arcs.js";
 import { buildStripFootprintWorldPoints, buildStripHandleWorldPoints, isStripCoverage } from "../geometry/coverage.js";
 import { toPixels, worldToScreen } from "../geometry/scale.js";
-import { findSelectedSprinkler, getZoneById, hasHydraulics, isProjectReady } from "../state/project-state.js";
+import { findSelectedSprinkler, findSelectedValveBox, getZoneById, hasHydraulics, isProjectReady } from "../state/project-state.js";
 
 const RATE_COLOR_STOPS = [
   { stop: 0, rgb: [24, 76, 107], alpha: 0 },
@@ -67,6 +67,7 @@ export function createRenderer(canvas, store, analyzer) {
       drawCoverage(state, analysis);
     }
     drawSprinklers(state);
+    drawValveBoxes(state);
     drawSelectedHandles(state);
     drawOverlayWarnings(state);
   }
@@ -304,6 +305,53 @@ export function createRenderer(canvas, store, analyzer) {
     });
   }
 
+  function drawValveBoxes(state) {
+    const selectedValveBox = findSelectedValveBox(state);
+    state.valveBoxes.forEach((valveBox) => {
+      const center = worldToScreen({ x: valveBox.x, y: valveBox.y }, state.view);
+      const linkedZones = state.zones.filter((zone) => zone.valveBoxId === valveBox.id);
+      const primaryZone = linkedZones[0] ?? null;
+      const isSelected = selectedValveBox?.id === valveBox.id;
+      const isFocusedOut = state.ui.focusedZoneId && !linkedZones.some((zone) => zone.id === state.ui.focusedZoneId);
+      ctx.save();
+      if (isFocusedOut) {
+        ctx.globalAlpha = 0.35;
+      }
+      drawValveBoxSymbol(center, primaryZone?.color ?? "#7d6957", isSelected);
+      if (state.view.showLabels) {
+        ctx.fillStyle = "#2f2418";
+        ctx.font = "12px Aptos, Segoe UI, sans-serif";
+        ctx.fillText(valveBox.label || valveBox.id, center.x + 16, center.y - 2);
+        if (linkedZones.length && state.view.showZoneLabels) {
+          const zoneText = linkedZones.length === 1 ? linkedZones[0].name : `${linkedZones.length} zones`;
+          ctx.fillStyle = primaryZone?.color ?? "#7d6957";
+          ctx.font = "11px Aptos, Segoe UI, sans-serif";
+          ctx.fillText(zoneText, center.x + 16, center.y + 12);
+        }
+      }
+      ctx.restore();
+    });
+  }
+
+  function drawValveBoxSymbol(center, accentColor, isSelected) {
+    const width = 24;
+    const height = 18;
+    const left = center.x - width / 2;
+    const top = center.y - height / 2;
+    ctx.fillStyle = "#fff7eb";
+    ctx.strokeStyle = isSelected ? "#b65c2a" : "#4f4033";
+    ctx.lineWidth = isSelected ? 2.6 : 2;
+    ctx.fillRect(left, top, width, height);
+    ctx.strokeRect(left, top, width, height);
+
+    ctx.fillStyle = accentColor;
+    ctx.fillRect(left + 2, top + 2, width - 4, 4);
+
+    ctx.fillStyle = "#4f4033";
+    ctx.font = "bold 8px Aptos, Segoe UI, sans-serif";
+    ctx.fillText("VB", left + 5, top + 13);
+  }
+
   function drawSelectedHandles(state) {
     const selected = findSelectedSprinkler(state);
     if (!selected || !state.scale.pixelsPerUnit) {
@@ -504,6 +552,15 @@ export function createRenderer(canvas, store, analyzer) {
     }) || null;
   }
 
+  function getHitValveBox(worldPoint) {
+    const state = store.getState();
+    const screenPoint = worldToScreen(worldPoint, state.view);
+    return [...state.valveBoxes].reverse().find((valveBox) => {
+      const center = worldToScreen({ x: valveBox.x, y: valveBox.y }, state.view);
+      return Math.abs(screenPoint.x - center.x) <= 14 && Math.abs(screenPoint.y - center.y) <= 12;
+    }) || null;
+  }
+
   function getArcHandleHit(worldPoint) {
     const state = store.getState();
     const selected = findSelectedSprinkler(state);
@@ -559,6 +616,7 @@ export function createRenderer(canvas, store, analyzer) {
     const state = store.getState();
     return {
       sprinklerCount: state.sprinklers.length,
+      valveBoxCount: state.valveBoxes.length,
       meanRadius: state.sprinklers.length
         ? state.sprinklers.reduce((sum, sprinkler) =>
           sum + (isStripCoverage(sprinkler) ? Math.max(sprinkler.stripLength ?? 0, sprinkler.stripWidth ?? 0) : sprinkler.radius), 0,
@@ -575,6 +633,7 @@ export function createRenderer(canvas, store, analyzer) {
     resize,
     render,
     getHitSprinkler,
+    getHitValveBox,
     getArcHandleHit,
     getRadiusHandleHit,
     getStripHandleHit,

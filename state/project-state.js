@@ -5,6 +5,10 @@ const HISTORY_ACTIONS = new Set([
   "MOVE_SPRINKLER",
   "UPDATE_SPRINKLER",
   "DELETE_SPRINKLER",
+  "ADD_VALVE_BOX",
+  "MOVE_VALVE_BOX",
+  "UPDATE_VALVE_BOX",
+  "DELETE_VALVE_BOX",
   "SET_SCALE",
   "SET_HYDRAULICS",
   "SET_BACKGROUND",
@@ -58,6 +62,7 @@ export function createInitialState() {
     },
     zones: [],
     sprinklers: [],
+    valveBoxes: [],
     view: {
       offsetX: 0,
       offsetY: 0,
@@ -82,6 +87,7 @@ export function createInitialState() {
       activeTool: "select",
       placementPattern: "full",
       selectedSprinklerId: null,
+      selectedValveBoxId: null,
       hint: "Import an image, calibrate scale, then place sprinklers.",
       measurePoints: [],
       measurePreviewPoint: null,
@@ -148,7 +154,9 @@ function reduceState(state, action) {
 function applyAction(state, action) {
   switch (action.type) {
     case "SET_ACTIVE_TOOL":
-      state.ui.activeTool = action.payload.tool;
+      state.ui.activeTool = ["select", "place", "valve-box", "calibrate", "measure", "pan"].includes(action.payload.tool)
+        ? action.payload.tool
+        : "select";
       if (action.payload.tool !== "measure") {
         state.ui.measurePoints = [];
         state.ui.measurePreviewPoint = null;
@@ -186,6 +194,7 @@ function applyAction(state, action) {
     case "SET_BACKGROUND":
       state.background = { ...action.payload };
       state.ui.selectedSprinklerId = null;
+      state.ui.selectedValveBoxId = null;
       return state;
     case "ADD_CALIBRATION_POINT":
       state.scale.calibrationPoints = appendBounded(state.scale.calibrationPoints, action.payload.point, 2);
@@ -224,6 +233,7 @@ function applyAction(state, action) {
         runtimeMinutes: null,
         runtimeGroupName: null,
         includeInPartsList: true,
+        valveBoxId: null,
       };
       state.zones.unshift(zone);
       state.ui.activeZoneId = zone.id;
@@ -299,6 +309,7 @@ function applyAction(state, action) {
         zoneId: action.payload.zoneId ?? state.ui.activeZoneId ?? null,
       });
       state.ui.selectedSprinklerId = action.payload.id;
+      state.ui.selectedValveBoxId = null;
       return state;
     case "MOVE_SPRINKLER": {
       const sprinkler = findSprinkler(state, action.payload.id);
@@ -325,6 +336,7 @@ function applyAction(state, action) {
       return state;
     case "SELECT_SPRINKLER":
       state.ui.selectedSprinklerId = action.payload.id;
+      state.ui.selectedValveBoxId = null;
       return state;
     case "DUPLICATE_SPRINKLER": {
       const sprinkler = findSprinkler(state, action.payload.id);
@@ -339,8 +351,51 @@ function applyAction(state, action) {
         label: buildCopiedSprinklerLabel(state.sprinklers, sprinkler.label),
       });
       state.ui.selectedSprinklerId = action.payload.newId;
+      state.ui.selectedValveBoxId = null;
       return state;
     }
+    case "ADD_VALVE_BOX":
+      state.valveBoxes.push({
+        id: action.payload.id,
+        x: action.payload.x,
+        y: action.payload.y,
+        label: action.payload.label || `VB-${state.valveBoxes.length + 1}`,
+      });
+      state.ui.selectedValveBoxId = action.payload.id;
+      state.ui.selectedSprinklerId = null;
+      return state;
+    case "MOVE_VALVE_BOX": {
+      const valveBox = findValveBox(state, action.payload.id);
+      if (!valveBox) {
+        return null;
+      }
+      valveBox.x = action.payload.x;
+      valveBox.y = action.payload.y;
+      return state;
+    }
+    case "UPDATE_VALVE_BOX": {
+      const valveBox = findValveBox(state, action.payload.id);
+      if (!valveBox) {
+        return null;
+      }
+      Object.assign(valveBox, sanitizeValveBoxPatch(action.payload.patch));
+      return state;
+    }
+    case "DELETE_VALVE_BOX":
+      state.valveBoxes = state.valveBoxes.filter((valveBox) => valveBox.id !== action.payload.id);
+      state.zones.forEach((zone) => {
+        if (zone.valveBoxId === action.payload.id) {
+          zone.valveBoxId = null;
+        }
+      });
+      if (state.ui.selectedValveBoxId === action.payload.id) {
+        state.ui.selectedValveBoxId = null;
+      }
+      return state;
+    case "SELECT_VALVE_BOX":
+      state.ui.selectedValveBoxId = action.payload.id;
+      state.ui.selectedSprinklerId = null;
+      return state;
     case "ADD_MEASURE_POINT":
       state.ui.measurePoints = appendBounded(state.ui.measurePoints, action.payload.point, 2);
       state.ui.measurePreviewPoint = null;
@@ -469,7 +524,28 @@ function sanitizeZonePatch(patch) {
   if ("includeInPartsList" in patch) {
     sanitized.includeInPartsList = Boolean(patch.includeInPartsList);
   }
+  if ("valveBoxId" in patch) {
+    sanitized.valveBoxId = patch.valveBoxId || null;
+  }
 
+  return sanitized;
+}
+
+function sanitizeValveBoxPatch(patch) {
+  if (!patch) {
+    return {};
+  }
+
+  const sanitized = {};
+  if ("x" in patch) {
+    sanitized.x = Number(patch.x);
+  }
+  if ("y" in patch) {
+    sanitized.y = Number(patch.y);
+  }
+  if ("label" in patch) {
+    sanitized.label = patch.label || "Valve Box";
+  }
   return sanitized;
 }
 
@@ -565,6 +641,9 @@ function buildHint(state) {
   if (state.ui.activeTool === "place" && state.ui.placementPattern === "strip") {
     return "Click and drag to place a strip sprinkler, then fine-tune width or type from the selected head controls.";
   }
+  if (state.ui.activeTool === "valve-box") {
+    return `Click to place valve boxes. ${state.valveBoxes.length} box${state.valveBoxes.length === 1 ? "" : "es"} on plan.`;
+  }
   return `Ready to place sprinklers. ${state.sprinklers.length} head${state.sprinklers.length === 1 ? "" : "s"} on plan.`;
 }
 
@@ -581,13 +660,20 @@ function normalizeLoadedProject(project) {
     analysis: { ...initial.analysis, ...sanitizeAnalysisPatch(project.analysis) },
     parts: { ...initial.parts, ...sanitizePartsPatch(project.parts) },
     zones: Array.isArray(project.zones) ? project.zones.map(normalizeZone) : [],
+    valveBoxes: Array.isArray(project.valveBoxes) ? project.valveBoxes.map(normalizeValveBox) : [],
     view: normalizedView,
     ui: { ...initial.ui, ...project.ui, measurePreviewPoint: null, expandedZoneIds: [] },
     sprinklers: Array.isArray(project.sprinklers) ? project.sprinklers.map(normalizeSprinkler) : [],
   };
+  merged.ui.activeTool = ["select", "place", "valve-box", "calibrate", "measure", "pan"].includes(merged.ui.activeTool)
+    ? merged.ui.activeTool
+    : "select";
   merged.ui.placementPattern = ["full", "arc", "strip"].includes(merged.ui.placementPattern)
     ? merged.ui.placementPattern
     : "full";
+  if (merged.ui.selectedSprinklerId && merged.ui.selectedValveBoxId) {
+    merged.ui.selectedValveBoxId = null;
+  }
   merged.ui.appScreen = merged.ui.appScreen === "parts" ? "parts" : "layout";
   merged.history = { undoStack: [], redoStack: [] };
   return merged;
@@ -599,6 +685,14 @@ function findSprinkler(state, id) {
 
 export function findSelectedSprinkler(state) {
   return findSprinkler(state, state.ui.selectedSprinklerId);
+}
+
+function findValveBox(state, id) {
+  return state.valveBoxes.find((valveBox) => valveBox.id === id) || null;
+}
+
+export function findSelectedValveBox(state) {
+  return findValveBox(state, state.ui.selectedValveBoxId);
 }
 
 export function cloneProjectSnapshot(state) {
@@ -693,6 +787,18 @@ function normalizeZone(zone) {
       : null,
     runtimeGroupName: sanitizeRuntimeGroupName(zone?.runtimeGroupName),
     includeInPartsList: "includeInPartsList" in (zone ?? {}) ? Boolean(zone.includeInPartsList) : true,
+    valveBoxId: zone?.valveBoxId || null,
+  };
+}
+
+function normalizeValveBox(valveBox) {
+  const x = Number(valveBox?.x);
+  const y = Number(valveBox?.y);
+  return {
+    id: valveBox?.id || crypto.randomUUID(),
+    x: Number.isFinite(x) ? x : 0,
+    y: Number.isFinite(y) ? y : 0,
+    label: valveBox?.label || "Valve Box",
   };
 }
 

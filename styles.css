@@ -419,6 +419,19 @@ hr {
   width: auto;
 }
 
+.valve-box-zone-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.valve-box-zone-option {
+  margin-bottom: 0;
+}
+
+.valve-box-zone-list .empty-card {
+  margin: 0;
+}
+
 .tool-button.is-active {
   background: linear-gradient(135deg, rgba(182, 92, 42, 0.18), rgba(125, 52, 17, 0.28));
   border-color: rgba(125, 52, 17, 0.5);

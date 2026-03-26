@@ -1,6 +1,6 @@
 import { clamp } from "../geometry/arcs.js";
 import { fitBackgroundToView } from "../geometry/scale.js";
-import { cloneProjectSnapshot, findSelectedSprinkler, getNextZoneSeed, hasHydraulics, isProjectReady } from "../state/project-state.js";
+import { cloneProjectSnapshot, findSelectedSprinkler, findSelectedValveBox, getNextZoneSeed, hasHydraulics, isProjectReady } from "../state/project-state.js";
 
 export function bindPanels({ store, renderer, analyzer, interactions, io }) {
   const elements = bindElements();
@@ -58,8 +58,10 @@ function bindElements() {
     undoButton: document.getElementById("undo-button"),
     redoButton: document.getElementById("redo-button"),
     historySummary: document.getElementById("history-summary"),
+    selectionTitle: document.getElementById("selection-title"),
     selectionEmpty: document.getElementById("selection-empty"),
     selectionForm: document.getElementById("selection-form"),
+    valveBoxForm: document.getElementById("valve-box-form"),
     sprinklerCoverageModel: document.getElementById("sprinkler-coverage-model"),
     sprinklerLabel: document.getElementById("sprinkler-label"),
     sprinklerX: document.getElementById("sprinkler-x"),
@@ -87,6 +89,11 @@ function bindElements() {
     sprinklerAnalysis: document.getElementById("sprinkler-analysis"),
     duplicateButton: document.getElementById("duplicate-sprinkler-button"),
     deleteButton: document.getElementById("delete-sprinkler-button"),
+    valveBoxLabel: document.getElementById("valve-box-label"),
+    valveBoxX: document.getElementById("valve-box-x"),
+    valveBoxY: document.getElementById("valve-box-y"),
+    valveBoxZones: document.getElementById("valve-box-zones"),
+    deleteValveBoxButton: document.getElementById("delete-valve-box-button"),
     scaleStatus: document.getElementById("scale-status"),
     hydraulicsStatus: document.getElementById("hydraulics-status"),
     readyStatus: document.getElementById("ready-status"),
@@ -321,7 +328,11 @@ function bindEvents(elements, store, renderer, interactions, io) {
     elements.sprinklerHidden,
   ].forEach((element) => {
     const eventName = element.type === "checkbox" || element.tagName === "SELECT" ? "change" : "input";
-    element.addEventListener(eventName, () => updateSelection(elements, store));
+    element.addEventListener(eventName, () => updateSprinklerSelection(elements, store));
+  });
+
+  [elements.valveBoxLabel, elements.valveBoxX, elements.valveBoxY].forEach((element) => {
+    element.addEventListener("input", () => updateValveBoxSelection(elements, store));
   });
 
   elements.sprinklerZoneButton.addEventListener("click", () => {
@@ -342,7 +353,7 @@ function bindEvents(elements, store, renderer, interactions, io) {
     }
     setZonePickerOpen(elements, false);
     elements.sprinklerZone.value = button.dataset.zoneOption;
-    updateSelection(elements, store);
+    updateSprinklerSelection(elements, store);
     elements.sprinklerZoneButton.focus();
   });
   elements.sprinklerZonePicker.addEventListener("focusout", (event) => {
@@ -376,11 +387,18 @@ function bindEvents(elements, store, renderer, interactions, io) {
     }
   });
 
+  elements.deleteValveBoxButton.addEventListener("click", () => {
+    const selected = findSelectedValveBox(store.getState());
+    if (selected) {
+      store.dispatch({ type: "DELETE_VALVE_BOX", payload: { id: selected.id } });
+    }
+  });
+
   elements.undoButton.addEventListener("click", () => store.dispatch({ type: "UNDO" }));
   elements.redoButton.addEventListener("click", () => store.dispatch({ type: "REDO" }));
 }
 
-function updateSelection(elements, store) {
+function updateSprinklerSelection(elements, store) {
   const selected = findSelectedSprinkler(store.getState());
   if (!selected) {
     return;
@@ -413,6 +431,24 @@ function updateSelection(elements, store) {
   });
 }
 
+function updateValveBoxSelection(elements, store) {
+  const selected = findSelectedValveBox(store.getState());
+  if (!selected) {
+    return;
+  }
+  store.dispatch({
+    type: "UPDATE_VALVE_BOX",
+    payload: {
+      id: selected.id,
+      patch: {
+        label: elements.valveBoxLabel.value,
+        x: Number(elements.valveBoxX.value),
+        y: Number(elements.valveBoxY.value),
+      },
+    },
+  });
+}
+
 function updateUi(elements, state, renderer, analyzer) {
   const analysis = analyzer?.getSnapshot(state) ?? null;
   const isPartsScreen = state.ui.appScreen === "parts";
@@ -430,6 +466,7 @@ function updateUi(elements, state, renderer, analyzer) {
   elements.projectName.value = state.meta.projectName;
   elements.unitsSelect.value = state.scale.units;
   elements.placementPattern.value = state.ui.placementPattern;
+  elements.placementPattern.disabled = state.ui.activeTool !== "place";
   elements.lineSizeSelect.value = state.hydraulics.lineSizeInches ? String(state.hydraulics.lineSizeInches) : "";
   elements.pressureInput.value = state.hydraulics.pressurePsi ?? "";
   elements.designFlowLimitInput.value = state.hydraulics.designFlowLimitGpm ?? "";
@@ -454,12 +491,13 @@ function updateUi(elements, state, renderer, analyzer) {
   elements.undoButton.disabled = !state.history.undoStack.length;
   elements.redoButton.disabled = !state.history.redoStack.length;
 
-  const selected = findSelectedSprinkler(state);
+  const selectedSprinkler = findSelectedSprinkler(state);
+  const selectedValveBox = findSelectedValveBox(state);
   populateZoneSelect(elements.activeZoneSelect, state.zones, state.ui.activeZoneId);
   populateAnalysisZoneSelect(elements.analysisZoneSelect, state.zones, analysis?.selectedZoneId ?? state.view.analysisZoneId ?? "");
   elements.analysisZoneSelect.disabled = (state.view.analysisOverlayMode ?? "application_rate") !== "zone_catch_can" || !state.zones.length;
-  populateSprinklerZonePicker(elements, state.zones, selected?.zoneId ?? "");
-  if (!selected) {
+  populateSprinklerZonePicker(elements, state.zones, selectedSprinkler?.zoneId ?? "");
+  if (!selectedSprinkler) {
     setZonePickerOpen(elements, false);
   }
 
@@ -468,29 +506,35 @@ function updateUi(elements, state, renderer, analyzer) {
     renderZonesList(elements, state, analysis);
     elements.zonesList.dataset.renderKey = nextZonesListRenderKey;
   }
-  elements.selectionEmpty.hidden = Boolean(selected);
-  elements.selectionForm.hidden = !selected;
-  if (selected) {
-    const coverageValue = selected.coverageModel === "strip"
+  elements.selectionTitle.textContent = selectedSprinkler
+    ? "Selected Sprinkler"
+    : selectedValveBox
+      ? "Selected Valve Box"
+      : "Selected Item";
+  elements.selectionEmpty.hidden = Boolean(selectedSprinkler || selectedValveBox);
+  elements.selectionForm.hidden = !selectedSprinkler;
+  elements.valveBoxForm.hidden = !selectedValveBox;
+  if (selectedSprinkler) {
+    const coverageValue = selectedSprinkler.coverageModel === "strip"
       ? "strip"
-      : selected.pattern === "arc"
+      : selectedSprinkler.pattern === "arc"
         ? "arc"
         : "full";
-    elements.sprinklerLabel.value = selected.label ?? "";
-    elements.sprinklerX.value = formatEditableNumber(selected.x);
-    elements.sprinklerY.value = formatEditableNumber(selected.y);
+    elements.sprinklerLabel.value = selectedSprinkler.label ?? "";
+    elements.sprinklerX.value = formatEditableNumber(selectedSprinkler.x);
+    elements.sprinklerY.value = formatEditableNumber(selectedSprinkler.y);
     elements.sprinklerCoverageModel.value = coverageValue;
-    elements.sprinklerRadius.value = formatEditableNumber(selected.radius);
-    elements.sprinklerPattern.value = selected.pattern;
-    elements.sprinklerStart.value = String((selected.startDeg + selected.rotationDeg) % 360);
-    elements.sprinklerSweep.value = String(selected.sweepDeg);
-    elements.sprinklerStripMode.value = selected.stripMode ?? "end";
-    elements.sprinklerStripMirror.value = selected.stripMirror ?? "right";
-    elements.sprinklerStripLength.value = formatEditableNumber(selected.stripLength ?? 15);
-    elements.sprinklerStripWidth.value = formatEditableNumber(selected.stripWidth ?? 4);
-    elements.sprinklerStripRotation.value = String(Math.round(selected.stripRotationDeg ?? 0));
-    elements.sprinklerZone.value = selected.zoneId ?? "";
-    elements.sprinklerHidden.checked = selected.hidden;
+    elements.sprinklerRadius.value = formatEditableNumber(selectedSprinkler.radius);
+    elements.sprinklerPattern.value = selectedSprinkler.pattern;
+    elements.sprinklerStart.value = String((selectedSprinkler.startDeg + selectedSprinkler.rotationDeg) % 360);
+    elements.sprinklerSweep.value = String(selectedSprinkler.sweepDeg);
+    elements.sprinklerStripMode.value = selectedSprinkler.stripMode ?? "end";
+    elements.sprinklerStripMirror.value = selectedSprinkler.stripMirror ?? "right";
+    elements.sprinklerStripLength.value = formatEditableNumber(selectedSprinkler.stripLength ?? 15);
+    elements.sprinklerStripWidth.value = formatEditableNumber(selectedSprinkler.stripWidth ?? 4);
+    elements.sprinklerStripRotation.value = String(Math.round(selectedSprinkler.stripRotationDeg ?? 0));
+    elements.sprinklerZone.value = selectedSprinkler.zoneId ?? "";
+    elements.sprinklerHidden.checked = selectedSprinkler.hidden;
 
     const isStrip = coverageValue === "strip";
     elements.sectorRadiusPattern.hidden = isStrip;
@@ -504,7 +548,16 @@ function updateUi(elements, state, renderer, analyzer) {
     elements.sprinklerStripMirrorField.hidden = true;
   }
 
-  renderSprinklerAnalysis(elements.sprinklerAnalysis, selected, analysis);
+  if (selectedValveBox) {
+    elements.valveBoxLabel.value = selectedValveBox.label ?? "";
+    elements.valveBoxX.value = formatEditableNumber(selectedValveBox.x);
+    elements.valveBoxY.value = formatEditableNumber(selectedValveBox.y);
+    renderValveBoxZones(elements, state, selectedValveBox);
+  } else {
+    elements.valveBoxZones.innerHTML = "";
+  }
+
+  renderSprinklerAnalysis(elements.sprinklerAnalysis, selectedSprinkler, analysis);
   renderAnalysisLegend(elements, state, analysis);
   renderPartsScreen(elements, state, analysis);
 
@@ -517,6 +570,7 @@ function updateUi(elements, state, renderer, analyzer) {
     ["Background", state.background.name || "None"],
     ["Scale", state.scale.calibrated ? `${state.scale.pixelsPerUnit.toFixed(2)} px/${state.scale.units}` : "Not calibrated"],
     ["Heads", String(summary.sprinklerCount)],
+    ["Valve boxes", String(summary.valveBoxCount ?? 0)],
     ["Mean size", summary.meanRadius ? `${summary.meanRadius.toFixed(1)} ${state.scale.units}` : "--"],
     ["Peak rate", analysis?.summary.applicationRateMaxInHr ? `${analysis.summary.applicationRateMaxInHr.toFixed(2)} in/hr` : "--"],
     ["Avg rate", analysis?.summary.applicationRateAverageInHr ? `${analysis.summary.applicationRateAverageInHr.toFixed(2)} in/hr` : "--"],
@@ -588,6 +642,36 @@ function renderZonePickerOption(zone, isSelected) {
   `;
 }
 
+function renderValveBoxZones(elements, state, selectedValveBox) {
+  if (!state.zones.length) {
+    elements.valveBoxZones.innerHTML = '<div class="empty-card">Create zones to assign this box.</div>';
+    return;
+  }
+
+  elements.valveBoxZones.innerHTML = state.zones.map((zone) => `
+    <label class="checkbox-row valve-box-zone-option">
+      <input
+        type="checkbox"
+        data-valve-box-zone="${zone.id}"
+        ${zone.valveBoxId === selectedValveBox.id ? "checked" : ""}
+      >
+      <span class="zone-picker-option">
+        <span class="zone-swatch" style="background:${zone.color}"></span>
+        <span>${escapeHtml(zone.name)}</span>
+      </span>
+    </label>
+  `).join("");
+
+  elements.valveBoxZones.querySelectorAll("[data-valve-box-zone]").forEach((input) => {
+    input.addEventListener("change", () => {
+      storeSafeDispatch(elements, "UPDATE_ZONE", {
+        id: input.dataset.valveBoxZone,
+        patch: { valveBoxId: input.checked ? selectedValveBox.id : null },
+      });
+    });
+  });
+}
+
 function setZonePickerOpen(elements, isOpen) {
   elements.sprinklerZoneMenu.hidden = !isOpen;
   elements.sprinklerZoneButton.setAttribute("aria-expanded", isOpen ? "true" : "false");
@@ -600,6 +684,7 @@ function renderZonesList(elements, state, analysis) {
   }
 
   const metricsById = new Map((analysis?.zones ?? []).map((zone) => [zone.zoneId, zone]));
+  const valveBoxesById = new Map((state.valveBoxes ?? []).map((valveBox) => [valveBox.id, valveBox]));
   const runtimeGroupCounts = collectRuntimeGroupCounts(state.zones);
   const runtimeGroupOptions = buildRuntimeGroupOptionsList(state.zones);
   const targetDepth = analysis?.targetDepthInches ?? state.analysis.targetDepthInches ?? 1;
@@ -628,6 +713,12 @@ function renderZonesList(elements, state, analysis) {
       }
       if (zone.runtimeGroupName) {
         metaBits.push(runtimeGroupCount > 1 ? `Shared area ${zone.runtimeGroupName}` : `Area ${zone.runtimeGroupName}`);
+      }
+      const valveBox = zone.valveBoxId ? valveBoxesById.get(zone.valveBoxId) ?? null : null;
+      if (valveBox) {
+        metaBits.push(`Valve box ${valveBox.label}`);
+      } else if (state.valveBoxes.length) {
+        metaBits.push("No valve box");
       }
       return `
         <div class="zone-card ${isDimmed ? "is-dimmed" : ""} ${isExpanded ? "is-expanded" : "is-collapsed"}" data-zone-id="${zone.id}">
@@ -931,6 +1022,8 @@ function buildZonesListRenderKey(state, analysis) {
         runtimeMinutes: zone.runtimeMinutes ?? null,
         runtimeGroupName: zone.runtimeGroupName ?? null,
         includeInPartsList: zone.includeInPartsList !== false,
+        valveBoxId: zone.valveBoxId ?? null,
+        valveBoxLabel: zone.valveBoxId ? (state.valveBoxes ?? []).find((valveBox) => valveBox.id === zone.valveBoxId)?.label ?? null : null,
         headCount: headCountsByZoneId.get(zone.id) ?? 0,
         metrics: metrics ? {
           totalFlowGpm: metrics.totalFlowGpm,

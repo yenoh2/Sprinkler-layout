@@ -86,6 +86,21 @@ export function createInteractionController(canvas, store, renderer) {
       return;
     }
 
+    if (state.ui.activeTool === "valve-box") {
+      if (!state.scale.calibrated) {
+        return;
+      }
+      store.dispatch({
+        type: "ADD_VALVE_BOX",
+        payload: {
+          id: crypto.randomUUID(),
+          x: worldPoint.x,
+          y: worldPoint.y,
+        },
+      });
+      return;
+    }
+
     if (state.ui.activeTool === "calibrate") {
       store.dispatch({ type: "ADD_CALIBRATION_POINT", payload: { point: worldPoint } });
       return;
@@ -133,6 +148,21 @@ export function createInteractionController(canvas, store, renderer) {
         kind: stripHandleHit.edge === "secondary" ? "strip-secondary" : "strip-primary",
         id: stripHandleHit.id,
         lastPatch: null,
+      };
+      canvas.setPointerCapture(event.pointerId);
+      return;
+    }
+
+    const valveBoxHit = renderer.getHitValveBox?.(worldPoint);
+    if (valveBoxHit) {
+      store.dispatch({ type: "SELECT_VALVE_BOX", payload: { id: valveBoxHit.id } });
+      dragState = {
+        kind: "move-valve-box",
+        id: valveBoxHit.id,
+        startX: valveBoxHit.x,
+        startY: valveBoxHit.y,
+        lastX: valveBoxHit.x,
+        lastY: valveBoxHit.y,
       };
       canvas.setPointerCapture(event.pointerId);
       return;
@@ -224,6 +254,16 @@ export function createInteractionController(canvas, store, renderer) {
         }
         return;
       }
+      if (dragState.kind === "move-valve-box") {
+        dragState.lastX = worldPoint.x;
+        dragState.lastY = worldPoint.y;
+        store.dispatch({
+          type: "MOVE_VALVE_BOX",
+          payload: { id: dragState.id, x: worldPoint.x, y: worldPoint.y },
+          meta: { skipHistory: true },
+        });
+        return;
+      }
       dragState.lastX = worldPoint.x;
       dragState.lastY = worldPoint.y;
       store.dispatch({
@@ -256,6 +296,12 @@ export function createInteractionController(canvas, store, renderer) {
     if (dragState?.kind === "move" && (dragState.startX !== dragState.lastX || dragState.startY !== dragState.lastY)) {
       store.dispatch({
         type: "MOVE_SPRINKLER",
+        payload: { id: dragState.id, x: dragState.lastX, y: dragState.lastY },
+      });
+    }
+    if (dragState?.kind === "move-valve-box" && (dragState.startX !== dragState.lastX || dragState.startY !== dragState.lastY)) {
+      store.dispatch({
+        type: "MOVE_VALVE_BOX",
         payload: { id: dragState.id, x: dragState.lastX, y: dragState.lastY },
       });
     }
@@ -423,6 +469,7 @@ function shouldStartPan(event, activeTool, isSpacePressed) {
 function getCursorForTool(tool) {
   switch (tool) {
     case "place":
+    case "valve-box":
       return "crosshair";
     case "calibrate":
     case "measure":
