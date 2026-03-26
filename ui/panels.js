@@ -196,9 +196,11 @@ function bindEvents(elements, store, renderer, interactions, io) {
   });
   elements.createZoneButton.addEventListener("click", () => {
     const seed = getNextZoneSeed(store.getState());
+    const zoneId = crypto.randomUUID();
+    elements.__pendingZoneNameFocusId = zoneId;
     store.dispatch({
       type: "CREATE_ZONE",
-      payload: { id: crypto.randomUUID(), name: seed.name, color: seed.color },
+      payload: { id: zoneId, name: seed.name, color: seed.color },
     });
   });
   elements.clearZoneFocusButton.addEventListener("click", () => {
@@ -411,7 +413,11 @@ function updateUi(elements, state, renderer, analyzer) {
     setZonePickerOpen(elements, false);
   }
 
-  renderZonesList(elements, state, analysis);
+  const nextZonesListRenderKey = buildZonesListRenderKey(state, analysis);
+  if (elements.zonesList.dataset.renderKey !== nextZonesListRenderKey) {
+    renderZonesList(elements, state, analysis);
+    elements.zonesList.dataset.renderKey = nextZonesListRenderKey;
+  }
   elements.selectionEmpty.hidden = Boolean(selected);
   elements.selectionForm.hidden = !selected;
   if (selected) {
@@ -614,8 +620,15 @@ function renderZonesList(elements, state, analysis) {
   ].join("");
 
   elements.zonesList.querySelectorAll("[data-zone-name]").forEach((input) => {
-    input.addEventListener("input", () => {
+    const commitZoneName = () => {
       storeSafeDispatch(elements, "UPDATE_ZONE", { id: input.dataset.zoneName, patch: { name: input.value || "Untitled Zone" } });
+    };
+    input.addEventListener("change", commitZoneName);
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        input.blur();
+      }
     });
   });
   elements.zonesList.querySelectorAll("[data-zone-color]").forEach((input) => {
@@ -670,6 +683,7 @@ function renderZonesList(elements, state, analysis) {
     });
   });
   elements.zonesList.dataset.focusedZoneId = state.ui.focusedZoneId || "";
+  focusPendingZoneName(elements);
 }
 
 function renderZoneAnalysisBlock(zone, metrics, targetDepth, runtimeGroupCount) {
@@ -816,6 +830,65 @@ function buildRuntimeGroupKey(name) {
 
 function isZonePanelExpanded(state, zoneId) {
   return (state.ui?.expandedZoneIds ?? []).includes(zoneId);
+}
+
+function focusPendingZoneName(elements) {
+  const zoneId = elements.__pendingZoneNameFocusId;
+  if (!zoneId) {
+    return;
+  }
+
+  const input = elements.zonesList.querySelector(`[data-zone-name="${zoneId}"]`);
+  if (!(input instanceof HTMLInputElement)) {
+    return;
+  }
+
+  elements.__pendingZoneNameFocusId = null;
+  window.requestAnimationFrame(() => {
+    input.focus({ preventScroll: false });
+    input.select();
+  });
+}
+
+function buildZonesListRenderKey(state, analysis) {
+  const headCountsByZoneId = new Map();
+  for (const sprinkler of state.sprinklers ?? []) {
+    const zoneId = sprinkler.zoneId ?? "";
+    headCountsByZoneId.set(zoneId, (headCountsByZoneId.get(zoneId) ?? 0) + 1);
+  }
+
+  const analysisZonesById = new Map((analysis?.zones ?? []).map((zone) => [zone.zoneId, zone]));
+  return JSON.stringify({
+    activeZoneId: state.ui.activeZoneId ?? null,
+    focusedZoneId: state.ui.focusedZoneId ?? null,
+    expandedZoneIds: state.ui.expandedZoneIds ?? [],
+    targetDepthInches: analysis?.targetDepthInches ?? state.analysis?.targetDepthInches ?? 1,
+    zones: (state.zones ?? []).map((zone) => {
+      const metrics = analysisZonesById.get(zone.id) ?? null;
+      return {
+        id: zone.id,
+        name: zone.name,
+        color: zone.color,
+        runtimeMinutes: zone.runtimeMinutes ?? null,
+        runtimeGroupName: zone.runtimeGroupName ?? null,
+        includeInPartsList: zone.includeInPartsList !== false,
+        headCount: headCountsByZoneId.get(zone.id) ?? 0,
+        metrics: metrics ? {
+          totalFlowGpm: metrics.totalFlowGpm,
+          precipSpreadInHr: metrics.precipSpreadInHr,
+          isOverLimit: metrics.isOverLimit,
+          suggestedRuntimeMinutes: metrics.suggestedRuntimeMinutes,
+          effectiveRuntimeMinutes: metrics.effectiveRuntimeMinutes,
+          averageRateInHr: metrics.averageRateInHr,
+          averageDepthInches: metrics.averageDepthInches,
+          wateredAreaSqFt: metrics.wateredAreaSqFt,
+          runtimeGroupZoneCount: metrics.runtimeGroupZoneCount,
+          runtimeGroupScaleFactor: metrics.runtimeGroupScaleFactor,
+          runtimeGroupAverageDepthInches: metrics.runtimeGroupAverageDepthInches,
+        } : null,
+      };
+    }),
+  });
 }
 
 function storeSafeDispatch(elements, type, payload) {

@@ -58,7 +58,7 @@
         "visible": true,
         "runtimeMinutes": null,
         "runtimeGroupName": null,
-        "includeInPartsList": true
+        "includeInPartsList": false
       },
       {
         "id": "57ea6064-5e3f-4695-9431-2a56cbef8fdb",
@@ -703,11 +703,11 @@
       "offsetY": -67.97649202980779,
       "zoom": 0.5444471935830915,
       "showCoverage": true,
-      "showGrid": true,
-      "showLabels": true,
+      "showGrid": false,
+      "showLabels": false,
       "showZoneLabels": false,
-      "coverageOpacity": 0.16,
-      "zoneViewMode": "coverage",
+      "coverageOpacity": 0.05,
+      "zoneViewMode": "zone",
       "analysisOverlayMode": "full_schedule_depth",
       "analysisZoneId": null,
       "heatmapCellPx": 12,
@@ -721,7 +721,7 @@
     "ui": {
       "activeTool": "select",
       "placementPattern": "arc",
-      "selectedSprinklerId": null,
+      "selectedSprinklerId": "c0f4b95e-954e-4606-b95c-8ad0950fe718",
       "hint": "Ready to place sprinklers. 32 heads on plan.",
       "measurePoints": [],
       "measurePreviewPoint": null,
@@ -729,6 +729,9 @@
       "cursorWorld": null,
       "activeZoneId": "e696f5cc-8f48-4ff2-9fa9-5f4090e4466e",
       "focusedZoneId": null,
+      "expandedZoneIds": [
+        "a6115698-d745-41ee-ba29-f9b01b478e87"
+      ],
       "appScreen": "layout"
     }
   }

@@ -224,8 +224,9 @@ function applyAction(state, action) {
         runtimeGroupName: null,
         includeInPartsList: true,
       };
-      state.zones.push(zone);
+      state.zones.unshift(zone);
       state.ui.activeZoneId = zone.id;
+      state.ui.expandedZoneIds = [zone.id, ...(state.ui.expandedZoneIds ?? []).filter((zoneId) => zoneId !== zone.id)];
       return state;
     }
     case "UPDATE_ZONE": {
