@@ -1,4 +1,5 @@
 import { clamp, distanceBetween, normalizeAngle } from "../geometry/arcs.js";
+import { normalizePipeKind, normalizePipePoints } from "../geometry/pipes.js";
 
 const HISTORY_ACTIONS = new Set([
   "ADD_SPRINKLER",
@@ -9,6 +10,12 @@ const HISTORY_ACTIONS = new Set([
   "MOVE_VALVE_BOX",
   "UPDATE_VALVE_BOX",
   "DELETE_VALVE_BOX",
+  "ADD_PIPE_RUN",
+  "UPDATE_PIPE_RUN",
+  "DELETE_PIPE_RUN",
+  "MOVE_PIPE_VERTEX",
+  "INSERT_PIPE_VERTEX",
+  "DELETE_PIPE_VERTEX",
   "SET_SCALE",
   "SET_HYDRAULICS",
   "SET_BACKGROUND",
@@ -63,11 +70,13 @@ export function createInitialState() {
     zones: [],
     sprinklers: [],
     valveBoxes: [],
+    pipeRuns: [],
     view: {
       offsetX: 0,
       offsetY: 0,
       zoom: 1,
       showCoverage: true,
+      showPipe: true,
       showGrid: false,
       showLabels: true,
       showZoneLabels: true,
@@ -86,12 +95,16 @@ export function createInitialState() {
     ui: {
       activeTool: "select",
       placementPattern: "full",
+      pipePlacementKind: "zone",
       selectedSprinklerId: null,
       selectedValveBoxId: null,
+      selectedPipeRunId: null,
+      selectedPipeVertexIndex: null,
       hint: "Import an image, calibrate scale, then place sprinklers.",
       measurePoints: [],
       measurePreviewPoint: null,
       measureDistance: null,
+      pipeDraft: null,
       cursorWorld: null,
       activeZoneId: null,
       focusedZoneId: null,
@@ -154,7 +167,7 @@ function reduceState(state, action) {
 function applyAction(state, action) {
   switch (action.type) {
     case "SET_ACTIVE_TOOL":
-      state.ui.activeTool = ["select", "place", "valve-box", "calibrate", "measure", "pan"].includes(action.payload.tool)
+      state.ui.activeTool = ["select", "place", "pipe", "valve-box", "calibrate", "measure", "pan"].includes(action.payload.tool)
         ? action.payload.tool
         : "select";
       if (action.payload.tool !== "measure") {
@@ -162,11 +175,18 @@ function applyAction(state, action) {
         state.ui.measurePreviewPoint = null;
         state.ui.measureDistance = null;
       }
+      if (action.payload.tool !== "pipe") {
+        state.ui.pipeDraft = null;
+        state.ui.selectedPipeVertexIndex = null;
+      }
       return state;
     case "SET_PLACEMENT_PATTERN":
       state.ui.placementPattern = ["full", "arc", "strip"].includes(action.payload.pattern)
         ? action.payload.pattern
         : "full";
+      return state;
+    case "SET_PIPE_PLACEMENT_KIND":
+      state.ui.pipePlacementKind = normalizePipeKind(action.payload.kind);
       return state;
     case "SET_APP_SCREEN":
       state.ui.appScreen = action.payload.screen === "parts" ? "parts" : "layout";
@@ -195,6 +215,9 @@ function applyAction(state, action) {
       state.background = { ...action.payload };
       state.ui.selectedSprinklerId = null;
       state.ui.selectedValveBoxId = null;
+      state.ui.selectedPipeRunId = null;
+      state.ui.selectedPipeVertexIndex = null;
+      state.ui.pipeDraft = null;
       return state;
     case "ADD_CALIBRATION_POINT":
       state.scale.calibrationPoints = appendBounded(state.scale.calibrationPoints, action.payload.point, 2);
@@ -255,6 +278,11 @@ function applyAction(state, action) {
           sprinkler.zoneId = null;
         }
       });
+      state.pipeRuns.forEach((pipeRun) => {
+        if (pipeRun.zoneId === action.payload.id) {
+          pipeRun.zoneId = null;
+        }
+      });
       if (state.ui.activeZoneId === action.payload.id) {
         state.ui.activeZoneId = null;
       }
@@ -310,6 +338,8 @@ function applyAction(state, action) {
       });
       state.ui.selectedSprinklerId = action.payload.id;
       state.ui.selectedValveBoxId = null;
+      state.ui.selectedPipeRunId = null;
+      state.ui.selectedPipeVertexIndex = null;
       return state;
     case "MOVE_SPRINKLER": {
       const sprinkler = findSprinkler(state, action.payload.id);
@@ -337,6 +367,8 @@ function applyAction(state, action) {
     case "SELECT_SPRINKLER":
       state.ui.selectedSprinklerId = action.payload.id;
       state.ui.selectedValveBoxId = null;
+      state.ui.selectedPipeRunId = null;
+      state.ui.selectedPipeVertexIndex = null;
       return state;
     case "DUPLICATE_SPRINKLER": {
       const sprinkler = findSprinkler(state, action.payload.id);
@@ -352,6 +384,8 @@ function applyAction(state, action) {
       });
       state.ui.selectedSprinklerId = action.payload.newId;
       state.ui.selectedValveBoxId = null;
+      state.ui.selectedPipeRunId = null;
+      state.ui.selectedPipeVertexIndex = null;
       return state;
     }
     case "ADD_VALVE_BOX":
@@ -363,6 +397,8 @@ function applyAction(state, action) {
       });
       state.ui.selectedValveBoxId = action.payload.id;
       state.ui.selectedSprinklerId = null;
+      state.ui.selectedPipeRunId = null;
+      state.ui.selectedPipeVertexIndex = null;
       return state;
     case "MOVE_VALVE_BOX": {
       const valveBox = findValveBox(state, action.payload.id);
@@ -395,7 +431,127 @@ function applyAction(state, action) {
     case "SELECT_VALVE_BOX":
       state.ui.selectedValveBoxId = action.payload.id;
       state.ui.selectedSprinklerId = null;
+      state.ui.selectedPipeRunId = null;
+      state.ui.selectedPipeVertexIndex = null;
       return state;
+    case "START_PIPE_DRAFT":
+      state.ui.pipeDraft = {
+        kind: normalizePipeKind(action.payload.kind ?? state.ui.pipePlacementKind),
+        zoneId: action.payload.zoneId ?? null,
+        diameterInches: sanitizePipeDiameter(action.payload.diameterInches),
+        points: normalizePipePoints(action.payload.points),
+        previewPoint: null,
+      };
+      state.ui.selectedPipeRunId = null;
+      state.ui.selectedPipeVertexIndex = null;
+      state.ui.selectedSprinklerId = null;
+      state.ui.selectedValveBoxId = null;
+      return state;
+    case "APPEND_PIPE_DRAFT_POINT":
+      if (!state.ui.pipeDraft) {
+        return null;
+      }
+      state.ui.pipeDraft.points = [...state.ui.pipeDraft.points, ...normalizePipePoints([action.payload.point])];
+      return state;
+    case "SET_PIPE_DRAFT_PREVIEW":
+      if (!state.ui.pipeDraft) {
+        return null;
+      }
+      state.ui.pipeDraft.previewPoint = normalizePipePoints([action.payload.point])[0] ?? null;
+      return state;
+    case "CLEAR_PIPE_DRAFT":
+      state.ui.pipeDraft = null;
+      return state;
+    case "ADD_PIPE_RUN": {
+      const kind = normalizePipeKind(action.payload.kind ?? state.ui.pipePlacementKind);
+      const points = normalizePipePoints(action.payload.points);
+      if (points.length < 2) {
+        return null;
+      }
+      const pipeRun = {
+        id: action.payload.id,
+        kind,
+        zoneId: kind === "zone" ? (action.payload.zoneId ?? state.ui.activeZoneId ?? null) : null,
+        label: action.payload.label || buildDefaultPipeRunLabel(state.pipeRuns, kind),
+        diameterInches: kind === "main"
+          ? sanitizePipeDiameter(action.payload.diameterInches ?? state.hydraulics.lineSizeInches)
+          : sanitizePipeDiameter(action.payload.diameterInches),
+        points,
+      };
+      state.pipeRuns.push(pipeRun);
+      state.ui.selectedPipeRunId = pipeRun.id;
+      state.ui.selectedPipeVertexIndex = null;
+      state.ui.selectedSprinklerId = null;
+      state.ui.selectedValveBoxId = null;
+      state.ui.pipeDraft = null;
+      return state;
+    }
+    case "UPDATE_PIPE_RUN": {
+      const pipeRun = findPipeRun(state, action.payload.id);
+      if (!pipeRun) {
+        return null;
+      }
+      Object.assign(pipeRun, sanitizePipeRunPatch(action.payload.patch, pipeRun, state));
+      return state;
+    }
+    case "DELETE_PIPE_RUN":
+      state.pipeRuns = state.pipeRuns.filter((pipeRun) => pipeRun.id !== action.payload.id);
+      if (state.ui.selectedPipeRunId === action.payload.id) {
+        state.ui.selectedPipeRunId = null;
+        state.ui.selectedPipeVertexIndex = null;
+      }
+      return state;
+    case "SELECT_PIPE_RUN":
+      state.ui.selectedPipeRunId = action.payload.id || null;
+      state.ui.selectedPipeVertexIndex = Number.isInteger(action.payload.vertexIndex) ? action.payload.vertexIndex : null;
+      state.ui.selectedSprinklerId = null;
+      state.ui.selectedValveBoxId = null;
+      return state;
+    case "SET_SELECTED_PIPE_VERTEX":
+      state.ui.selectedPipeVertexIndex = Number.isInteger(action.payload.index) ? action.payload.index : null;
+      return state;
+    case "MOVE_PIPE_VERTEX": {
+      const pipeRun = findPipeRun(state, action.payload.id);
+      if (!pipeRun || !Number.isInteger(action.payload.index) || action.payload.index < 0 || action.payload.index >= pipeRun.points.length) {
+        return null;
+      }
+      const point = normalizePipePoints([action.payload.point])[0];
+      if (!point) {
+        return null;
+      }
+      pipeRun.points[action.payload.index] = point;
+      state.ui.selectedPipeRunId = pipeRun.id;
+      state.ui.selectedPipeVertexIndex = action.payload.index;
+      state.ui.selectedSprinklerId = null;
+      state.ui.selectedValveBoxId = null;
+      return state;
+    }
+    case "INSERT_PIPE_VERTEX": {
+      const pipeRun = findPipeRun(state, action.payload.id);
+      if (!pipeRun || !Number.isInteger(action.payload.index) || action.payload.index < 0 || action.payload.index >= pipeRun.points.length) {
+        return null;
+      }
+      const point = normalizePipePoints([action.payload.point])[0];
+      if (!point) {
+        return null;
+      }
+      pipeRun.points.splice(action.payload.index + 1, 0, point);
+      state.ui.selectedPipeRunId = pipeRun.id;
+      state.ui.selectedPipeVertexIndex = action.payload.index + 1;
+      state.ui.selectedSprinklerId = null;
+      state.ui.selectedValveBoxId = null;
+      return state;
+    }
+    case "DELETE_PIPE_VERTEX": {
+      const pipeRun = findPipeRun(state, action.payload.id);
+      if (!pipeRun || !Number.isInteger(action.payload.index) || pipeRun.points.length <= 2 || action.payload.index < 0 || action.payload.index >= pipeRun.points.length) {
+        return null;
+      }
+      pipeRun.points.splice(action.payload.index, 1);
+      state.ui.selectedPipeRunId = pipeRun.id;
+      state.ui.selectedPipeVertexIndex = clamp(action.payload.index, 0, pipeRun.points.length - 1);
+      return state;
+    }
     case "ADD_MEASURE_POINT":
       state.ui.measurePoints = appendBounded(state.ui.measurePoints, action.payload.point, 2);
       state.ui.measurePreviewPoint = null;
@@ -549,6 +705,46 @@ function sanitizeValveBoxPatch(patch) {
   return sanitized;
 }
 
+function sanitizePipeRunPatch(patch, pipeRun, state) {
+  if (!patch) {
+    return {};
+  }
+
+  const sanitized = {};
+
+  if ("label" in patch) {
+    sanitized.label = patch.label || buildDefaultPipeRunLabel(state.pipeRuns, pipeRun.kind);
+  }
+
+  if ("kind" in patch) {
+    sanitized.kind = normalizePipeKind(patch.kind);
+  }
+
+  const nextKind = sanitized.kind ?? pipeRun.kind;
+
+  if ("zoneId" in patch || "kind" in patch) {
+    sanitized.zoneId = nextKind === "zone" ? (patch.zoneId || pipeRun.zoneId || null) : null;
+  }
+
+  if ("diameterInches" in patch || "kind" in patch) {
+    const fallbackDiameter = nextKind === "main"
+      ? state.hydraulics.lineSizeInches
+      : null;
+    sanitized.diameterInches = sanitizePipeDiameter(
+      "diameterInches" in patch ? patch.diameterInches : (pipeRun.diameterInches ?? fallbackDiameter),
+    );
+  }
+
+  if ("points" in patch) {
+    const points = normalizePipePoints(patch.points);
+    if (points.length >= 2) {
+      sanitized.points = points;
+    }
+  }
+
+  return sanitized;
+}
+
 function sanitizeAnalysisPatch(patch) {
   if (!patch) {
     return {};
@@ -605,6 +801,11 @@ function sanitizePartsPatch(patch) {
   return sanitized;
 }
 
+function sanitizePipeDiameter(value) {
+  const diameter = Number(value);
+  return Number.isFinite(diameter) && diameter > 0 ? diameter : null;
+}
+
 function appendBounded(items, item, limit) {
   return [...items, item].slice(-limit);
 }
@@ -633,10 +834,16 @@ function buildHint(state) {
     return "Import a yard image to begin.";
   }
   if (!state.scale.calibrated) {
-    return "Calibrate the drawing before placing sprinklers.";
+    return "Calibrate the drawing before placing sprinklers, valve boxes, or pipe.";
   }
   if (!hasHydraulics(state)) {
     return "Enter line size and pressure before layout review.";
+  }
+  if (state.ui.activeTool === "pipe" && state.ui.pipeDraft?.points?.length) {
+    return "Click to add vertices. Press Enter or double-click to finish the run, or Esc to cancel.";
+  }
+  if (state.ui.activeTool === "pipe") {
+    return `Click to start a ${state.ui.pipePlacementKind === "main" ? "main supply" : "zone"} pipe run. ${state.pipeRuns.length} run${state.pipeRuns.length === 1 ? "" : "s"} on plan.`;
   }
   if (state.ui.activeTool === "place" && state.ui.placementPattern === "strip") {
     return "Click and drag to place a strip sprinkler, then fine-tune width or type from the selected head controls.";
@@ -661,18 +868,31 @@ function normalizeLoadedProject(project) {
     parts: { ...initial.parts, ...sanitizePartsPatch(project.parts) },
     zones: Array.isArray(project.zones) ? project.zones.map(normalizeZone) : [],
     valveBoxes: Array.isArray(project.valveBoxes) ? project.valveBoxes.map(normalizeValveBox) : [],
+    pipeRuns: Array.isArray(project.pipeRuns) ? project.pipeRuns.map(normalizePipeRun).filter(Boolean) : [],
     view: normalizedView,
-    ui: { ...initial.ui, ...project.ui, measurePreviewPoint: null, expandedZoneIds: [] },
+    ui: {
+      ...initial.ui,
+      ...project.ui,
+      measurePreviewPoint: null,
+      selectedPipeVertexIndex: null,
+      pipeDraft: null,
+      expandedZoneIds: [],
+    },
     sprinklers: Array.isArray(project.sprinklers) ? project.sprinklers.map(normalizeSprinkler) : [],
   };
-  merged.ui.activeTool = ["select", "place", "valve-box", "calibrate", "measure", "pan"].includes(merged.ui.activeTool)
+  merged.ui.activeTool = ["select", "place", "pipe", "valve-box", "calibrate", "measure", "pan"].includes(merged.ui.activeTool)
     ? merged.ui.activeTool
     : "select";
   merged.ui.placementPattern = ["full", "arc", "strip"].includes(merged.ui.placementPattern)
     ? merged.ui.placementPattern
     : "full";
-  if (merged.ui.selectedSprinklerId && merged.ui.selectedValveBoxId) {
+  merged.ui.pipePlacementKind = normalizePipeKind(merged.ui.pipePlacementKind);
+  if (merged.ui.selectedSprinklerId && (merged.ui.selectedValveBoxId || merged.ui.selectedPipeRunId)) {
     merged.ui.selectedValveBoxId = null;
+    merged.ui.selectedPipeRunId = null;
+  }
+  if (merged.ui.selectedValveBoxId && merged.ui.selectedPipeRunId) {
+    merged.ui.selectedPipeRunId = null;
   }
   merged.ui.appScreen = merged.ui.appScreen === "parts" ? "parts" : "layout";
   merged.history = { undoStack: [], redoStack: [] };
@@ -695,9 +915,21 @@ export function findSelectedValveBox(state) {
   return findValveBox(state, state.ui.selectedValveBoxId);
 }
 
+function findPipeRun(state, id) {
+  return state.pipeRuns.find((pipeRun) => pipeRun.id === id) || null;
+}
+
+export function findSelectedPipeRun(state) {
+  return findPipeRun(state, state.ui.selectedPipeRunId);
+}
+
 export function cloneProjectSnapshot(state) {
   const snapshot = structuredClone(state);
   snapshot.history = { undoStack: [], redoStack: [] };
+  snapshot.ui.measurePreviewPoint = null;
+  snapshot.ui.cursorWorld = null;
+  snapshot.ui.pipeDraft = null;
+  snapshot.ui.selectedPipeVertexIndex = null;
   return snapshot;
 }
 
@@ -802,6 +1034,22 @@ function normalizeValveBox(valveBox) {
   };
 }
 
+function normalizePipeRun(pipeRun) {
+  const points = normalizePipePoints(pipeRun?.points);
+  if (points.length < 2) {
+    return null;
+  }
+  const kind = normalizePipeKind(pipeRun?.kind);
+  return {
+    id: pipeRun?.id || crypto.randomUUID(),
+    kind,
+    zoneId: kind === "zone" ? (pipeRun?.zoneId || null) : null,
+    label: pipeRun?.label || buildDefaultPipeRunLabel([], kind),
+    diameterInches: sanitizePipeDiameter(pipeRun?.diameterInches),
+    points,
+  };
+}
+
 function sanitizeRuntimeGroupName(value) {
   const normalized = String(value ?? "")
     .trim()
@@ -811,6 +1059,7 @@ function sanitizeRuntimeGroupName(value) {
 
 function normalizeView(view) {
   const normalized = { ...view };
+  normalized.showPipe = "showPipe" in normalized ? Boolean(normalized.showPipe) : true;
 
   if (normalized.zoneViewMode === "heatmap") {
     normalized.zoneViewMode = "coverage";
@@ -849,4 +1098,10 @@ function normalizeStripMode(value) {
 
 function normalizeStripMirror(value) {
   return value === "left" ? "left" : "right";
+}
+
+function buildDefaultPipeRunLabel(pipeRuns, kind) {
+  const safeKind = normalizePipeKind(kind);
+  const count = (pipeRuns ?? []).filter((pipeRun) => normalizePipeKind(pipeRun.kind) === safeKind).length + 1;
+  return safeKind === "main" ? `Main line ${count}` : `Zone line ${count}`;
 }

@@ -1,7 +1,8 @@
 import { pointFromAngle, pointInSprinkler, toRadians } from "../geometry/arcs.js";
+import { buildPipeMidpoints, calculatePipeLengthUnits, distancePointToSegmentSquared } from "../geometry/pipes.js";
 import { buildStripFootprintWorldPoints, buildStripHandleWorldPoints, isStripCoverage } from "../geometry/coverage.js";
 import { toPixels, worldToScreen } from "../geometry/scale.js";
-import { findSelectedSprinkler, findSelectedValveBox, getZoneById, hasHydraulics, isProjectReady } from "../state/project-state.js";
+import { findSelectedPipeRun, findSelectedSprinkler, findSelectedValveBox, getZoneById, hasHydraulics, isProjectReady } from "../state/project-state.js";
 
 const RATE_COLOR_STOPS = [
   { stop: 0, rgb: [24, 76, 107], alpha: 0 },
@@ -66,8 +67,12 @@ export function createRenderer(canvas, store, analyzer) {
     if (state.view.showCoverage) {
       drawCoverage(state, analysis);
     }
+    if (state.view.showPipe) {
+      drawPipeRuns(state);
+    }
     drawSprinklers(state);
     drawValveBoxes(state);
+    drawPipeDraft(state);
     drawSelectedHandles(state);
     drawOverlayWarnings(state);
   }
@@ -271,6 +276,76 @@ export function createRenderer(canvas, store, analyzer) {
     ctx.restore();
   }
 
+  function drawPipeRuns(state) {
+    const selectedPipeRun = findSelectedPipeRun(state);
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    state.pipeRuns.forEach((pipeRun) => {
+      if (!pipeRun.points?.length || pipeRun.points.length < 2) {
+        return;
+      }
+      const isSelected = selectedPipeRun?.id === pipeRun.id;
+      const isFocusedOut = pipeRun.kind === "zone" && state.ui.focusedZoneId && pipeRun.zoneId !== state.ui.focusedZoneId;
+      const strokeColor = resolvePipeStrokeColor(state, pipeRun, isSelected, isFocusedOut);
+      const underlayAlpha = isFocusedOut ? 0.3 : 0.5;
+
+      ctx.strokeStyle = `rgba(255, 247, 235, ${underlayAlpha})`;
+      ctx.lineWidth = isSelected ? 8 : 6;
+      drawPipePath(ctx, pipeRun.points, state.view);
+      ctx.stroke();
+
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = isSelected ? 4.6 : 3.4;
+      drawPipePath(ctx, pipeRun.points, state.view);
+      ctx.stroke();
+
+      if (state.view.showLabels) {
+        const labelPoint = worldToScreen(resolvePipeLabelPoint(pipeRun.points), state.view);
+        ctx.fillStyle = isSelected ? "#b65c2a" : strokeColor;
+        ctx.font = "12px Aptos, Segoe UI, sans-serif";
+        ctx.fillText(pipeRun.label || pipeRun.id, labelPoint.x + 8, labelPoint.y - 8);
+      }
+    });
+
+    ctx.restore();
+  }
+
+  function drawPipeDraft(state) {
+    if (!state.ui.pipeDraft?.points?.length) {
+      return;
+    }
+
+    const draftPoints = state.ui.pipeDraft.previewPoint
+      ? [...state.ui.pipeDraft.points, state.ui.pipeDraft.previewPoint]
+      : [...state.ui.pipeDraft.points];
+    if (draftPoints.length < 1) {
+      return;
+    }
+
+    const draftPipeRun = {
+      kind: state.ui.pipeDraft.kind,
+      zoneId: state.ui.pipeDraft.zoneId,
+    };
+
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = resolvePipeStrokeColor(state, draftPipeRun, true, false);
+    ctx.lineWidth = 3;
+    ctx.setLineDash([10, 6]);
+    drawPipePath(ctx, draftPoints, state.view);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    draftPoints.forEach((point, index) => {
+      const screenPoint = worldToScreen(point, state.view);
+      drawPipeHandle(ctx, screenPoint, index === draftPoints.length - 1 ? "#fff7eb" : "#ffffff", "#4f4033", 5);
+    });
+    ctx.restore();
+  }
+
   function drawSprinklers(state) {
     const selected = findSelectedSprinkler(state);
     state.sprinklers.forEach((sprinkler) => {
@@ -353,6 +428,12 @@ export function createRenderer(canvas, store, analyzer) {
   }
 
   function drawSelectedHandles(state) {
+    const selectedPipeRun = findSelectedPipeRun(state);
+    if (selectedPipeRun && state.view.showPipe) {
+      drawSelectedPipeHandles(state, selectedPipeRun);
+      return;
+    }
+
     const selected = findSelectedSprinkler(state);
     if (!selected || !state.scale.pixelsPerUnit) {
       return;
@@ -380,6 +461,34 @@ export function createRenderer(canvas, store, analyzer) {
     drawHandle(handles.start, "#d55d3f");
     drawHandle(handles.end, "#f1a22c");
     drawRadiusHandle(handles.mid, handles.midArrowTip, handles.midArrowBase, "#4f5bff");
+    ctx.restore();
+  }
+
+  function drawSelectedPipeHandles(state, selectedPipeRun) {
+    if (!selectedPipeRun.points?.length || selectedPipeRun.points.length < 2) {
+      return;
+    }
+
+    const selectedVertexIndex = Number.isInteger(state.ui.selectedPipeVertexIndex)
+      ? state.ui.selectedPipeVertexIndex
+      : null;
+    const midpoints = buildPipeMidpoints(selectedPipeRun.points);
+
+    ctx.save();
+    midpoints.forEach((midpointEntry) => {
+      const screenPoint = worldToScreen(midpointEntry.point, state.view);
+      drawPipeHandle(ctx, screenPoint, "#fff7eb", "#b65c2a", 4.5);
+    });
+    selectedPipeRun.points.forEach((point, index) => {
+      const screenPoint = worldToScreen(point, state.view);
+      drawPipeHandle(
+        ctx,
+        screenPoint,
+        selectedVertexIndex === index ? "#b65c2a" : "#fff7eb",
+        selectedVertexIndex === index ? "#ffffff" : "#4f4033",
+        6,
+      );
+    });
     ctx.restore();
   }
 
@@ -544,6 +653,61 @@ export function createRenderer(canvas, store, analyzer) {
     ctx.fill();
   }
 
+  function getHitPipeRun(worldPoint) {
+    const state = store.getState();
+    if (!state.view.showPipe) {
+      return null;
+    }
+    const screenPoint = worldToScreen(worldPoint, state.view);
+
+    return [...state.pipeRuns].reverse().find((pipeRun) =>
+      pipeRun.points?.some((point, index) => {
+        if (index === 0) {
+          return false;
+        }
+        const start = worldToScreen(pipeRun.points[index - 1], state.view);
+        const end = worldToScreen(point, state.view);
+        return distancePointToSegmentSquared(screenPoint, start, end) <= 64;
+      }),
+    ) || null;
+  }
+
+  function getPipeVertexHandleHit(worldPoint) {
+    const state = store.getState();
+    const selectedPipeRun = findSelectedPipeRun(state);
+    if (!selectedPipeRun || !state.view.showPipe) {
+      return null;
+    }
+
+    const screenPoint = worldToScreen(worldPoint, state.view);
+    return selectedPipeRun.points
+      .map((point, index) => ({
+        id: selectedPipeRun.id,
+        index,
+        point,
+        distance: distanceSquared(screenPoint, worldToScreen(point, state.view)),
+      }))
+      .find((entry) => entry.distance <= 100) || null;
+  }
+
+  function getPipeMidpointHandleHit(worldPoint) {
+    const state = store.getState();
+    const selectedPipeRun = findSelectedPipeRun(state);
+    if (!selectedPipeRun || !state.view.showPipe) {
+      return null;
+    }
+
+    const screenPoint = worldToScreen(worldPoint, state.view);
+    return buildPipeMidpoints(selectedPipeRun.points)
+      .map((entry) => ({
+        id: selectedPipeRun.id,
+        index: entry.index,
+        point: entry.point,
+        distance: distanceSquared(screenPoint, worldToScreen(entry.point, state.view)),
+      }))
+      .find((entry) => entry.distance <= 81) || null;
+  }
+
   function getHitSprinkler(worldPoint) {
     const state = store.getState();
     return [...state.sprinklers].reverse().find((sprinkler) => {
@@ -614,9 +778,14 @@ export function createRenderer(canvas, store, analyzer) {
 
   function buildExportSummary() {
     const state = store.getState();
+    const totalPipeLength = state.scale.pixelsPerUnit
+      ? state.pipeRuns.reduce((sum, pipeRun) => sum + calculatePipeLengthUnits(pipeRun.points, state.scale.pixelsPerUnit), 0)
+      : 0;
     return {
       sprinklerCount: state.sprinklers.length,
       valveBoxCount: state.valveBoxes.length,
+      pipeRunCount: state.pipeRuns.length,
+      totalPipeLength,
       meanRadius: state.sprinklers.length
         ? state.sprinklers.reduce((sum, sprinkler) =>
           sum + (isStripCoverage(sprinkler) ? Math.max(sprinkler.stripLength ?? 0, sprinkler.stripWidth ?? 0) : sprinkler.radius), 0,
@@ -632,6 +801,9 @@ export function createRenderer(canvas, store, analyzer) {
   return {
     resize,
     render,
+    getHitPipeRun,
+    getPipeVertexHandleHit,
+    getPipeMidpointHandleHit,
     getHitSprinkler,
     getHitValveBox,
     getArcHandleHit,
@@ -650,6 +822,47 @@ function buildStripHandlePositions(state, sprinkler) {
     primaryWorld: worldHandles.primaryWorld,
     secondaryWorld: worldHandles.secondaryWorld,
   };
+}
+
+function drawPipePath(ctx, points, view) {
+  if (!points?.length) {
+    return;
+  }
+  const first = worldToScreen(points[0], view);
+  ctx.beginPath();
+  ctx.moveTo(first.x, first.y);
+  points.slice(1).forEach((point) => {
+    const screenPoint = worldToScreen(point, view);
+    ctx.lineTo(screenPoint.x, screenPoint.y);
+  });
+}
+
+function drawPipeHandle(ctx, point, fillColor, strokeColor, radius) {
+  ctx.beginPath();
+  ctx.fillStyle = fillColor;
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = 2;
+  ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+}
+
+function resolvePipeStrokeColor(state, pipeRun, isSelected, isFocusedOut) {
+  if (pipeRun.kind === "main") {
+    return isSelected ? "#b65c2a" : `rgba(79, 64, 51, ${isFocusedOut ? 0.45 : 0.96})`;
+  }
+  const zoneColor = getZoneById(state, pipeRun.zoneId)?.color ?? "#6f6a63";
+  return hexToRgba(zoneColor, isFocusedOut ? 0.36 : (isSelected ? 0.98 : 0.9));
+}
+
+function resolvePipeLabelPoint(points) {
+  const midIndex = Math.floor((points.length - 1) / 2);
+  return midIndex < points.length - 1
+    ? {
+      x: (points[midIndex].x + points[midIndex + 1].x) / 2,
+      y: (points[midIndex].y + points[midIndex + 1].y) / 2,
+    }
+    : points[midIndex];
 }
 
 function getSequentialColor(value, maxValue, stops) {

@@ -1,4 +1,4 @@
-import { buildCopiedSprinklerLabel, createInitialState, createStore, findSelectedSprinkler, findSelectedValveBox } from "../state/project-state.js";
+import { buildCopiedSprinklerLabel, createInitialState, createStore, findSelectedPipeRun, findSelectedSprinkler, findSelectedValveBox } from "../state/project-state.js";
 import { createRenderer } from "../canvas/renderer.js";
 import { createInteractionController } from "../canvas/interactions.js";
 import { bindPanels } from "../ui/panels.js";
@@ -87,6 +87,20 @@ document.addEventListener("keydown", (event) => {
 
   if (event.key === "Delete" || event.key === "Backspace") {
     const state = store.getState();
+    const selectedPipeRun = findSelectedPipeRun(state);
+    if (selectedPipeRun && Number.isInteger(state.ui.selectedPipeVertexIndex)) {
+      event.preventDefault();
+      store.dispatch({
+        type: "DELETE_PIPE_VERTEX",
+        payload: { id: selectedPipeRun.id, index: state.ui.selectedPipeVertexIndex },
+      });
+      return;
+    }
+    if (selectedPipeRun) {
+      event.preventDefault();
+      store.dispatch({ type: "DELETE_PIPE_RUN", payload: { id: selectedPipeRun.id } });
+      return;
+    }
     if (state.ui.selectedSprinklerId) {
       event.preventDefault();
       store.dispatch({ type: "DELETE_SPRINKLER", payload: { id: state.ui.selectedSprinklerId } });
@@ -100,9 +114,23 @@ document.addEventListener("keydown", (event) => {
 
   if (event.key === "Escape") {
     const state = store.getState();
+    if (state.ui.activeTool === "pipe" && state.ui.pipeDraft) {
+      event.preventDefault();
+      interactions.cancelPipeDraft();
+      return;
+    }
     if (state.ui.activeTool === "measure" && (state.ui.measurePoints.length || state.ui.measurePreviewPoint)) {
       event.preventDefault();
       store.dispatch({ type: "CLEAR_MEASURE" });
+    }
+    return;
+  }
+
+  if (event.key === "Enter") {
+    const state = store.getState();
+    if (state.ui.activeTool === "pipe" && state.ui.pipeDraft?.points?.length >= 2) {
+      event.preventDefault();
+      interactions.finishPipeDraft();
     }
   }
 });

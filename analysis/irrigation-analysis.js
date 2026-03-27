@@ -1,5 +1,6 @@
 import { clamp, normalizeAngle } from "../geometry/arcs.js";
 import { getCoverageModel, pointFallsWithinCoverage, resolveCoverageBounds, resolveStripConfiguration } from "../geometry/coverage.js";
+import { calculatePipeLengthUnits, formatPipeDiameterLabel, getPipeKindLabel, normalizePipeKind } from "../geometry/pipes.js";
 
 const DEFAULT_ASSUMPTIONS = {
   sprayArcNormalizeToleranceDeg: 10,
@@ -58,11 +59,15 @@ function buildEmptySnapshot(designFlowLimitGpm, targetDepthInches = 1) {
       rows: [],
       bodyRows: [],
       nozzleRows: [],
+      pipeRows: [],
       showZoneUsage: true,
       includedHeadCount: 0,
       lineItemCount: 0,
       totalBodyQuantity: 0,
       totalNozzleQuantity: 0,
+      totalMainPipeLength: 0,
+      totalZonePipeLength: 0,
+      totalPipeLength: 0,
     },
     grid: null,
     summary: {
@@ -131,6 +136,14 @@ function buildCacheKey(state) {
       stripLength: sprinkler.stripLength,
       stripWidth: sprinkler.stripWidth,
       stripRotationDeg: sprinkler.stripRotationDeg,
+    })),
+    pipeRuns: (state.pipeRuns ?? []).map((pipeRun) => ({
+      id: pipeRun.id,
+      kind: pipeRun.kind,
+      zoneId: pipeRun.zoneId ?? null,
+      label: pipeRun.label ?? "",
+      diameterInches: pipeRun.diameterInches ?? null,
+      points: pipeRun.points ?? [],
     })),
   });
 }
@@ -279,6 +292,13 @@ function buildPartsSnapshot(state, recommendations, zonesById) {
   const rows = buildPartsRows(filteredRecommendations, groupBy, zoneOrder, zonesById);
   const bodyRows = rows.filter((row) => row.category === "Body");
   const nozzleRows = rows.filter((row) => row.category === "Nozzle");
+  const pipeRows = buildPipeRows(state, includedZoneIds, zoneOrder, zonesById);
+  const totalMainPipeLength = pipeRows
+    .filter((row) => row.kind === "main")
+    .reduce((sum, row) => sum + row.length, 0);
+  const totalZonePipeLength = pipeRows
+    .filter((row) => row.kind === "zone")
+    .reduce((sum, row) => sum + row.length, 0);
 
   return {
     groupBy,
@@ -289,10 +309,14 @@ function buildPartsSnapshot(state, recommendations, zonesById) {
     rows,
     bodyRows,
     nozzleRows,
+    pipeRows,
     includedHeadCount: filteredRecommendations.length,
-    lineItemCount: rows.length,
+    lineItemCount: rows.length + pipeRows.length,
     totalBodyQuantity: bodyRows.reduce((sum, row) => sum + row.quantity, 0),
     totalNozzleQuantity: nozzleRows.reduce((sum, row) => sum + row.quantity, 0),
+    totalMainPipeLength,
+    totalZonePipeLength,
+    totalPipeLength: totalMainPipeLength + totalZonePipeLength,
   };
 }
 
@@ -1762,6 +1786,81 @@ function calculateActualStripPrecipInHr(flowGpm, lengthFt, widthFt) {
 
 function calculateActualStripFlowGpm(precipInHr, lengthFt, widthFt) {
   return (Math.max(0.1, Number(precipInHr) || 0.1) * Math.max(0.1, Number(lengthFt) || 0.1) * Math.max(0.1, Number(widthFt) || 0.1)) / 96.3;
+}
+
+function buildPipeRows(state, includedZoneIds, zoneOrder, zonesById) {
+  const rows = new Map();
+  const pixelsPerUnit = Number(state.scale?.pixelsPerUnit);
+
+  for (const pipeRun of state.pipeRuns ?? []) {
+    const kind = normalizePipeKind(pipeRun.kind);
+    const include = kind === "main" || !pipeRun.zoneId || includedZoneIds.has(pipeRun.zoneId);
+    if (!include) {
+      continue;
+    }
+
+    const zoneName = kind === "zone"
+      ? (pipeRun.zoneId ? zonesById.get(pipeRun.zoneId)?.name ?? "Unassigned" : "Unassigned")
+      : null;
+    const itemLabel = `${getPipeKindLabel(kind)} - ${formatPipeDiameterLabel(pipeRun.diameterInches)}`;
+    addPipeRow(rows, {
+      kind,
+      category: "Pipe",
+      itemKey: `${kind}:${pipeRun.diameterInches ?? "unspecified"}`,
+      itemLabel,
+      length: pixelsPerUnit > 0 ? calculatePipeLengthUnits(pipeRun.points, pixelsPerUnit) : 0,
+      zoneName,
+      zoneOrderValue: pipeRun.zoneId ? (zoneOrder.get(pipeRun.zoneId) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER,
+      note: kind === "zone" && !pipeRun.zoneId ? "Unassigned zone" : "",
+    });
+  }
+
+  return [...rows.values()]
+    .map((row) => finalizePipeRow(row))
+    .sort((a, b) => comparePipeRows(a, b));
+}
+
+function addPipeRow(rows, input) {
+  const existing = rows.get(input.itemKey) ?? {
+    kind: input.kind,
+    category: input.category,
+    itemKey: input.itemKey,
+    itemLabel: input.itemLabel,
+    length: 0,
+    zones: new Map(),
+    notes: new Set(),
+  };
+
+  existing.length += input.length;
+  if (input.zoneName) {
+    existing.zones.set(input.zoneName, input.zoneOrderValue);
+  }
+  if (input.note) {
+    existing.notes.add(input.note);
+  }
+  rows.set(input.itemKey, existing);
+}
+
+function finalizePipeRow(row) {
+  const zones = [...row.zones.entries()]
+    .sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0]))
+    .map(([zoneName]) => zoneName);
+  return {
+    kind: row.kind,
+    category: row.category,
+    itemKey: row.itemKey,
+    itemLabel: row.itemLabel,
+    length: row.length,
+    zones,
+    zonesLabel: zones.join(", "),
+    notes: [...row.notes].join(" | "),
+  };
+}
+
+function comparePipeRows(a, b) {
+  const kindOrder = { main: 0, zone: 1 };
+  return (kindOrder[a.kind] ?? 99) - (kindOrder[b.kind] ?? 99)
+    || a.itemLabel.localeCompare(b.itemLabel, undefined, { numeric: true, sensitivity: "base" });
 }
 
 function buildPartsRows(recommendations, groupBy, zoneOrder, zonesById) {

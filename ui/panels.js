@@ -1,10 +1,12 @@
 import { clamp } from "../geometry/arcs.js";
+import { PIPE_DIAMETER_OPTIONS, calculatePipeLengthUnits, formatPipeDiameterLabel } from "../geometry/pipes.js";
 import { fitBackgroundToView } from "../geometry/scale.js";
-import { cloneProjectSnapshot, findSelectedSprinkler, findSelectedValveBox, getNextZoneSeed, hasHydraulics, isProjectReady } from "../state/project-state.js";
+import { cloneProjectSnapshot, findSelectedPipeRun, findSelectedSprinkler, findSelectedValveBox, getNextZoneSeed, hasHydraulics, isProjectReady } from "../state/project-state.js";
 
 export function bindPanels({ store, renderer, analyzer, interactions, io }) {
   const elements = bindElements();
   elements.__store = store;
+  initializePipeControls(elements);
   initializeToolbarPanels(elements);
   bindEvents(elements, store, renderer, interactions, io);
   store.subscribe((state) => updateUi(elements, state, renderer, analyzer));
@@ -20,6 +22,7 @@ function bindElements() {
     toolbarPanels: [...document.querySelectorAll(".toolbar-panel > .panel")],
     toolButtons: [...document.querySelectorAll("[data-tool]")],
     placementPattern: document.getElementById("placement-pattern"),
+    pipePlacementKind: document.getElementById("pipe-placement-kind"),
     projectName: document.getElementById("project-name"),
     unitsSelect: document.getElementById("units-select"),
     backgroundInput: document.getElementById("background-input"),
@@ -43,6 +46,7 @@ function bindElements() {
     clearZoneFocusButton: document.getElementById("clear-zone-focus-button"),
     zonesList: document.getElementById("zones-list"),
     toggleCoverage: document.getElementById("toggle-coverage"),
+    togglePipe: document.getElementById("toggle-pipe"),
     toggleGrid: document.getElementById("toggle-grid"),
     toggleLabels: document.getElementById("toggle-labels"),
     toggleZoneLabels: document.getElementById("toggle-zone-labels"),
@@ -62,6 +66,7 @@ function bindElements() {
     selectionEmpty: document.getElementById("selection-empty"),
     selectionForm: document.getElementById("selection-form"),
     valveBoxForm: document.getElementById("valve-box-form"),
+    pipeRunForm: document.getElementById("pipe-run-form"),
     sprinklerCoverageModel: document.getElementById("sprinkler-coverage-model"),
     sprinklerLabel: document.getElementById("sprinkler-label"),
     sprinklerX: document.getElementById("sprinkler-x"),
@@ -94,6 +99,13 @@ function bindElements() {
     valveBoxY: document.getElementById("valve-box-y"),
     valveBoxZones: document.getElementById("valve-box-zones"),
     deleteValveBoxButton: document.getElementById("delete-valve-box-button"),
+    pipeLabel: document.getElementById("pipe-label"),
+    pipeKind: document.getElementById("pipe-kind"),
+    pipeZoneField: document.getElementById("pipe-zone-field"),
+    pipeZone: document.getElementById("pipe-zone"),
+    pipeDiameter: document.getElementById("pipe-diameter"),
+    pipeLength: document.getElementById("pipe-length"),
+    deletePipeButton: document.getElementById("delete-pipe-button"),
     scaleStatus: document.getElementById("scale-status"),
     hydraulicsStatus: document.getElementById("hydraulics-status"),
     readyStatus: document.getElementById("ready-status"),
@@ -152,6 +164,12 @@ function initializeToolbarPanels(elements) {
   });
 }
 
+function initializePipeControls(elements) {
+  const diameterOptions = ['<option value="">Unspecified</option>']
+    .concat(PIPE_DIAMETER_OPTIONS.map((value) => `<option value="${value}">${formatPipeDiameterLabel(value)}</option>`));
+  elements.pipeDiameter.innerHTML = diameterOptions.join("");
+}
+
 function bindEvents(elements, store, renderer, interactions, io) {
   elements.screenButtons.forEach((button) => {
     button.addEventListener("click", () => {
@@ -167,6 +185,9 @@ function bindEvents(elements, store, renderer, interactions, io) {
 
   elements.placementPattern.addEventListener("change", () => {
     store.dispatch({ type: "SET_PLACEMENT_PATTERN", payload: { pattern: elements.placementPattern.value } });
+  });
+  elements.pipePlacementKind.addEventListener("change", () => {
+    store.dispatch({ type: "SET_PIPE_PLACEMENT_KIND", payload: { kind: elements.pipePlacementKind.value } });
   });
 
   elements.projectName.addEventListener("input", () => {
@@ -265,6 +286,9 @@ function bindEvents(elements, store, renderer, interactions, io) {
   elements.toggleCoverage.addEventListener("change", () => {
     store.dispatch({ type: "SET_VIEW", payload: { showCoverage: elements.toggleCoverage.checked } });
   });
+  elements.togglePipe.addEventListener("change", () => {
+    store.dispatch({ type: "SET_VIEW", payload: { showPipe: elements.togglePipe.checked } });
+  });
   elements.toggleGrid.addEventListener("change", () => {
     store.dispatch({ type: "SET_VIEW", payload: { showGrid: elements.toggleGrid.checked } });
   });
@@ -335,6 +359,11 @@ function bindEvents(elements, store, renderer, interactions, io) {
     element.addEventListener("input", () => updateValveBoxSelection(elements, store));
   });
 
+  [elements.pipeLabel, elements.pipeKind, elements.pipeZone, elements.pipeDiameter].forEach((element) => {
+    const eventName = element.tagName === "SELECT" ? "change" : "input";
+    element.addEventListener(eventName, () => updatePipeRunSelection(elements, store));
+  });
+
   elements.sprinklerZoneButton.addEventListener("click", () => {
     setZonePickerOpen(elements, elements.sprinklerZoneMenu.hidden);
   });
@@ -394,6 +423,13 @@ function bindEvents(elements, store, renderer, interactions, io) {
     }
   });
 
+  elements.deletePipeButton.addEventListener("click", () => {
+    const selected = findSelectedPipeRun(store.getState());
+    if (selected) {
+      store.dispatch({ type: "DELETE_PIPE_RUN", payload: { id: selected.id } });
+    }
+  });
+
   elements.undoButton.addEventListener("click", () => store.dispatch({ type: "UNDO" }));
   elements.redoButton.addEventListener("click", () => store.dispatch({ type: "REDO" }));
 }
@@ -449,6 +485,25 @@ function updateValveBoxSelection(elements, store) {
   });
 }
 
+function updatePipeRunSelection(elements, store) {
+  const selected = findSelectedPipeRun(store.getState());
+  if (!selected) {
+    return;
+  }
+  store.dispatch({
+    type: "UPDATE_PIPE_RUN",
+    payload: {
+      id: selected.id,
+      patch: {
+        label: elements.pipeLabel.value,
+        kind: elements.pipeKind.value,
+        zoneId: elements.pipeKind.value === "zone" ? (elements.pipeZone.value || null) : null,
+        diameterInches: elements.pipeDiameter.value ? Number(elements.pipeDiameter.value) : null,
+      },
+    },
+  });
+}
+
 function updateUi(elements, state, renderer, analyzer) {
   const analysis = analyzer?.getSnapshot(state) ?? null;
   const isPartsScreen = state.ui.appScreen === "parts";
@@ -467,12 +522,15 @@ function updateUi(elements, state, renderer, analyzer) {
   elements.unitsSelect.value = state.scale.units;
   elements.placementPattern.value = state.ui.placementPattern;
   elements.placementPattern.disabled = state.ui.activeTool !== "place";
+  elements.pipePlacementKind.value = state.ui.pipePlacementKind ?? "main";
+  elements.pipePlacementKind.disabled = state.ui.activeTool !== "pipe";
   elements.lineSizeSelect.value = state.hydraulics.lineSizeInches ? String(state.hydraulics.lineSizeInches) : "";
   elements.pressureInput.value = state.hydraulics.pressurePsi ?? "";
   elements.designFlowLimitInput.value = state.hydraulics.designFlowLimitGpm ?? "";
   elements.designFlowLimitInput.placeholder = `Uses default cap (${formatEditableNumber(analysis?.designFlowLimitGpm ?? 14)} GPM)`;
   elements.zoneViewMode.value = state.view.zoneViewMode;
   elements.toggleCoverage.checked = state.view.showCoverage;
+  elements.togglePipe.checked = state.view.showPipe !== false;
   elements.toggleGrid.checked = state.view.showGrid;
   elements.toggleLabels.checked = state.view.showLabels;
   elements.toggleZoneLabels.checked = state.view.showZoneLabels;
@@ -493,8 +551,10 @@ function updateUi(elements, state, renderer, analyzer) {
 
   const selectedSprinkler = findSelectedSprinkler(state);
   const selectedValveBox = findSelectedValveBox(state);
+  const selectedPipeRun = findSelectedPipeRun(state);
   populateZoneSelect(elements.activeZoneSelect, state.zones, state.ui.activeZoneId);
   populateAnalysisZoneSelect(elements.analysisZoneSelect, state.zones, analysis?.selectedZoneId ?? state.view.analysisZoneId ?? "");
+  populateZoneSelect(elements.pipeZone, state.zones, selectedPipeRun?.zoneId ?? "");
   elements.analysisZoneSelect.disabled = (state.view.analysisOverlayMode ?? "application_rate") !== "zone_catch_can" || !state.zones.length;
   populateSprinklerZonePicker(elements, state.zones, selectedSprinkler?.zoneId ?? "");
   if (!selectedSprinkler) {
@@ -510,10 +570,13 @@ function updateUi(elements, state, renderer, analyzer) {
     ? "Selected Sprinkler"
     : selectedValveBox
       ? "Selected Valve Box"
+      : selectedPipeRun
+        ? "Selected Pipe Run"
       : "Selected Item";
-  elements.selectionEmpty.hidden = Boolean(selectedSprinkler || selectedValveBox);
+  elements.selectionEmpty.hidden = Boolean(selectedSprinkler || selectedValveBox || selectedPipeRun);
   elements.selectionForm.hidden = !selectedSprinkler;
   elements.valveBoxForm.hidden = !selectedValveBox;
+  elements.pipeRunForm.hidden = !selectedPipeRun;
   if (selectedSprinkler) {
     const coverageValue = selectedSprinkler.coverageModel === "strip"
       ? "strip"
@@ -557,6 +620,20 @@ function updateUi(elements, state, renderer, analyzer) {
     elements.valveBoxZones.innerHTML = "";
   }
 
+  if (selectedPipeRun) {
+    elements.pipeLabel.value = selectedPipeRun.label ?? "";
+    elements.pipeKind.value = selectedPipeRun.kind ?? "main";
+    elements.pipeZone.value = selectedPipeRun.zoneId ?? "";
+    elements.pipeZoneField.hidden = false;
+    elements.pipeZone.disabled = selectedPipeRun.kind !== "zone";
+    elements.pipeDiameter.value = selectedPipeRun.diameterInches ? String(selectedPipeRun.diameterInches) : "";
+    elements.pipeLength.value = formatPipeLengthValue(state, selectedPipeRun.points);
+  } else {
+    elements.pipeZoneField.hidden = false;
+    elements.pipeZone.disabled = false;
+    elements.pipeLength.value = "";
+  }
+
   renderSprinklerAnalysis(elements.sprinklerAnalysis, selectedSprinkler, analysis);
   renderAnalysisLegend(elements, state, analysis);
   renderPartsScreen(elements, state, analysis);
@@ -571,6 +648,8 @@ function updateUi(elements, state, renderer, analyzer) {
     ["Scale", state.scale.calibrated ? `${state.scale.pixelsPerUnit.toFixed(2)} px/${state.scale.units}` : "Not calibrated"],
     ["Heads", String(summary.sprinklerCount)],
     ["Valve boxes", String(summary.valveBoxCount ?? 0)],
+    ["Pipe runs", String(summary.pipeRunCount ?? 0)],
+    ["Pipe length", state.scale.pixelsPerUnit ? `${summary.totalPipeLength.toFixed(1)} ${state.scale.units}` : "--"],
     ["Mean size", summary.meanRadius ? `${summary.meanRadius.toFixed(1)} ${state.scale.units}` : "--"],
     ["Peak rate", analysis?.summary.applicationRateMaxInHr ? `${analysis.summary.applicationRateMaxInHr.toFixed(2)} in/hr` : "--"],
     ["Avg rate", analysis?.summary.applicationRateAverageInHr ? `${analysis.summary.applicationRateAverageInHr.toFixed(2)} in/hr` : "--"],
@@ -1066,6 +1145,14 @@ function formatMaybeNumber(value, unit, decimals = 2) {
   return `${value.toFixed(decimals)} ${unit}`;
 }
 
+function formatPipeLengthValue(state, points) {
+  if (!state.scale.pixelsPerUnit) {
+    return "--";
+  }
+  const length = calculatePipeLengthUnits(points, state.scale.pixelsPerUnit);
+  return `${length.toFixed(2)} ${state.scale.units}`;
+}
+
 function formatSignedPercent(value) {
   if (!Number.isFinite(value)) {
     return "--";
@@ -1234,14 +1321,16 @@ function renderPartsScreen(elements, state, analysis) {
 
   const includedZoneCount = parts.zones.filter((zone) => zone.included).length;
   const excludedZoneCount = parts.zones.length - includedZoneCount;
-  elements.partsSummary.textContent = `${parts.includedHeadCount} included head${parts.includedHeadCount === 1 ? "" : "s"}, ${parts.lineItemCount} line item${parts.lineItemCount === 1 ? "" : "s"}, ${parts.totalBodyQuantity} bodies, ${parts.totalNozzleQuantity} nozzles. ${includedZoneCount} zone${includedZoneCount === 1 ? "" : "s"} included${excludedZoneCount ? `, ${excludedZoneCount} excluded` : ""}.`;
+  elements.partsSummary.textContent = `${parts.includedHeadCount} included head${parts.includedHeadCount === 1 ? "" : "s"}, ${parts.lineItemCount} line item${parts.lineItemCount === 1 ? "" : "s"}, ${parts.totalBodyQuantity} bodies, ${parts.totalNozzleQuantity} nozzles, ${parts.totalMainPipeLength.toFixed(1)} ${state.scale.units} main pipe, ${parts.totalZonePipeLength.toFixed(1)} ${state.scale.units} zone pipe, ${parts.totalPipeLength.toFixed(1)} ${state.scale.units} total pipe. ${includedZoneCount} zone${includedZoneCount === 1 ? "" : "s"} included${excludedZoneCount ? `, ${excludedZoneCount} excluded` : ""}.`;
 
-  const rows = parts.groupBy === "body_nozzle_split" ? parts.bodyRows.concat(parts.nozzleRows) : parts.rows;
+  const rows = parts.groupBy === "body_nozzle_split"
+    ? parts.bodyRows.concat(parts.nozzleRows).concat(parts.pipeRows ?? [])
+    : parts.rows.concat(parts.pipeRows ?? []);
   const hasRows = rows.length > 0;
   elements.partsEmpty.hidden = hasRows;
-  elements.partsEmpty.textContent = hasRows ? "" : "No included recommended heads yet.";
+  elements.partsEmpty.textContent = hasRows ? "" : "No included recommended heads or pipe runs yet.";
   elements.partsTable.innerHTML = hasRows
-    ? renderPartsTables(parts)
+    ? renderPartsTables(parts, state.scale.units)
     : "";
 }
 
@@ -1271,22 +1360,19 @@ function renderPartsZoneFilters(elements, parts) {
   });
 }
 
-function renderPartsTables(parts) {
-  if (parts.groupBy === "body_nozzle_split") {
-    return [
-      renderPartsTableSection("Bodies", parts.bodyRows, parts.showZoneUsage),
-      renderPartsTableSection("Nozzles", parts.nozzleRows, parts.showZoneUsage),
-    ].join("");
-  }
-
-  return renderPartsTable(parts.rows, parts.showZoneUsage);
+function renderPartsTables(parts, units) {
+  return [
+    renderPartsTableSection("Bodies", parts.bodyRows, parts.showZoneUsage),
+    renderPartsTableSection("Nozzles", parts.nozzleRows, parts.showZoneUsage),
+    renderPipeTableSection("Pipe", parts.pipeRows ?? [], parts.showZoneUsage, units),
+  ].join("");
 }
 
 function renderPartsTableSection(title, rows, showZoneUsage) {
   return `
     <div class="parts-table-section">
       <h3>${title}</h3>
-      ${renderPartsTable(rows, showZoneUsage)}
+      ${rows.length ? renderPartsTable(rows, showZoneUsage) : '<div class="empty-card">No included items in this section yet.</div>'}
     </div>
   `;
 }
@@ -1316,6 +1402,46 @@ function renderPartsTable(rows, showZoneUsage) {
               ${row.notes ? `<div class="parts-item-notes">${escapeHtml(row.notes)}</div>` : ""}
             </td>
             <td>${row.quantity}</td>
+            ${zoneCells(row)}
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderPipeTableSection(title, rows, showZoneUsage, units) {
+  return `
+    <div class="parts-table-section">
+      <h3>${title}</h3>
+      ${rows.length ? renderPipeTable(rows, showZoneUsage, units) : '<div class="empty-card">No included pipe runs yet.</div>'}
+    </div>
+  `;
+}
+
+function renderPipeTable(rows, showZoneUsage, units) {
+  const zoneHeader = showZoneUsage ? "<th>Zones</th>" : "";
+  const zoneCells = showZoneUsage
+    ? (row) => `<td>${escapeHtml(row.zonesLabel || "--")}</td>`
+    : () => "";
+
+  return `
+    <table class="parts-table">
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th>Length</th>
+          ${zoneHeader}
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map((row) => `
+          <tr>
+            <td>
+              <div class="parts-item-label">${escapeHtml(row.itemLabel)}</div>
+              ${row.notes ? `<div class="parts-item-notes">${escapeHtml(row.notes)}</div>` : ""}
+            </td>
+            <td>${row.length.toFixed(2)} ${units}</td>
             ${zoneCells(row)}
           </tr>
         `).join("")}

@@ -21,6 +21,7 @@
         <div class="tool-grid topbar-tool-grid">
           <button type="button" data-tool="select" class="tool-button is-active">Select</button>
           <button type="button" data-tool="place" class="tool-button">Place</button>
+          <button type="button" data-tool="pipe" class="tool-button">Pipe</button>
           <button type="button" data-tool="valve-box" class="tool-button">Valve Box</button>
           <button type="button" data-tool="calibrate" class="tool-button">Calibrate</button>
           <button type="button" data-tool="measure" class="tool-button">Measure</button>
@@ -32,6 +33,13 @@
             <option value="full">Full circle</option>
             <option value="arc">Arc</option>
             <option value="strip">Strip</option>
+          </select>
+        </label>
+        <label class="field field-compact topbar-pattern">
+          <span>Pipe type</span>
+          <select id="pipe-placement-kind">
+            <option value="main">Main supply</option>
+            <option value="zone" selected>Zone line</option>
           </select>
         </label>
       </div>
@@ -125,6 +133,10 @@
           <label class="checkbox-row">
             <input id="toggle-coverage" type="checkbox" checked>
             <span>Show coverage</span>
+          </label>
+          <label class="checkbox-row">
+            <input id="toggle-pipe" type="checkbox" checked>
+            <span>Show pipe</span>
           </label>
           <label class="checkbox-row">
             <input id="toggle-grid" type="checkbox">
@@ -222,7 +234,7 @@
       <aside class="details-panel">
         <section class="panel">
           <h2 id="selection-title">Selected Item</h2>
-          <div id="selection-empty" class="empty-card">Select a sprinkler or valve box to edit its properties.</div>
+          <div id="selection-empty" class="empty-card">Select a sprinkler, valve box, or pipe run to edit its properties.</div>
           <div id="selection-form" hidden>
             <label class="field">
               <span>Coverage</span>
@@ -353,6 +365,45 @@
             </label>
             <div class="button-row">
               <button id="delete-valve-box-button" type="button" class="danger-button">Delete</button>
+            </div>
+          </div>
+          <div id="pipe-run-form" hidden>
+            <label class="field">
+              <span>Label</span>
+              <input id="pipe-label" type="text">
+            </label>
+            <div class="field-group">
+              <label class="field">
+                <span>Pipe type</span>
+                <select id="pipe-kind">
+                  <option value="main">Main supply</option>
+                  <option value="zone" selected>Zone line</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Diameter</span>
+                <select id="pipe-diameter">
+                  <option value="">Unspecified</option>
+                  <option value="0.5">0.5 in</option>
+                  <option value="0.75">0.75 in</option>
+                  <option value="1">1 in</option>
+                  <option value="1.25">1.25 in</option>
+                  <option value="1.5">1.5 in</option>
+                </select>
+              </label>
+            </div>
+            <label id="pipe-zone-field" class="field">
+              <span>Zone</span>
+              <select id="pipe-zone">
+                <option value="">Unassigned</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Length</span>
+              <input id="pipe-length" type="text" readonly>
+            </label>
+            <div class="button-row">
+              <button id="delete-pipe-button" type="button" class="danger-button">Delete</button>
             </div>
           </div>
         </section>

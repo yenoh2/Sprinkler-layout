@@ -1,6 +1,10 @@
 import { clamp, normalizeAngle, toDegrees } from "../geometry/arcs.js";
+import { pointsEqual } from "../geometry/pipes.js";
 import { buildStripPrimaryPatch, buildStripSecondaryPatch, isStripCoverage } from "../geometry/coverage.js";
-import { computePixelsPerUnitFromPoints, fitBackgroundToView, screenToWorld } from "../geometry/scale.js";
+import { computePixelsPerUnitFromPoints, fitBackgroundToView, screenToWorld, worldToScreen } from "../geometry/scale.js";
+
+const PIPE_SNAP_SCREEN_PX = 12;
+const PIPE_HANDLE_DRAG_THRESHOLD_PX = 3;
 
 export function createInteractionController(canvas, store, renderer) {
   let dragState = null;
@@ -18,7 +22,7 @@ export function createInteractionController(canvas, store, renderer) {
 
   function syncState(state) {
     document.getElementById("hint-text").textContent = `Hint: ${state.ui.hint}`;
-    canvas.style.cursor = dragState?.kind?.includes("handle") ? "grabbing" : getCursorForTool(state.ui.activeTool);
+    canvas.style.cursor = dragState?.kind?.includes("handle") || dragState?.kind?.startsWith("pipe-") ? "grabbing" : getCursorForTool(state.ui.activeTool);
   }
 
   function onPointerDown(event) {
@@ -86,6 +90,42 @@ export function createInteractionController(canvas, store, renderer) {
       return;
     }
 
+    if (state.ui.activeTool === "pipe") {
+      if (!state.scale.calibrated) {
+        return;
+      }
+      const snappedPoint = getSnappedWorldPoint(state, worldPoint, {
+        excludeDraftTerminal: true,
+      });
+      if (!state.ui.pipeDraft) {
+        store.dispatch({
+          type: "START_PIPE_DRAFT",
+          payload: {
+            kind: state.ui.pipePlacementKind,
+            zoneId: state.ui.pipePlacementKind === "zone" ? state.ui.activeZoneId ?? null : null,
+            diameterInches: state.ui.pipePlacementKind === "main" ? state.hydraulics.lineSizeInches : null,
+            points: [snappedPoint],
+          },
+        });
+        return;
+      }
+
+      const lastPoint = state.ui.pipeDraft.points.at(-1) ?? null;
+      const shouldAppend = !pointsEqual(lastPoint, snappedPoint);
+      const nextPoints = shouldAppend
+        ? [...state.ui.pipeDraft.points, snappedPoint]
+        : [...state.ui.pipeDraft.points];
+
+      if (shouldAppend) {
+        store.dispatch({ type: "APPEND_PIPE_DRAFT_POINT", payload: { point: snappedPoint } });
+      }
+
+      if (event.detail >= 2 && nextPoints.length >= 2) {
+        commitPipeDraft(nextPoints);
+      }
+      return;
+    }
+
     if (state.ui.activeTool === "valve-box") {
       if (!state.scale.calibrated) {
         return;
@@ -111,6 +151,40 @@ export function createInteractionController(canvas, store, renderer) {
         store.dispatch({ type: "CLEAR_MEASURE" });
       }
       store.dispatch({ type: "ADD_MEASURE_POINT", payload: { point: worldPoint } });
+      return;
+    }
+
+    const pipeVertexHit = renderer.getPipeVertexHandleHit?.(worldPoint);
+    if (pipeVertexHit) {
+      store.dispatch({
+        type: "SELECT_PIPE_RUN",
+        payload: { id: pipeVertexHit.id, vertexIndex: pipeVertexHit.index },
+      });
+      dragState = {
+        kind: "pipe-vertex",
+        id: pipeVertexHit.id,
+        index: pipeVertexHit.index,
+        startScreenPoint: screenPoint,
+        historyStarted: false,
+      };
+      canvas.setPointerCapture(event.pointerId);
+      return;
+    }
+
+    const pipeMidpointHit = renderer.getPipeMidpointHandleHit?.(worldPoint);
+    if (pipeMidpointHit) {
+      store.dispatch({
+        type: "SELECT_PIPE_RUN",
+        payload: { id: pipeMidpointHit.id, vertexIndex: null },
+      });
+      dragState = {
+        kind: "pipe-midpoint",
+        id: pipeMidpointHit.id,
+        index: pipeMidpointHit.index,
+        startScreenPoint: screenPoint,
+        historyStarted: false,
+      };
+      canvas.setPointerCapture(event.pointerId);
       return;
     }
 
@@ -168,14 +242,24 @@ export function createInteractionController(canvas, store, renderer) {
       return;
     }
 
-    const hit = renderer.getHitSprinkler(worldPoint);
-    store.dispatch({ type: "SELECT_SPRINKLER", payload: { id: hit?.id ?? null } });
-    if (hit) {
-      dragState = { kind: "move", id: hit.id, startX: hit.x, startY: hit.y, lastX: hit.x, lastY: hit.y };
+    const sprinklerHit = renderer.getHitSprinkler(worldPoint);
+    if (sprinklerHit) {
+      store.dispatch({ type: "SELECT_SPRINKLER", payload: { id: sprinklerHit.id } });
+      dragState = { kind: "move", id: sprinklerHit.id, startX: sprinklerHit.x, startY: sprinklerHit.y, lastX: sprinklerHit.x, lastY: sprinklerHit.y };
       canvas.setPointerCapture(event.pointerId);
       return;
     }
 
+    const pipeRunHit = renderer.getHitPipeRun?.(worldPoint);
+    if (pipeRunHit) {
+      store.dispatch({
+        type: "SELECT_PIPE_RUN",
+        payload: { id: pipeRunHit.id, vertexIndex: null },
+      });
+      return;
+    }
+
+    store.dispatch({ type: "SELECT_SPRINKLER", payload: { id: null } });
     panState = {
       startX: event.clientX,
       startY: event.clientY,
@@ -193,6 +277,16 @@ export function createInteractionController(canvas, store, renderer) {
     if (state.ui.activeTool === "measure" && state.ui.measurePoints.length === 1) {
       store.dispatch({ type: "SET_MEASURE_PREVIEW", payload: { point: worldPoint } });
     }
+    if (state.ui.activeTool === "pipe" && state.ui.pipeDraft?.points?.length) {
+      store.dispatch({
+        type: "SET_PIPE_DRAFT_PREVIEW",
+        payload: {
+          point: getSnappedWorldPoint(state, worldPoint, {
+            excludeDraftTerminal: true,
+          }),
+        },
+      });
+    }
 
     if (panState) {
       store.dispatch({
@@ -205,73 +299,90 @@ export function createInteractionController(canvas, store, renderer) {
       return;
     }
 
-    if (dragState) {
-      if (dragState.kind === "arc-handle") {
-        const patch = buildArcHandlePatch(state, dragState, worldPoint);
-        if (patch) {
-          dragState.lastPatch = patch;
-          store.dispatch({
-            type: "UPDATE_SPRINKLER",
-            payload: { id: dragState.id, patch },
-            meta: { skipHistory: true },
-          });
-        }
-        return;
-      }
-      if (dragState.kind === "radius-handle") {
-        const patch = buildRadiusHandlePatch(state, dragState, worldPoint);
-        if (patch) {
-          dragState.lastPatch = patch;
-          store.dispatch({
-            type: "UPDATE_SPRINKLER",
-            payload: { id: dragState.id, patch },
-            meta: { skipHistory: true },
-          });
-        }
-        return;
-      }
-      if (dragState.kind === "strip-primary") {
-        const patch = buildStripHandlePatch(state, dragState, worldPoint, "primary");
-        if (patch) {
-          dragState.lastPatch = patch;
-          store.dispatch({
-            type: "UPDATE_SPRINKLER",
-            payload: { id: dragState.id, patch },
-            meta: { skipHistory: true },
-          });
-        }
-        return;
-      }
-      if (dragState.kind === "strip-secondary") {
-        const patch = buildStripHandlePatch(state, dragState, worldPoint, "secondary");
-        if (patch) {
-          dragState.lastPatch = patch;
-          store.dispatch({
-            type: "UPDATE_SPRINKLER",
-            payload: { id: dragState.id, patch },
-            meta: { skipHistory: true },
-          });
-        }
-        return;
-      }
-      if (dragState.kind === "move-valve-box") {
-        dragState.lastX = worldPoint.x;
-        dragState.lastY = worldPoint.y;
+    if (!dragState) {
+      return;
+    }
+
+    if (dragState.kind === "pipe-vertex") {
+      updateDraggedPipeVertex(state, dragState, screenPoint, worldPoint);
+      return;
+    }
+
+    if (dragState.kind === "pipe-midpoint") {
+      updateDraggedPipeMidpoint(state, dragState, screenPoint, worldPoint);
+      return;
+    }
+
+    if (dragState.kind === "arc-handle") {
+      const patch = buildArcHandlePatch(state, dragState, worldPoint);
+      if (patch) {
+        dragState.lastPatch = patch;
         store.dispatch({
-          type: "MOVE_VALVE_BOX",
-          payload: { id: dragState.id, x: worldPoint.x, y: worldPoint.y },
+          type: "UPDATE_SPRINKLER",
+          payload: { id: dragState.id, patch },
           meta: { skipHistory: true },
         });
-        return;
       }
+      return;
+    }
+
+    if (dragState.kind === "radius-handle") {
+      const patch = buildRadiusHandlePatch(state, dragState, worldPoint);
+      if (patch) {
+        dragState.lastPatch = patch;
+        store.dispatch({
+          type: "UPDATE_SPRINKLER",
+          payload: { id: dragState.id, patch },
+          meta: { skipHistory: true },
+        });
+      }
+      return;
+    }
+
+    if (dragState.kind === "strip-primary") {
+      const patch = buildStripHandlePatch(state, dragState, worldPoint, "primary");
+      if (patch) {
+        dragState.lastPatch = patch;
+        store.dispatch({
+          type: "UPDATE_SPRINKLER",
+          payload: { id: dragState.id, patch },
+          meta: { skipHistory: true },
+        });
+      }
+      return;
+    }
+
+    if (dragState.kind === "strip-secondary") {
+      const patch = buildStripHandlePatch(state, dragState, worldPoint, "secondary");
+      if (patch) {
+        dragState.lastPatch = patch;
+        store.dispatch({
+          type: "UPDATE_SPRINKLER",
+          payload: { id: dragState.id, patch },
+          meta: { skipHistory: true },
+        });
+      }
+      return;
+    }
+
+    if (dragState.kind === "move-valve-box") {
       dragState.lastX = worldPoint.x;
       dragState.lastY = worldPoint.y;
       store.dispatch({
-        type: "MOVE_SPRINKLER",
+        type: "MOVE_VALVE_BOX",
         payload: { id: dragState.id, x: worldPoint.x, y: worldPoint.y },
         meta: { skipHistory: true },
       });
+      return;
     }
+
+    dragState.lastX = worldPoint.x;
+    dragState.lastY = worldPoint.y;
+    store.dispatch({
+      type: "MOVE_SPRINKLER",
+      payload: { id: dragState.id, x: worldPoint.x, y: worldPoint.y },
+      meta: { skipHistory: true },
+    });
   }
 
   function onPointerUp(event) {
@@ -379,12 +490,22 @@ export function createInteractionController(canvas, store, renderer) {
     });
   }
 
-  return {
-    syncState,
-    applyTwoPointCalibration,
-    applyRatioCalibration,
-    fitBackground,
-  };
+  function finishPipeDraft() {
+    const state = store.getState();
+    if (!state.ui.pipeDraft?.points?.length || state.ui.pipeDraft.points.length < 2) {
+      return false;
+    }
+    commitPipeDraft(state.ui.pipeDraft.points);
+    return true;
+  }
+
+  function cancelPipeDraft() {
+    if (!store.getState().ui.pipeDraft) {
+      return false;
+    }
+    store.dispatch({ type: "CLEAR_PIPE_DRAFT" });
+    return true;
+  }
 
   function onKeyDown(event) {
     if (event.code === "Space" && !isFormField(event.target)) {
@@ -397,6 +518,72 @@ export function createInteractionController(canvas, store, renderer) {
     if (event.code === "Space") {
       isSpacePressed = false;
     }
+  }
+
+  return {
+    syncState,
+    applyTwoPointCalibration,
+    applyRatioCalibration,
+    fitBackground,
+    finishPipeDraft,
+    cancelPipeDraft,
+  };
+
+  function updateDraggedPipeVertex(state, nextDragState, screenPoint, worldPoint) {
+    if (!didPointerMoveEnough(nextDragState.startScreenPoint, screenPoint) && !nextDragState.historyStarted) {
+      return;
+    }
+    const snappedPoint = getSnappedWorldPoint(store.getState(), worldPoint, {
+      excludePipeRunId: nextDragState.id,
+      excludeVertexIndex: nextDragState.index,
+    });
+    const action = {
+      type: "MOVE_PIPE_VERTEX",
+      payload: { id: nextDragState.id, index: nextDragState.index, point: snappedPoint },
+    };
+    if (!nextDragState.historyStarted) {
+      nextDragState.historyStarted = true;
+      store.dispatch(action);
+      return;
+    }
+    store.dispatch({ ...action, meta: { skipHistory: true } });
+  }
+
+  function updateDraggedPipeMidpoint(state, nextDragState, screenPoint, worldPoint) {
+    if (!didPointerMoveEnough(nextDragState.startScreenPoint, screenPoint) && !nextDragState.historyStarted) {
+      return;
+    }
+    const snappedPoint = getSnappedWorldPoint(store.getState(), worldPoint, {
+      excludePipeRunId: nextDragState.id,
+    });
+    if (!nextDragState.historyStarted) {
+      nextDragState.historyStarted = true;
+      nextDragState.insertedIndex = nextDragState.index + 1;
+      store.dispatch({
+        type: "INSERT_PIPE_VERTEX",
+        payload: { id: nextDragState.id, index: nextDragState.index, point: snappedPoint },
+      });
+      return;
+    }
+    store.dispatch({
+      type: "MOVE_PIPE_VERTEX",
+      payload: { id: nextDragState.id, index: nextDragState.insertedIndex, point: snappedPoint },
+      meta: { skipHistory: true },
+    });
+  }
+
+  function commitPipeDraft(points) {
+    const currentState = store.getState();
+    store.dispatch({
+      type: "ADD_PIPE_RUN",
+      payload: {
+        id: crypto.randomUUID(),
+        kind: currentState.ui.pipeDraft?.kind ?? currentState.ui.pipePlacementKind,
+        zoneId: currentState.ui.pipeDraft?.zoneId ?? (currentState.ui.pipePlacementKind === "zone" ? currentState.ui.activeZoneId ?? null : null),
+        diameterInches: currentState.ui.pipeDraft?.diameterInches ?? (currentState.ui.pipePlacementKind === "main" ? currentState.hydraulics.lineSizeInches : null),
+        points,
+      },
+    });
   }
 }
 
@@ -462,6 +649,41 @@ function getCanvasPoint(event) {
   };
 }
 
+function getSnappedWorldPoint(state, worldPoint, options = {}) {
+  const excludeLastDraftPoint = options.excludeDraftTerminal ? state.ui.pipeDraft?.points?.at(-1) ?? null : null;
+  const candidates = [
+    ...(state.sprinklers ?? []).map((sprinkler) => ({ x: sprinkler.x, y: sprinkler.y })),
+    ...(state.valveBoxes ?? []).map((valveBox) => ({ x: valveBox.x, y: valveBox.y })),
+    ...(state.pipeRuns ?? []).flatMap((pipeRun) =>
+      pipeRun.points.filter((point, index) =>
+        !(pipeRun.id === options.excludePipeRunId && index === options.excludeVertexIndex),
+      ),
+    ),
+  ].filter((candidate) => !excludeLastDraftPoint || !pointsEqual(candidate, excludeLastDraftPoint));
+
+  const screenPoint = worldToScreen(worldPoint, state.view);
+  let bestPoint = worldPoint;
+  let bestDistance = PIPE_SNAP_SCREEN_PX + 0.001;
+
+  for (const candidate of candidates) {
+    const candidateScreen = worldToScreen(candidate, state.view);
+    const distance = Math.hypot(candidateScreen.x - screenPoint.x, candidateScreen.y - screenPoint.y);
+    if (distance <= PIPE_SNAP_SCREEN_PX && distance < bestDistance) {
+      bestDistance = distance;
+      bestPoint = candidate;
+    }
+  }
+
+  return bestPoint;
+}
+
+function didPointerMoveEnough(startScreenPoint, screenPoint) {
+  if (!startScreenPoint || !screenPoint) {
+    return false;
+  }
+  return Math.hypot(screenPoint.x - startScreenPoint.x, screenPoint.y - startScreenPoint.y) >= PIPE_HANDLE_DRAG_THRESHOLD_PX;
+}
+
 function shouldStartPan(event, activeTool, isSpacePressed) {
   return activeTool === "pan" || event.button === 1 || event.button === 2 || event.altKey || (isSpacePressed && event.button === 0);
 }
@@ -469,6 +691,7 @@ function shouldStartPan(event, activeTool, isSpacePressed) {
 function getCursorForTool(tool) {
   switch (tool) {
     case "place":
+    case "pipe":
     case "valve-box":
       return "crosshair";
     case "calibrate":
