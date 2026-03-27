@@ -1,7 +1,8 @@
 import { clamp } from "../geometry/arcs.js";
+import { getAllFittingOptions, getCommonFittingOptions, getFittingTypeMeta } from "../geometry/fittings.js";
 import { PIPE_DIAMETER_OPTIONS, calculatePipeLengthUnits, formatPipeDiameterLabel } from "../geometry/pipes.js";
 import { fitBackgroundToView } from "../geometry/scale.js";
-import { cloneProjectSnapshot, findSelectedPipeRun, findSelectedSprinkler, findSelectedValveBox, getNextZoneSeed, hasHydraulics, isProjectReady } from "../state/project-state.js";
+import { cloneProjectSnapshot, findSelectedFitting, findSelectedPipeRun, findSelectedSprinkler, findSelectedValveBox, getNextZoneSeed, hasHydraulics, isProjectReady } from "../state/project-state.js";
 
 export function bindPanels({ store, renderer, analyzer, interactions, io }) {
   const elements = bindElements();
@@ -62,11 +63,17 @@ function bindElements() {
     undoButton: document.getElementById("undo-button"),
     redoButton: document.getElementById("redo-button"),
     historySummary: document.getElementById("history-summary"),
+    fittingsPanel: document.getElementById("fittings-panel"),
+    fittingsPanelHandle: document.getElementById("fittings-panel-handle"),
+    fittingsZoneSelect: document.getElementById("fittings-zone-select"),
+    fittingsTabButtons: [...document.querySelectorAll("[data-fittings-tab]")],
+    fittingsPanelContent: document.getElementById("fittings-panel-content"),
     selectionTitle: document.getElementById("selection-title"),
     selectionEmpty: document.getElementById("selection-empty"),
     selectionForm: document.getElementById("selection-form"),
     valveBoxForm: document.getElementById("valve-box-form"),
     pipeRunForm: document.getElementById("pipe-run-form"),
+    fittingForm: document.getElementById("fitting-form"),
     sprinklerCoverageModel: document.getElementById("sprinkler-coverage-model"),
     sprinklerLabel: document.getElementById("sprinkler-label"),
     sprinklerX: document.getElementById("sprinkler-x"),
@@ -106,6 +113,11 @@ function bindElements() {
     pipeDiameter: document.getElementById("pipe-diameter"),
     pipeLength: document.getElementById("pipe-length"),
     deletePipeButton: document.getElementById("delete-pipe-button"),
+    fittingType: document.getElementById("fitting-type"),
+    fittingZone: document.getElementById("fitting-zone"),
+    fittingSize: document.getElementById("fitting-size"),
+    fittingAnchor: document.getElementById("fitting-anchor"),
+    deleteFittingButton: document.getElementById("delete-fitting-button"),
     scaleStatus: document.getElementById("scale-status"),
     hydraulicsStatus: document.getElementById("hydraulics-status"),
     readyStatus: document.getElementById("ready-status"),
@@ -182,6 +194,8 @@ function bindEvents(elements, store, renderer, interactions, io) {
       store.dispatch({ type: "SET_ACTIVE_TOOL", payload: { tool: button.dataset.tool } });
     });
   });
+
+  bindFittingsPanelInteractions(elements, store);
 
   elements.placementPattern.addEventListener("change", () => {
     store.dispatch({ type: "SET_PLACEMENT_PATTERN", payload: { pattern: elements.placementPattern.value } });
@@ -430,8 +444,82 @@ function bindEvents(elements, store, renderer, interactions, io) {
     }
   });
 
+  elements.deleteFittingButton.addEventListener("click", () => {
+    const selected = findSelectedFitting(store.getState());
+    if (selected) {
+      store.dispatch({ type: "DELETE_FITTING", payload: { id: selected.id } });
+    }
+  });
+
   elements.undoButton.addEventListener("click", () => store.dispatch({ type: "UNDO" }));
   elements.redoButton.addEventListener("click", () => store.dispatch({ type: "REDO" }));
+}
+
+function bindFittingsPanelInteractions(elements, store) {
+  let dragState = null;
+
+  elements.fittingsPanelHandle?.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) {
+      return;
+    }
+    const panelState = store.getState().ui.fittingsPanel;
+    dragState = {
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startX: panelState.x,
+      startY: panelState.y,
+    };
+    event.preventDefault();
+  });
+
+  window.addEventListener("pointermove", (event) => {
+    if (!dragState || event.pointerId !== dragState.pointerId) {
+      return;
+    }
+    store.dispatch({
+      type: "SET_FITTINGS_PANEL_STATE",
+      payload: {
+        x: dragState.startX + (event.clientX - dragState.startClientX),
+        y: dragState.startY + (event.clientY - dragState.startClientY),
+      },
+      meta: { skipHistory: true },
+    });
+  });
+
+  window.addEventListener("pointerup", (event) => {
+    if (dragState && event.pointerId === dragState.pointerId) {
+      dragState = null;
+    }
+  });
+
+  elements.fittingsZoneSelect?.addEventListener("change", () => {
+    const value = elements.fittingsZoneSelect.value;
+    if (value === "auto" || value === "main") {
+      store.dispatch({
+        type: "SET_FITTINGS_PANEL_STATE",
+        payload: { zoneMode: value, zoneId: null },
+        meta: { skipHistory: true },
+      });
+      return;
+    }
+
+    store.dispatch({
+      type: "SET_FITTINGS_PANEL_STATE",
+      payload: { zoneMode: "zone", zoneId: value || null },
+      meta: { skipHistory: true },
+    });
+  });
+
+  elements.fittingsTabButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      store.dispatch({
+        type: "SET_FITTINGS_PANEL_STATE",
+        payload: { tab: button.dataset.fittingsTab },
+        meta: { skipHistory: true },
+      });
+    });
+  });
 }
 
 function updateSprinklerSelection(elements, store) {
@@ -552,31 +640,47 @@ function updateUi(elements, state, renderer, analyzer) {
   const selectedSprinkler = findSelectedSprinkler(state);
   const selectedValveBox = findSelectedValveBox(state);
   const selectedPipeRun = findSelectedPipeRun(state);
+  const selectedFitting = findSelectedFitting(state);
   populateZoneSelect(elements.activeZoneSelect, state.zones, state.ui.activeZoneId);
   populateAnalysisZoneSelect(elements.analysisZoneSelect, state.zones, analysis?.selectedZoneId ?? state.view.analysisZoneId ?? "");
   populateZoneSelect(elements.pipeZone, state.zones, selectedPipeRun?.zoneId ?? "");
+  populateFittingsZoneSelect(elements.fittingsZoneSelect, state.zones, state.ui.fittingsPanel);
   elements.analysisZoneSelect.disabled = (state.view.analysisOverlayMode ?? "application_rate") !== "zone_catch_can" || !state.zones.length;
   populateSprinklerZonePicker(elements, state.zones, selectedSprinkler?.zoneId ?? "");
   if (!selectedSprinkler) {
     setZonePickerOpen(elements, false);
   }
 
+  const panelState = state.ui.fittingsPanel;
+  elements.fittingsPanel.hidden = isPartsScreen || state.ui.activeTool !== "fittings";
+  elements.fittingsPanel.style.transform = `translate(${panelState.x}px, ${panelState.y}px)`;
+  elements.fittingsTabButtons.forEach((button) => {
+    const isActive = button.dataset.fittingsTab === panelState.tab;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-selected", isActive ? "true" : "false");
+  });
+  renderFittingsPanel(elements, state);
+
   const nextZonesListRenderKey = buildZonesListRenderKey(state, analysis);
   if (elements.zonesList.dataset.renderKey !== nextZonesListRenderKey) {
     renderZonesList(elements, state, analysis);
     elements.zonesList.dataset.renderKey = nextZonesListRenderKey;
   }
-  elements.selectionTitle.textContent = selectedSprinkler
+  const selectionTitle = selectedSprinkler
     ? "Selected Sprinkler"
     : selectedValveBox
       ? "Selected Valve Box"
       : selectedPipeRun
         ? "Selected Pipe Run"
-      : "Selected Item";
-  elements.selectionEmpty.hidden = Boolean(selectedSprinkler || selectedValveBox || selectedPipeRun);
+        : selectedFitting
+          ? "Selected Fitting"
+          : "Selected Item";
+  elements.selectionTitle.textContent = selectionTitle;
+  elements.selectionEmpty.hidden = Boolean(selectedSprinkler || selectedValveBox || selectedPipeRun || selectedFitting);
   elements.selectionForm.hidden = !selectedSprinkler;
   elements.valveBoxForm.hidden = !selectedValveBox;
   elements.pipeRunForm.hidden = !selectedPipeRun;
+  elements.fittingForm.hidden = !selectedFitting;
   if (selectedSprinkler) {
     const coverageValue = selectedSprinkler.coverageModel === "strip"
       ? "strip"
@@ -634,6 +738,15 @@ function updateUi(elements, state, renderer, analyzer) {
     elements.pipeLength.value = "";
   }
 
+  if (selectedFitting) {
+    const fittingType = getFittingTypeMeta(selectedFitting.type);
+    const zoneLabel = resolveFittingZoneLabel(selectedFitting, state.zones);
+    elements.fittingType.value = fittingType.label;
+    elements.fittingZone.value = zoneLabel;
+    elements.fittingSize.value = selectedFitting.sizeSpec ?? "Auto";
+    elements.fittingAnchor.value = formatFittingAnchor(selectedFitting.anchor);
+  }
+
   renderSprinklerAnalysis(elements.sprinklerAnalysis, selectedSprinkler, analysis);
   renderAnalysisLegend(elements, state, analysis);
   renderPartsScreen(elements, state, analysis);
@@ -649,6 +762,7 @@ function updateUi(elements, state, renderer, analyzer) {
     ["Heads", String(summary.sprinklerCount)],
     ["Valve boxes", String(summary.valveBoxCount ?? 0)],
     ["Pipe runs", String(summary.pipeRunCount ?? 0)],
+    ["Fittings", String(state.fittings?.length ?? 0)],
     ["Pipe length", state.scale.pixelsPerUnit ? `${summary.totalPipeLength.toFixed(1)} ${state.scale.units}` : "--"],
     ["Mean size", summary.meanRadius ? `${summary.meanRadius.toFixed(1)} ${state.scale.units}` : "--"],
     ["Peak rate", analysis?.summary.applicationRateMaxInHr ? `${analysis.summary.applicationRateMaxInHr.toFixed(2)} in/hr` : "--"],
@@ -682,6 +796,59 @@ function populateZoneSelect(select, zones, value) {
   select.value = current;
 }
 
+function populateFittingsZoneSelect(select, zones, panelState) {
+  if (!select) {
+    return;
+  }
+
+  const options = [
+    '<option value="auto">Auto</option>',
+    '<option value="main">Main</option>',
+    ...zones.map((zone) => `<option value="${zone.id}">${zone.name}</option>`),
+  ];
+  select.innerHTML = options.join("");
+
+  if (panelState?.zoneMode === "zone" && zones.some((zone) => zone.id === panelState.zoneId)) {
+    select.value = panelState.zoneId;
+    return;
+  }
+
+  select.value = panelState?.zoneMode === "main" ? "main" : "auto";
+}
+
+function renderFittingsPanel(elements, state) {
+  const tab = state.ui.fittingsPanel?.tab ?? "suggested";
+
+  if (tab === "suggested") {
+    elements.fittingsPanelContent.innerHTML = `
+      <div class="fittings-panel-group">
+        <h4>Next Up</h4>
+        <div class="empty-card">
+          Automatic fitting suggestions will land in the next implementation slice. The panel shell and zone association controls are ready, and drag-to-place starts with the manual head takeoff workflow.
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  const options = tab === "common" ? getCommonFittingOptions() : getAllFittingOptions();
+  elements.fittingsPanelContent.innerHTML = `
+    <div class="fittings-panel-group">
+      <h4>${tab === "common" ? "Ready to Place" : "Catalog"}</h4>
+      ${options.map((option) => renderFittingCard(option)).join("")}
+    </div>
+  `;
+}
+
+function renderFittingCard(option) {
+  return `
+    <article class="fitting-card" data-fitting-template="${option.value}">
+      <strong>${escapeHtml(option.label)}</strong>
+      <p>${escapeHtml(option.description)}</p>
+    </article>
+  `;
+}
+
 function populateAnalysisZoneSelect(select, zones, value) {
   const current = value ?? "";
   const options = ['<option value="">Select zone</option>']
@@ -700,6 +867,34 @@ function populateSprinklerZonePicker(elements, zones, value) {
     renderZonePickerOption({ id: "", name: "Unassigned", color: null }, current === ""),
     ...zones.map((zone) => renderZonePickerOption(zone, zone.id === current)),
   ].join("");
+}
+
+function resolveFittingZoneLabel(fitting, zones) {
+  if (!fitting?.zoneId) {
+    return "Main / auto";
+  }
+  return zones.find((zone) => zone.id === fitting.zoneId)?.name ?? "Unassigned";
+}
+
+function formatFittingAnchor(anchor) {
+  if (!anchor?.kind) {
+    return "Unanchored";
+  }
+
+  if (anchor.kind === "sprinkler") {
+    return `Sprinkler ${anchor.sprinklerId ?? "--"}`;
+  }
+  if (anchor.kind === "pipe_vertex") {
+    return `Pipe vertex ${anchor.pipeRunId ?? "--"}`;
+  }
+  if (anchor.kind === "pipe_segment") {
+    return `Pipe segment ${anchor.pipeRunId ?? "--"}`;
+  }
+  if (anchor.kind === "valve_box") {
+    return `Valve box ${anchor.valveBoxId ?? "--"}`;
+  }
+
+  return capitalize(anchor.kind);
 }
 
 function renderZonePickerOption(zone, isSelected) {

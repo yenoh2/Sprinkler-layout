@@ -109,6 +109,12 @@ document.addEventListener("keydown", (event) => {
     if (state.ui.selectedValveBoxId) {
       event.preventDefault();
       store.dispatch({ type: "DELETE_VALVE_BOX", payload: { id: state.ui.selectedValveBoxId } });
+      return;
+    }
+    if (state.ui.selectedFittingId) {
+      event.preventDefault();
+      store.dispatch({ type: "DELETE_FITTING", payload: { id: state.ui.selectedFittingId } });
+      return;
     }
   }
 

@@ -692,6 +692,7 @@ function getCursorForTool(tool) {
   switch (tool) {
     case "place":
     case "pipe":
+    case "fittings":
     case "valve-box":
       return "crosshair";
     case "calibrate":

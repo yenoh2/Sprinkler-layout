@@ -22,6 +22,7 @@
           <button type="button" data-tool="select" class="tool-button is-active">Select</button>
           <button type="button" data-tool="place" class="tool-button">Place</button>
           <button type="button" data-tool="pipe" class="tool-button">Pipe</button>
+          <button type="button" data-tool="fittings" class="tool-button">Fittings</button>
           <button type="button" data-tool="valve-box" class="tool-button">Valve Box</button>
           <button type="button" data-tool="calibrate" class="tool-button">Calibrate</button>
           <button type="button" data-tool="measure" class="tool-button">Measure</button>
@@ -228,13 +229,36 @@
         </div>
         <div class="canvas-frame">
           <canvas id="sprinkler-canvas" width="1600" height="1000"></canvas>
+          <section id="fittings-panel" class="floating-panel fittings-panel" hidden aria-label="Fittings palette">
+            <header id="fittings-panel-handle" class="floating-panel-handle">
+              <div class="floating-panel-copy">
+                <h3>Fittings</h3>
+                <p>Choose a zone context, then drag this palette where you need it.</p>
+              </div>
+            </header>
+            <div class="floating-panel-body">
+              <label class="field field-compact">
+                <span>Associate to</span>
+                <select id="fittings-zone-select">
+                  <option value="auto">Auto</option>
+                  <option value="main">Main</option>
+                </select>
+              </label>
+              <div id="fittings-tab-list" class="segmented-tabs" role="tablist" aria-label="Fittings catalog">
+                <button type="button" class="segmented-tab" data-fittings-tab="suggested" role="tab" aria-selected="true">Suggested</button>
+                <button type="button" class="segmented-tab" data-fittings-tab="common" role="tab" aria-selected="false">Common</button>
+                <button type="button" class="segmented-tab" data-fittings-tab="all" role="tab" aria-selected="false">All</button>
+              </div>
+              <div id="fittings-panel-content" class="fittings-panel-content"></div>
+            </div>
+          </section>
         </div>
       </section>
 
       <aside class="details-panel">
         <section class="panel">
           <h2 id="selection-title">Selected Item</h2>
-          <div id="selection-empty" class="empty-card">Select a sprinkler, valve box, or pipe run to edit its properties.</div>
+          <div id="selection-empty" class="empty-card">Select a sprinkler, valve box, pipe run, or fitting to edit its properties.</div>
           <div id="selection-form" hidden>
             <label class="field">
               <span>Coverage</span>
@@ -404,6 +428,27 @@
             </label>
             <div class="button-row">
               <button id="delete-pipe-button" type="button" class="danger-button">Delete</button>
+            </div>
+          </div>
+          <div id="fitting-form" hidden>
+            <label class="field">
+              <span>Type</span>
+              <input id="fitting-type" type="text" readonly>
+            </label>
+            <label class="field">
+              <span>Zone</span>
+              <input id="fitting-zone" type="text" readonly>
+            </label>
+            <label class="field">
+              <span>Size</span>
+              <input id="fitting-size" type="text" readonly>
+            </label>
+            <label class="field">
+              <span>Anchor</span>
+              <input id="fitting-anchor" type="text" readonly>
+            </label>
+            <div class="button-row">
+              <button id="delete-fitting-button" type="button" class="danger-button">Delete</button>
             </div>
           </div>
         </section>
