@@ -1697,14 +1697,14 @@ function renderPartsScreen(elements, state, analysis) {
 
   const includedZoneCount = parts.zones.filter((zone) => zone.included).length;
   const excludedZoneCount = parts.zones.length - includedZoneCount;
-  elements.partsSummary.textContent = `${parts.includedHeadCount} included head${parts.includedHeadCount === 1 ? "" : "s"}, ${parts.lineItemCount} line item${parts.lineItemCount === 1 ? "" : "s"}, ${parts.totalBodyQuantity} bodies, ${parts.totalNozzleQuantity} nozzles, ${parts.totalMainPipeLength.toFixed(1)} ${state.scale.units} main pipe, ${parts.totalZonePipeLength.toFixed(1)} ${state.scale.units} zone pipe, ${parts.totalPipeLength.toFixed(1)} ${state.scale.units} total pipe. ${includedZoneCount} zone${includedZoneCount === 1 ? "" : "s"} included${excludedZoneCount ? `, ${excludedZoneCount} excluded` : ""}.`;
+  elements.partsSummary.textContent = `${parts.includedHeadCount} included head${parts.includedHeadCount === 1 ? "" : "s"}, ${parts.lineItemCount} line item${parts.lineItemCount === 1 ? "" : "s"}, ${parts.totalBodyQuantity} bodies, ${parts.totalNozzleQuantity} nozzles, ${parts.totalFittingQuantity} fitting${parts.totalFittingQuantity === 1 ? "" : "s"}, ${parts.totalMainPipeLength.toFixed(1)} ${state.scale.units} main pipe, ${parts.totalZonePipeLength.toFixed(1)} ${state.scale.units} zone pipe, ${parts.totalPipeLength.toFixed(1)} ${state.scale.units} total pipe. ${includedZoneCount} zone${includedZoneCount === 1 ? "" : "s"} included${excludedZoneCount ? `, ${excludedZoneCount} excluded` : ""}.`;
 
   const rows = parts.groupBy === "body_nozzle_split"
-    ? parts.bodyRows.concat(parts.nozzleRows).concat(parts.pipeRows ?? [])
-    : parts.rows.concat(parts.pipeRows ?? []);
+    ? parts.bodyRows.concat(parts.nozzleRows).concat(parts.fittingRows ?? []).concat(parts.pipeRows ?? [])
+    : parts.rows.concat(parts.fittingRows ?? []).concat(parts.pipeRows ?? []);
   const hasRows = rows.length > 0;
   elements.partsEmpty.hidden = hasRows;
-  elements.partsEmpty.textContent = hasRows ? "" : "No included recommended heads or pipe runs yet.";
+  elements.partsEmpty.textContent = hasRows ? "" : "No included recommended heads, placed fittings, or pipe runs yet.";
   elements.partsTable.innerHTML = hasRows
     ? renderPartsTables(parts, state.scale.units)
     : "";
@@ -1740,6 +1740,7 @@ function renderPartsTables(parts, units) {
   return [
     renderPartsTableSection("Bodies", parts.bodyRows, parts.showZoneUsage),
     renderPartsTableSection("Nozzles", parts.nozzleRows, parts.showZoneUsage),
+    renderPartsTableSection("Fittings", parts.fittingRows ?? [], parts.showZoneUsage),
     renderPipeTableSection("Pipe", parts.pipeRows ?? [], parts.showZoneUsage, units),
   ].join("");
 }

@@ -1,5 +1,6 @@
 import { clamp, normalizeAngle } from "../geometry/arcs.js";
 import { getCoverageModel, pointFallsWithinCoverage, resolveCoverageBounds, resolveStripConfiguration } from "../geometry/coverage.js";
+import { getFittingTypeMeta } from "../geometry/fittings.js";
 import { calculatePipeLengthUnits, formatPipeDiameterLabel, getPipeKindLabel, normalizePipeKind } from "../geometry/pipes.js";
 
 const DEFAULT_ASSUMPTIONS = {
@@ -59,12 +60,14 @@ function buildEmptySnapshot(designFlowLimitGpm, targetDepthInches = 1) {
       rows: [],
       bodyRows: [],
       nozzleRows: [],
+      fittingRows: [],
       pipeRows: [],
       showZoneUsage: true,
       includedHeadCount: 0,
       lineItemCount: 0,
       totalBodyQuantity: 0,
       totalNozzleQuantity: 0,
+      totalFittingQuantity: 0,
       totalMainPipeLength: 0,
       totalZonePipeLength: 0,
       totalPipeLength: 0,
@@ -144,6 +147,16 @@ function buildCacheKey(state) {
       label: pipeRun.label ?? "",
       diameterInches: pipeRun.diameterInches ?? null,
       points: pipeRun.points ?? [],
+    })),
+    fittings: (state.fittings ?? []).map((fitting) => ({
+      id: fitting.id,
+      type: fitting.type,
+      zoneId: fitting.zoneId ?? null,
+      sizeSpec: fitting.sizeSpec ?? null,
+      status: fitting.status ?? "placed",
+      anchor: fitting.anchor ?? null,
+      x: fitting.x,
+      y: fitting.y,
     })),
   });
 }
@@ -292,6 +305,7 @@ function buildPartsSnapshot(state, recommendations, zonesById) {
   const rows = buildPartsRows(filteredRecommendations, groupBy, zoneOrder, zonesById);
   const bodyRows = rows.filter((row) => row.category === "Body");
   const nozzleRows = rows.filter((row) => row.category === "Nozzle");
+  const fittingRows = buildFittingRows(state, includedZoneIds, zoneOrder, zonesById);
   const pipeRows = buildPipeRows(state, includedZoneIds, zoneOrder, zonesById);
   const totalMainPipeLength = pipeRows
     .filter((row) => row.kind === "main")
@@ -309,11 +323,13 @@ function buildPartsSnapshot(state, recommendations, zonesById) {
     rows,
     bodyRows,
     nozzleRows,
+    fittingRows,
     pipeRows,
     includedHeadCount: filteredRecommendations.length,
-    lineItemCount: rows.length + pipeRows.length,
+    lineItemCount: rows.length + fittingRows.length + pipeRows.length,
     totalBodyQuantity: bodyRows.reduce((sum, row) => sum + row.quantity, 0),
     totalNozzleQuantity: nozzleRows.reduce((sum, row) => sum + row.quantity, 0),
+    totalFittingQuantity: fittingRows.reduce((sum, row) => sum + row.quantity, 0),
     totalMainPipeLength,
     totalZonePipeLength,
     totalPipeLength: totalMainPipeLength + totalZonePipeLength,
@@ -1818,6 +1834,42 @@ function buildPipeRows(state, includedZoneIds, zoneOrder, zonesById) {
   return [...rows.values()]
     .map((row) => finalizePipeRow(row))
     .sort((a, b) => comparePipeRows(a, b));
+}
+
+function buildFittingRows(state, includedZoneIds, zoneOrder, zonesById) {
+  const rows = new Map();
+
+  for (const fitting of state.fittings ?? []) {
+    if ((fitting.status ?? "placed") !== "placed") {
+      continue;
+    }
+
+    const include = !fitting.zoneId || includedZoneIds.has(fitting.zoneId);
+    if (!include) {
+      continue;
+    }
+
+    const meta = getFittingTypeMeta(fitting.type);
+    const itemLabel = fitting.sizeSpec || meta.label;
+    const zoneName = fitting.zoneId
+      ? (zonesById.get(fitting.zoneId)?.name ?? "Unassigned")
+      : "Main";
+
+    addPartRow(rows, {
+      category: "Fitting",
+      itemKey: `fitting:${itemLabel}`,
+      itemLabel,
+      zoneName,
+      zoneOrderValue: fitting.zoneId ? (zoneOrder.get(fitting.zoneId) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER,
+      note: fitting.sizeSpec && fitting.sizeSpec !== meta.label ? meta.label : "",
+      variant: fitting.type,
+      exactLabel: itemLabel,
+    });
+  }
+
+  return [...rows.values()]
+    .map((row) => finalizePartRow(row, "exact_sku"))
+    .sort((a, b) => comparePartRows(a, b));
 }
 
 function addPipeRow(rows, input) {
