@@ -527,6 +527,11 @@ function bindFittingsPanelInteractions(elements, store, interactions) {
   });
 
   elements.fittingsPanelContent?.addEventListener("pointerdown", (event) => {
+    const placeButton = event.target instanceof Element ? event.target.closest("[data-suggested-place]") : null;
+    if (placeButton) {
+      return;
+    }
+
     const target = event.target instanceof Element ? event.target.closest("[data-fitting-template]") : null;
     const templateType = target?.getAttribute("data-fitting-template");
     const payload = parseFittingCardPayload(target?.getAttribute("data-fitting-payload"));
@@ -548,6 +553,27 @@ function bindFittingsPanelInteractions(elements, store, interactions) {
     if (placementStarted) {
       event.preventDefault();
     }
+  });
+
+  elements.fittingsPanelContent?.addEventListener("click", (event) => {
+    const placeButton = event.target instanceof Element ? event.target.closest("[data-suggested-place]") : null;
+    if (!placeButton) {
+      return;
+    }
+
+    const card = placeButton.closest("[data-fitting-template]");
+    const payload = parseFittingCardPayload(card?.getAttribute("data-fitting-payload"));
+    if (!payload) {
+      return;
+    }
+
+    const placed = interactions.placeSuggestedFitting(payload);
+    if (placed) {
+      event.preventDefault();
+      return;
+    }
+
+    alert("That suggestion is no longer valid to auto-place. Drag it onto the plan to place it manually.");
   });
 }
 
@@ -932,6 +958,9 @@ function renderSuggestedFittingCard(suggestion) {
       <strong>${escapeHtml(suggestion.referenceLabel || suggestion.sprinklerLabel || suggestion.label)}</strong>
       <p>${escapeHtml(subtitle)}</p>
       <p>${escapeHtml(supportText)}</p>
+      <div class="fitting-card-actions">
+        <button type="button" data-suggested-place>Place</button>
+      </div>
     </article>
   `;
 }

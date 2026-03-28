@@ -617,6 +617,21 @@ canvas {
   line-height: 1.45;
 }
 
+.fitting-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.2rem;
+}
+
+.fitting-card-actions button {
+  padding: 0.45rem 0.75rem;
+  border-radius: 999px;
+  background: rgba(182, 92, 42, 0.12);
+  border-color: rgba(125, 52, 17, 0.22);
+  color: var(--accent-strong);
+  font-size: 0.82rem;
+}
+
 .fitting-card.is-muted {
   background: rgba(247, 241, 231, 0.8);
 }

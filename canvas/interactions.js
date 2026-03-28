@@ -622,6 +622,34 @@ export function createInteractionController(canvas, store, renderer) {
     return true;
   }
 
+  function placeSuggestedFitting(input) {
+    const state = store.getState();
+    const preview = buildImmediateFittingPreview(state, input);
+    if (!preview?.valid) {
+      return false;
+    }
+
+    store.dispatch({
+      type: "ADD_FITTING",
+      payload: {
+        id: crypto.randomUUID(),
+        type: input?.type,
+        zoneId: preview.zoneId ?? null,
+        sizeSpec: preview.sizeSpec ?? null,
+        anchor: preview.anchor ?? null,
+        x: preview.x,
+        y: preview.y,
+        rotationDeg: 0,
+      },
+    });
+
+    if (fittingPlacementState || store.getState().ui.fittingDraft) {
+      clearFittingPlacement();
+    }
+
+    return true;
+  }
+
   function cancelFittingDraft() {
     if (!fittingPlacementState && !store.getState().ui.fittingDraft) {
       return false;
@@ -638,6 +666,7 @@ export function createInteractionController(canvas, store, renderer) {
     finishPipeDraft,
     cancelPipeDraft,
     beginFittingPlacement,
+    placeSuggestedFitting,
     cancelFittingDraft,
   };
 
@@ -801,6 +830,35 @@ function buildFittingDraftPreview(state, fittingDraft, worldPoint, screenPoint) 
     sizeSpec: null,
     anchor: null,
   };
+}
+
+function buildImmediateFittingPreview(state, input) {
+  if (!input?.type) {
+    return null;
+  }
+
+  const targetPoint = input?.targetPoint ?? null;
+  const screenPoint = targetPoint ? worldToScreen(targetPoint, state.view) : null;
+  const fittingDraft = {
+    type: input.type,
+    zoneMode: input?.zoneMode ?? "auto",
+    zoneId: input?.zoneId ?? null,
+    sprinklerId: input?.sprinklerId ?? null,
+    targetPoint,
+    targetAnchor: input?.targetAnchor ?? null,
+    sizeSpec: input?.sizeSpec ?? null,
+    label: input?.label ?? "",
+  };
+
+  if (fittingDraft.type === "head_takeoff" && targetPoint && screenPoint) {
+    return buildHeadTakeoffPlacementPreview(state, fittingDraft, targetPoint, screenPoint);
+  }
+
+  if ((fittingDraft.targetPoint || fittingDraft.targetAnchor) && targetPoint && screenPoint) {
+    return buildTargetedFittingPlacementPreview(state, fittingDraft, targetPoint, screenPoint);
+  }
+
+  return null;
 }
 
 function getSnappedWorldPoint(state, worldPoint, options = {}) {
