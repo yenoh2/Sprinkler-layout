@@ -488,7 +488,7 @@ export function createInteractionController(canvas, store, renderer) {
         type: "ADD_FITTING",
         payload: {
           id: crypto.randomUUID(),
-          type: state.ui.fittingDraft?.type,
+          type: preview.type ?? state.ui.fittingDraft?.type,
           zoneId: preview.zoneId ?? null,
           sizeSpec: preview.sizeSpec ?? null,
           anchor: preview.anchor ?? null,
@@ -633,7 +633,7 @@ export function createInteractionController(canvas, store, renderer) {
       type: "ADD_FITTING",
       payload: {
         id: crypto.randomUUID(),
-        type: input?.type,
+        type: preview.type ?? input?.type,
         zoneId: preview.zoneId ?? null,
         sizeSpec: preview.sizeSpec ?? null,
         anchor: preview.anchor ?? null,

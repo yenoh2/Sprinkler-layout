@@ -21,7 +21,7 @@ export function buildFittingSuggestions(state) {
 export function buildHeadTakeoffSuggestions(state) {
   const existingBySprinklerId = new Set(
     (state.fittings ?? [])
-      .filter((fitting) => fitting.type === "head_takeoff" && fitting.anchor?.kind === "sprinkler" && fitting.anchor.sprinklerId)
+      .filter((fitting) => fitting.status === "placed" && fitting.anchor?.kind === "sprinkler" && fitting.anchor.sprinklerId)
       .map((fitting) => fitting.anchor.sprinklerId),
   );
 
@@ -109,21 +109,25 @@ export function buildHeadTakeoffSuggestion(state, sprinkler) {
   }
 
   const nearestZonePipe = findNearestZonePipeForPoint(state, sprinkler.zoneId, sprinkler);
+  const isTerminalEndpoint = isTerminalHeadConnection(state, sprinkler, nearestZonePipe);
+  const type = isTerminalEndpoint ? "elbow" : "head_takeoff";
   const zoneName = state.zones.find((zone) => zone.id === sprinkler.zoneId)?.name ?? "Unassigned";
   return {
-    id: `head_takeoff:${sprinkler.id}`,
-    type: "head_takeoff",
+    id: `${type}:${sprinkler.id}`,
+    type,
     sprinklerId: sprinkler.id,
     sprinklerLabel: sprinkler.label || "Sprinkler",
     referenceLabel: sprinkler.label || "Sprinkler",
-    reason: "Head connection",
+    reason: isTerminalEndpoint ? "Terminal head connection" : "Head connection",
     zoneId: sprinkler.zoneId ?? null,
     zoneName,
-    label: getFittingTypeMeta("head_takeoff").label,
+    label: getFittingTypeMeta(type).label,
     valid: true,
     x: sprinkler.x,
     y: sprinkler.y,
-    sizeSpec: resolveHeadTakeoffSizeSpec(nearestZonePipe?.diameterInches ?? null),
+    sizeSpec: isTerminalEndpoint
+      ? resolveHeadElbowSizeSpec(nearestZonePipe?.diameterInches ?? null)
+      : resolveHeadTakeoffSizeSpec(nearestZonePipe?.diameterInches ?? null),
     anchor: {
       kind: "sprinkler",
       sprinklerId: sprinkler.id,
@@ -504,9 +508,12 @@ function sameDiameter(first, second) {
 }
 
 function buildInvalidTargetedPreview(fittingDraft, worldPoint) {
+  const targetLabel = fittingDraft?.targetAnchor?.kind === "sprinkler"
+    ? "suggested sprinkler head"
+    : "suggested pipe connection";
   return {
     type: fittingDraft?.type ?? "tee",
-    label: `${getFittingTypeMeta(fittingDraft?.type).label}: drop on the suggested pipe connection`,
+    label: `${getFittingTypeMeta(fittingDraft?.type).label}: drop on the ${targetLabel}`,
     valid: false,
     x: worldPoint.x,
     y: worldPoint.y,
@@ -514,6 +521,34 @@ function buildInvalidTargetedPreview(fittingDraft, worldPoint) {
     sizeSpec: fittingDraft?.sizeSpec ?? null,
     anchor: fittingDraft?.targetAnchor ?? null,
   };
+}
+
+function isTerminalHeadConnection(state, sprinkler, nearestZonePipe) {
+  if (!sprinkler || !nearestZonePipe?.points?.length) {
+    return false;
+  }
+
+  const points = nearestZonePipe.points;
+  const endpoint = pointsNear(sprinkler, points[0])
+    ? points[0]
+    : pointsNear(sprinkler, points[points.length - 1])
+      ? points[points.length - 1]
+      : null;
+
+  if (!endpoint) {
+    return false;
+  }
+
+  const segments = buildPipeSegments(state.pipeRuns ?? []);
+  const mergedArms = mergeArmsByDirection(collectCandidatePointArms(endpoint, segments));
+  return mergedArms.length <= 1;
+}
+
+function resolveHeadElbowSizeSpec(lineDiameterInches) {
+  if (!(Number(lineDiameterInches) > 0)) {
+    return "Zone line x 1/2 elbow";
+  }
+  return `${formatNominalPipeSize(lineDiameterInches)} x 1/2 elbow`;
 }
 
 function findNearestHeadTakeoffSprinkler(state, fittingDraft, screenPoint, snapDistancePx) {
@@ -568,6 +603,9 @@ function findNearestZonePipeForPoint(state, zoneId, point) {
 
 function hasPlacedFittingNearSuggestion(state, suggestion) {
   return (state.fittings ?? []).some((fitting) => {
+    if (fitting.status !== "placed") {
+      return false;
+    }
     if (fitting.type !== suggestion.type) {
       return false;
     }

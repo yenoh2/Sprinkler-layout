@@ -1036,7 +1036,8 @@ function buildSuggestedSubtitle(suggestion) {
 }
 
 function resolveSuggestedSupportText(suggestion, needsZonePipeSizing) {
-  if (suggestion.type === "head_takeoff") {
+  const isSprinklerSuggestion = suggestion.anchor?.kind === "sprinkler" || Boolean(suggestion.sprinklerId);
+  if (isSprinklerSuggestion) {
     return needsZonePipeSizing
       ? "Drag onto this sprinkler head to place it. The size will stay generic until a nearby zone pipe has a diameter."
       : `Drag onto this sprinkler head to place ${suggestion.sizeSpec}.`;

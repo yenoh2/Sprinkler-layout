@@ -991,6 +991,9 @@ function buildHint(state) {
     return "Drag over a sprinkler head and release to place a head takeoff. Press Esc to cancel.";
   }
   if (state.ui.activeTool === "fittings" && state.ui.fittingDraft?.targetPoint) {
+    if (state.ui.fittingDraft?.targetAnchor?.kind === "sprinkler") {
+      return "Drag over the suggested sprinkler head and release to place the fitting. Press Esc to cancel.";
+    }
     return "Drag over the suggested pipe connection and release to place the fitting. Press Esc to cancel.";
   }
   if (state.ui.activeTool === "fittings") {
