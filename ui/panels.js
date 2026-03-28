@@ -1,5 +1,6 @@
 import { clamp } from "../geometry/arcs.js";
-import { getAllFittingOptions, getCommonFittingOptions, getFittingTypeMeta } from "../geometry/fittings.js";
+import { buildFittingSuggestions } from "../analysis/fittings-analysis.js";
+import { getAllFittingOptions, getCommonFittingOptions, getFittingTypeMeta, isManualFittingPlacementSupported } from "../geometry/fittings.js";
 import { PIPE_DIAMETER_OPTIONS, calculatePipeLengthUnits, formatPipeDiameterLabel } from "../geometry/pipes.js";
 import { fitBackgroundToView } from "../geometry/scale.js";
 import { cloneProjectSnapshot, findSelectedFitting, findSelectedPipeRun, findSelectedSprinkler, findSelectedValveBox, getNextZoneSeed, hasHydraulics, isProjectReady } from "../state/project-state.js";
@@ -48,6 +49,7 @@ function bindElements() {
     zonesList: document.getElementById("zones-list"),
     toggleCoverage: document.getElementById("toggle-coverage"),
     togglePipe: document.getElementById("toggle-pipe"),
+    toggleFittings: document.getElementById("toggle-fittings"),
     toggleGrid: document.getElementById("toggle-grid"),
     toggleLabels: document.getElementById("toggle-labels"),
     toggleZoneLabels: document.getElementById("toggle-zone-labels"),
@@ -195,7 +197,7 @@ function bindEvents(elements, store, renderer, interactions, io) {
     });
   });
 
-  bindFittingsPanelInteractions(elements, store);
+  bindFittingsPanelInteractions(elements, store, interactions);
 
   elements.placementPattern.addEventListener("change", () => {
     store.dispatch({ type: "SET_PLACEMENT_PATTERN", payload: { pattern: elements.placementPattern.value } });
@@ -302,6 +304,9 @@ function bindEvents(elements, store, renderer, interactions, io) {
   });
   elements.togglePipe.addEventListener("change", () => {
     store.dispatch({ type: "SET_VIEW", payload: { showPipe: elements.togglePipe.checked } });
+  });
+  elements.toggleFittings.addEventListener("change", () => {
+    store.dispatch({ type: "SET_VIEW", payload: { showFittings: elements.toggleFittings.checked } });
   });
   elements.toggleGrid.addEventListener("change", () => {
     store.dispatch({ type: "SET_VIEW", payload: { showGrid: elements.toggleGrid.checked } });
@@ -455,7 +460,7 @@ function bindEvents(elements, store, renderer, interactions, io) {
   elements.redoButton.addEventListener("click", () => store.dispatch({ type: "REDO" }));
 }
 
-function bindFittingsPanelInteractions(elements, store) {
+function bindFittingsPanelInteractions(elements, store, interactions) {
   let dragState = null;
 
   elements.fittingsPanelHandle?.addEventListener("pointerdown", (event) => {
@@ -519,6 +524,28 @@ function bindFittingsPanelInteractions(elements, store) {
         meta: { skipHistory: true },
       });
     });
+  });
+
+  elements.fittingsPanelContent?.addEventListener("pointerdown", (event) => {
+    const target = event.target instanceof Element ? event.target.closest("[data-fitting-template]") : null;
+    const templateType = target?.getAttribute("data-fitting-template");
+    if (!templateType || !isManualFittingPlacementSupported(templateType)) {
+      return;
+    }
+
+    const panelState = store.getState().ui.fittingsPanel;
+    const sprinklerId = target?.getAttribute("data-fitting-sprinkler-id") || null;
+    const suggestionZoneId = target?.getAttribute("data-fitting-zone-id") || null;
+    const placementStarted = interactions.beginFittingPlacement({
+      type: templateType,
+      zoneMode: suggestionZoneId ? "zone" : panelState.zoneMode,
+      zoneId: suggestionZoneId ?? panelState.zoneId,
+      sprinklerId,
+    }, event);
+
+    if (placementStarted) {
+      event.preventDefault();
+    }
   });
 }
 
@@ -619,6 +646,7 @@ function updateUi(elements, state, renderer, analyzer) {
   elements.zoneViewMode.value = state.view.zoneViewMode;
   elements.toggleCoverage.checked = state.view.showCoverage;
   elements.togglePipe.checked = state.view.showPipe !== false;
+  elements.toggleFittings.checked = state.view.showFittings !== false;
   elements.toggleGrid.checked = state.view.showGrid;
   elements.toggleLabels.checked = state.view.showLabels;
   elements.toggleZoneLabels.checked = state.view.showZoneLabels;
@@ -818,16 +846,10 @@ function populateFittingsZoneSelect(select, zones, panelState) {
 
 function renderFittingsPanel(elements, state) {
   const tab = state.ui.fittingsPanel?.tab ?? "suggested";
+  const suggestions = buildFittingSuggestions(state);
 
   if (tab === "suggested") {
-    elements.fittingsPanelContent.innerHTML = `
-      <div class="fittings-panel-group">
-        <h4>Next Up</h4>
-        <div class="empty-card">
-          Automatic fitting suggestions will land in the next implementation slice. The panel shell and zone association controls are ready, and drag-to-place starts with the manual head takeoff workflow.
-        </div>
-      </div>
-    `;
+    elements.fittingsPanelContent.innerHTML = renderSuggestedFittingsPanel(state, suggestions);
     return;
   }
 
@@ -840,13 +862,94 @@ function renderFittingsPanel(elements, state) {
   `;
 }
 
-function renderFittingCard(option) {
+function renderSuggestedFittingsPanel(state, suggestions) {
+  const panelState = state.ui.fittingsPanel ?? { zoneMode: "auto", zoneId: null };
+  const headTakeoffSuggestions = filterHeadTakeoffSuggestionsForPanel(suggestions?.headTakeoffs ?? [], panelState);
+
+  if (!state.sprinklers?.length) {
+    return `
+      <div class="fittings-panel-group">
+        <h4>Heads</h4>
+        <div class="empty-card">
+          Place sprinkler heads first, then this tab will suggest missing head takeoffs automatically.
+        </div>
+      </div>
+    `;
+  }
+
+  if (panelState.zoneMode === "main") {
+    return `
+      <div class="fittings-panel-group">
+        <h4>Heads</h4>
+        <div class="empty-card">
+          Head takeoffs are tied to zone lines, so there are no main-line suggestions in this view yet.
+        </div>
+      </div>
+    `;
+  }
+
+  if (!headTakeoffSuggestions.length) {
+    const isZoneFiltered = panelState.zoneMode === "zone" && panelState.zoneId;
+    const message = isZoneFiltered
+      ? "Every sprinkler in this zone already has a head takeoff placed."
+      : "Every sprinkler head on the plan already has a head takeoff placed.";
+    return `
+      <div class="fittings-panel-group">
+        <h4>Heads</h4>
+        <div class="empty-card">
+          ${message}
+        </div>
+      </div>
+    `;
+  }
+
   return `
-    <article class="fitting-card" data-fitting-template="${option.value}">
+    <div class="fittings-panel-group">
+      <h4>Heads</h4>
+      ${headTakeoffSuggestions.map((suggestion) => renderSuggestedFittingCard(suggestion)).join("")}
+    </div>
+  `;
+}
+
+function renderFittingCard(option) {
+  const isSupported = isManualFittingPlacementSupported(option.value);
+  return `
+    <article class="fitting-card ${isSupported ? "is-draggable" : "is-disabled"}" data-fitting-template="${option.value}">
       <strong>${escapeHtml(option.label)}</strong>
       <p>${escapeHtml(option.description)}</p>
+      <p>${isSupported ? "Drag onto the plan to place it." : "Placement wiring comes in a later slice."}</p>
     </article>
   `;
+}
+
+function renderSuggestedFittingCard(suggestion) {
+  const needsZonePipeSizing = !suggestion.sizeSpec || suggestion.sizeSpec.startsWith("Zone line");
+  const supportText = needsZonePipeSizing
+    ? "Drag onto this sprinkler head to place it. The size will stay generic until a nearby zone pipe has a diameter."
+    : `Drag onto this sprinkler head to place ${escapeHtml(suggestion.sizeSpec)}.`;
+
+  return `
+    <article
+      class="fitting-card is-draggable ${needsZonePipeSizing ? "is-muted" : ""}"
+      data-fitting-template="${escapeHtml(suggestion.type)}"
+      data-fitting-sprinkler-id="${escapeHtml(suggestion.sprinklerId)}"
+      data-fitting-zone-id="${escapeHtml(suggestion.zoneId ?? "")}"
+    >
+      <strong>${escapeHtml(suggestion.sprinklerLabel)}</strong>
+      <p>${escapeHtml(suggestion.zoneName)}${suggestion.sizeSpec ? ` | ${escapeHtml(suggestion.sizeSpec)}` : ""}</p>
+      <p>${supportText}</p>
+    </article>
+  `;
+}
+
+function filterHeadTakeoffSuggestionsForPanel(suggestions, panelState) {
+  if (panelState?.zoneMode === "main") {
+    return [];
+  }
+  if (panelState?.zoneMode === "zone" && panelState.zoneId) {
+    return suggestions.filter((suggestion) => suggestion.zoneId === panelState.zoneId);
+  }
+  return suggestions;
 }
 
 function populateAnalysisZoneSelect(select, zones, value) {

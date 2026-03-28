@@ -120,6 +120,11 @@ document.addEventListener("keydown", (event) => {
 
   if (event.key === "Escape") {
     const state = store.getState();
+    if (state.ui.activeTool === "fittings" && state.ui.fittingDraft) {
+      event.preventDefault();
+      interactions.cancelFittingDraft();
+      return;
+    }
     if (state.ui.activeTool === "pipe" && state.ui.pipeDraft) {
       event.preventDefault();
       interactions.cancelPipeDraft();

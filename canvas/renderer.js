@@ -1,8 +1,9 @@
 import { pointFromAngle, pointInSprinkler, toRadians } from "../geometry/arcs.js";
+import { getFittingTypeMeta } from "../geometry/fittings.js";
 import { buildPipeMidpoints, calculatePipeLengthUnits, distancePointToSegmentSquared } from "../geometry/pipes.js";
 import { buildStripFootprintWorldPoints, buildStripHandleWorldPoints, isStripCoverage } from "../geometry/coverage.js";
 import { toPixels, worldToScreen } from "../geometry/scale.js";
-import { findSelectedPipeRun, findSelectedSprinkler, findSelectedValveBox, getZoneById, hasHydraulics, isProjectReady } from "../state/project-state.js";
+import { findSelectedFitting, findSelectedPipeRun, findSelectedSprinkler, findSelectedValveBox, getZoneById, hasHydraulics, isProjectReady } from "../state/project-state.js";
 
 const RATE_COLOR_STOPS = [
   { stop: 0, rgb: [24, 76, 107], alpha: 0 },
@@ -72,7 +73,9 @@ export function createRenderer(canvas, store, analyzer) {
     }
     drawSprinklers(state);
     drawValveBoxes(state);
+    drawFittings(state);
     drawPipeDraft(state);
+    drawFittingDraft(state);
     drawSelectedHandles(state);
     drawOverlayWarnings(state);
   }
@@ -408,6 +411,50 @@ export function createRenderer(canvas, store, analyzer) {
     });
   }
 
+  function drawFittings(state) {
+    if (state.view.showFittings === false) {
+      return;
+    }
+    const selectedFitting = findSelectedFitting(state);
+    state.fittings.forEach((fitting) => {
+      const worldPoint = resolveFittingWorldPoint(state, fitting);
+      const screenPoint = worldToScreen(worldPoint, state.view);
+      const zoneColor = getZoneById(state, fitting.zoneId)?.color ?? "#7d6957";
+      const isSelected = selectedFitting?.id === fitting.id;
+      const isFocusedOut = state.ui.focusedZoneId && fitting.zoneId && fitting.zoneId !== state.ui.focusedZoneId;
+
+      ctx.save();
+      if (isFocusedOut) {
+        ctx.globalAlpha = 0.35;
+      }
+      drawFittingGlyph(screenPoint, zoneColor, fitting.type, isSelected, false);
+      if (state.view.showLabels && isSelected) {
+        ctx.fillStyle = zoneColor;
+        ctx.font = "11px Aptos, Segoe UI, sans-serif";
+        ctx.fillText(fitting.sizeSpec || getFittingTypeMeta(fitting.type).label, screenPoint.x + 12, screenPoint.y - 12);
+      }
+      ctx.restore();
+    });
+  }
+
+  function drawFittingDraft(state) {
+    const preview = state.ui.fittingDraft?.preview ?? null;
+    if (!preview) {
+      return;
+    }
+
+    const screenPoint = worldToScreen({ x: preview.x, y: preview.y }, state.view);
+    const zoneColor = getZoneById(state, preview.zoneId)?.color ?? "#b65c2a";
+
+    ctx.save();
+    ctx.globalAlpha = preview.valid ? 0.88 : 0.52;
+    drawFittingGlyph(screenPoint, zoneColor, preview.type, false, true);
+    ctx.fillStyle = "rgba(47, 36, 24, 0.88)";
+    ctx.font = "11px Aptos, Segoe UI, sans-serif";
+    ctx.fillText(preview.sizeSpec || preview.label || getFittingTypeMeta(preview.type).label, screenPoint.x + 12, screenPoint.y - 12);
+    ctx.restore();
+  }
+
   function drawValveBoxSymbol(center, accentColor, isSelected) {
     const width = 24;
     const height = 18;
@@ -425,6 +472,51 @@ export function createRenderer(canvas, store, analyzer) {
     ctx.fillStyle = "#4f4033";
     ctx.font = "bold 8px Aptos, Segoe UI, sans-serif";
     ctx.fillText("VB", left + 5, top + 13);
+  }
+
+  function drawFittingGlyph(center, accentColor, type, isSelected, isDraft) {
+    const radius = isSelected ? 10 : 8;
+    ctx.save();
+    ctx.translate(center.x, center.y);
+    ctx.rotate(Math.PI / 4);
+    ctx.fillStyle = "rgba(255, 247, 235, 0.94)";
+    ctx.strokeStyle = isSelected ? "#b65c2a" : accentColor;
+    ctx.lineWidth = isSelected ? 2.4 : 2;
+    ctx.beginPath();
+    ctx.rect(-radius, -radius, radius * 2, radius * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.save();
+    ctx.strokeStyle = accentColor;
+    ctx.lineWidth = isDraft ? 1.8 : 2;
+    ctx.beginPath();
+    ctx.moveTo(center.x, center.y - 8);
+    ctx.lineTo(center.x, center.y + 5);
+    if (type === "head_takeoff") {
+      ctx.moveTo(center.x - 5.5, center.y - 4);
+      ctx.lineTo(center.x + 5.5, center.y - 4);
+    } else {
+      ctx.moveTo(center.x - 5.5, center.y);
+      ctx.lineTo(center.x + 5.5, center.y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function resolveFittingWorldPoint(state, fitting) {
+    if (fitting.anchor?.kind === "sprinkler" && fitting.anchor.sprinklerId) {
+      const sprinkler = state.sprinklers.find((item) => item.id === fitting.anchor.sprinklerId) ?? null;
+      if (sprinkler) {
+        return { x: sprinkler.x, y: sprinkler.y };
+      }
+    }
+
+    return {
+      x: fitting.x ?? 0,
+      y: fitting.y ?? 0,
+    };
   }
 
   function drawSelectedHandles(state) {
@@ -725,6 +817,18 @@ export function createRenderer(canvas, store, analyzer) {
     }) || null;
   }
 
+  function getHitFitting(worldPoint) {
+    const state = store.getState();
+    if (state.view.showFittings === false) {
+      return null;
+    }
+    const screenPoint = worldToScreen(worldPoint, state.view);
+    return [...state.fittings].reverse().find((fitting) => {
+      const center = worldToScreen(resolveFittingWorldPoint(state, fitting), state.view);
+      return distanceSquared(screenPoint, center) <= 144;
+    }) || null;
+  }
+
   function getArcHandleHit(worldPoint) {
     const state = store.getState();
     const selected = findSelectedSprinkler(state);
@@ -806,6 +910,7 @@ export function createRenderer(canvas, store, analyzer) {
     getPipeMidpointHandleHit,
     getHitSprinkler,
     getHitValveBox,
+    getHitFitting,
     getArcHandleHit,
     getRadiusHandleHit,
     getStripHandleHit,

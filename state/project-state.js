@@ -82,6 +82,7 @@ export function createInitialState() {
       zoom: 1,
       showCoverage: true,
       showPipe: true,
+      showFittings: true,
       showGrid: false,
       showLabels: true,
       showZoneLabels: true,
@@ -110,6 +111,7 @@ export function createInitialState() {
       measurePoints: [],
       measurePreviewPoint: null,
       measureDistance: null,
+      fittingDraft: null,
       pipeDraft: null,
       cursorWorld: null,
       activeZoneId: null,
@@ -187,6 +189,9 @@ function applyAction(state, action) {
         state.ui.measurePoints = [];
         state.ui.measurePreviewPoint = null;
         state.ui.measureDistance = null;
+      }
+      if (action.payload.tool !== "fittings") {
+        state.ui.fittingDraft = null;
       }
       if (action.payload.tool !== "pipe") {
         state.ui.pipeDraft = null;
@@ -574,6 +579,29 @@ function applyAction(state, action) {
         ...action.payload,
       });
       return state;
+    case "START_FITTING_DRAFT":
+      state.ui.fittingDraft = {
+        type: normalizeFittingType(action.payload.type),
+        zoneMode: ["auto", "main", "zone"].includes(action.payload.zoneMode) ? action.payload.zoneMode : "auto",
+        zoneId: action.payload.zoneId || null,
+        sprinklerId: action.payload.sprinklerId || null,
+        preview: null,
+      };
+      state.ui.selectedSprinklerId = null;
+      state.ui.selectedValveBoxId = null;
+      state.ui.selectedPipeRunId = null;
+      state.ui.selectedFittingId = null;
+      state.ui.selectedPipeVertexIndex = null;
+      return state;
+    case "SET_FITTING_DRAFT_PREVIEW":
+      if (!state.ui.fittingDraft) {
+        return null;
+      }
+      state.ui.fittingDraft.preview = action.payload.preview ?? null;
+      return state;
+    case "CLEAR_FITTING_DRAFT":
+      state.ui.fittingDraft = null;
+      return state;
     case "SET_SELECTED_PIPE_VERTEX":
       state.ui.selectedPipeVertexIndex = Number.isInteger(action.payload.index) ? action.payload.index : null;
       return state;
@@ -955,6 +983,9 @@ function buildHint(state) {
   if (state.ui.activeTool === "pipe") {
     return `Click to start a ${state.ui.pipePlacementKind === "main" ? "main supply" : "zone"} pipe run. ${state.pipeRuns.length} run${state.pipeRuns.length === 1 ? "" : "s"} on plan.`;
   }
+  if (state.ui.activeTool === "fittings" && state.ui.fittingDraft?.type === "head_takeoff") {
+    return "Drag over a sprinkler head and release to place a head takeoff. Press Esc to cancel.";
+  }
   if (state.ui.activeTool === "fittings") {
     return `Use the fittings palette to organize fittings. ${state.fittings.length} fitting${state.fittings.length === 1 ? "" : "s"} on plan.`;
   }
@@ -988,6 +1019,7 @@ function normalizeLoadedProject(project) {
       ...initial.ui,
       ...project.ui,
       measurePreviewPoint: null,
+      fittingDraft: null,
       selectedPipeVertexIndex: null,
       pipeDraft: null,
       expandedZoneIds: [],
@@ -1059,6 +1091,7 @@ export function cloneProjectSnapshot(state) {
   snapshot.history = { undoStack: [], redoStack: [] };
   snapshot.ui.measurePreviewPoint = null;
   snapshot.ui.cursorWorld = null;
+  snapshot.ui.fittingDraft = null;
   snapshot.ui.pipeDraft = null;
   snapshot.ui.selectedPipeVertexIndex = null;
   return snapshot;
@@ -1213,6 +1246,7 @@ function sanitizeRuntimeGroupName(value) {
 function normalizeView(view) {
   const normalized = { ...view };
   normalized.showPipe = "showPipe" in normalized ? Boolean(normalized.showPipe) : true;
+  normalized.showFittings = "showFittings" in normalized ? Boolean(normalized.showFittings) : true;
 
   if (normalized.zoneViewMode === "heatmap") {
     normalized.zoneViewMode = "coverage";

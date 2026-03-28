@@ -1,4 +1,6 @@
 import { clamp, normalizeAngle, toDegrees } from "../geometry/arcs.js";
+import { buildHeadTakeoffPlacementPreview } from "../analysis/fittings-analysis.js";
+import { getFittingTypeMeta, isManualFittingPlacementSupported } from "../geometry/fittings.js";
 import { pointsEqual } from "../geometry/pipes.js";
 import { buildStripPrimaryPatch, buildStripSecondaryPatch, isStripCoverage } from "../geometry/coverage.js";
 import { computePixelsPerUnitFromPoints, fitBackgroundToView, screenToWorld, worldToScreen } from "../geometry/scale.js";
@@ -8,6 +10,7 @@ const PIPE_HANDLE_DRAG_THRESHOLD_PX = 3;
 
 export function createInteractionController(canvas, store, renderer) {
   let dragState = null;
+  let fittingPlacementState = null;
   let panState = null;
   let isSpacePressed = false;
 
@@ -17,12 +20,16 @@ export function createInteractionController(canvas, store, renderer) {
   canvas.addEventListener("pointerleave", onPointerLeave);
   canvas.addEventListener("wheel", onWheel, { passive: false });
   canvas.addEventListener("contextmenu", (event) => event.preventDefault());
+  window.addEventListener("pointermove", onWindowPointerMove);
+  window.addEventListener("pointerup", onWindowPointerUp);
   window.addEventListener("keydown", onKeyDown);
   window.addEventListener("keyup", onKeyUp);
 
   function syncState(state) {
     document.getElementById("hint-text").textContent = `Hint: ${state.ui.hint}`;
-    canvas.style.cursor = dragState?.kind?.includes("handle") || dragState?.kind?.startsWith("pipe-") ? "grabbing" : getCursorForTool(state.ui.activeTool);
+    canvas.style.cursor = dragState?.kind?.includes("handle") || dragState?.kind?.startsWith("pipe-") || fittingPlacementState
+      ? "grabbing"
+      : getCursorForTool(state.ui.activeTool);
   }
 
   function onPointerDown(event) {
@@ -242,12 +249,31 @@ export function createInteractionController(canvas, store, renderer) {
       return;
     }
 
-    const sprinklerHit = renderer.getHitSprinkler(worldPoint);
-    if (sprinklerHit) {
-      store.dispatch({ type: "SELECT_SPRINKLER", payload: { id: sprinklerHit.id } });
-      dragState = { kind: "move", id: sprinklerHit.id, startX: sprinklerHit.x, startY: sprinklerHit.y, lastX: sprinklerHit.x, lastY: sprinklerHit.y };
-      canvas.setPointerCapture(event.pointerId);
-      return;
+    const fittingHit = renderer.getHitFitting?.(worldPoint) ?? null;
+    const sprinklerHit = renderer.getHitSprinkler(worldPoint) ?? null;
+
+    if (state.ui.activeTool === "fittings") {
+      if (fittingHit) {
+        store.dispatch({ type: "SELECT_FITTING", payload: { id: fittingHit.id } });
+        return;
+      }
+      if (sprinklerHit) {
+        store.dispatch({ type: "SELECT_SPRINKLER", payload: { id: sprinklerHit.id } });
+        dragState = { kind: "move", id: sprinklerHit.id, startX: sprinklerHit.x, startY: sprinklerHit.y, lastX: sprinklerHit.x, lastY: sprinklerHit.y };
+        canvas.setPointerCapture(event.pointerId);
+        return;
+      }
+    } else {
+      if (sprinklerHit) {
+        store.dispatch({ type: "SELECT_SPRINKLER", payload: { id: sprinklerHit.id } });
+        dragState = { kind: "move", id: sprinklerHit.id, startX: sprinklerHit.x, startY: sprinklerHit.y, lastX: sprinklerHit.x, lastY: sprinklerHit.y };
+        canvas.setPointerCapture(event.pointerId);
+        return;
+      }
+      if (fittingHit) {
+        store.dispatch({ type: "SELECT_FITTING", payload: { id: fittingHit.id } });
+        return;
+      }
     }
 
     const pipeRunHit = renderer.getHitPipeRun?.(worldPoint);
@@ -428,6 +454,53 @@ export function createInteractionController(canvas, store, renderer) {
     onPointerUp(event);
   }
 
+  function onWindowPointerMove(event) {
+    if (!fittingPlacementState || event.pointerId !== fittingPlacementState.pointerId) {
+      return;
+    }
+
+    const screenPoint = getCanvasPointFromClient(canvas, event.clientX, event.clientY);
+    if (!screenPoint) {
+      store.dispatch({ type: "SET_CURSOR_WORLD", payload: { point: null }, meta: { skipHistory: true } });
+      store.dispatch({ type: "SET_FITTING_DRAFT_PREVIEW", payload: { preview: null }, meta: { skipHistory: true } });
+      return;
+    }
+
+    const state = store.getState();
+    const worldPoint = screenToWorld(screenPoint, state.view);
+    store.dispatch({ type: "SET_CURSOR_WORLD", payload: { point: worldPoint }, meta: { skipHistory: true } });
+    store.dispatch({
+      type: "SET_FITTING_DRAFT_PREVIEW",
+      payload: { preview: buildFittingDraftPreview(state, state.ui.fittingDraft, worldPoint, screenPoint) },
+      meta: { skipHistory: true },
+    });
+  }
+
+  function onWindowPointerUp(event) {
+    if (!fittingPlacementState || event.pointerId !== fittingPlacementState.pointerId) {
+      return;
+    }
+
+    const state = store.getState();
+    const preview = state.ui.fittingDraft?.preview ?? null;
+    if (preview?.valid) {
+      store.dispatch({
+        type: "ADD_FITTING",
+        payload: {
+          id: crypto.randomUUID(),
+          type: state.ui.fittingDraft?.type,
+          zoneId: preview.zoneId ?? null,
+          sizeSpec: preview.sizeSpec ?? null,
+          anchor: preview.anchor ?? null,
+          x: preview.x,
+          y: preview.y,
+          rotationDeg: 0,
+        },
+      });
+    }
+    clearFittingPlacement();
+  }
+
   function onWheel(event) {
     event.preventDefault();
     const state = store.getState();
@@ -520,6 +593,38 @@ export function createInteractionController(canvas, store, renderer) {
     }
   }
 
+  function beginFittingPlacement(input, pointerEvent) {
+    const state = store.getState();
+    const type = input?.type;
+    if (!state.scale.calibrated || !isManualFittingPlacementSupported(type)) {
+      return false;
+    }
+
+    fittingPlacementState = {
+      pointerId: pointerEvent?.pointerId ?? null,
+      type,
+    };
+    store.dispatch({
+      type: "START_FITTING_DRAFT",
+      payload: {
+        type,
+        zoneMode: input?.zoneMode ?? state.ui.fittingsPanel?.zoneMode ?? "auto",
+        zoneId: input?.zoneId ?? state.ui.fittingsPanel?.zoneId ?? null,
+        sprinklerId: input?.sprinklerId ?? null,
+      },
+      meta: { skipHistory: true },
+    });
+    return true;
+  }
+
+  function cancelFittingDraft() {
+    if (!fittingPlacementState && !store.getState().ui.fittingDraft) {
+      return false;
+    }
+    clearFittingPlacement();
+    return true;
+  }
+
   return {
     syncState,
     applyTwoPointCalibration,
@@ -527,7 +632,15 @@ export function createInteractionController(canvas, store, renderer) {
     fitBackground,
     finishPipeDraft,
     cancelPipeDraft,
+    beginFittingPlacement,
+    cancelFittingDraft,
   };
+
+  function clearFittingPlacement() {
+    fittingPlacementState = null;
+    store.dispatch({ type: "SET_CURSOR_WORLD", payload: { point: null }, meta: { skipHistory: true } });
+    store.dispatch({ type: "CLEAR_FITTING_DRAFT", meta: { skipHistory: true } });
+  }
 
   function updateDraggedPipeVertex(state, nextDragState, screenPoint, worldPoint) {
     if (!didPointerMoveEnough(nextDragState.startScreenPoint, screenPoint) && !nextDragState.historyStarted) {
@@ -646,6 +759,38 @@ function getCanvasPoint(event) {
   return {
     x: ((event.clientX - rect.left) / rect.width) * event.target.width,
     y: ((event.clientY - rect.top) / rect.height) * event.target.height,
+  };
+}
+
+function getCanvasPointFromClient(canvas, clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) {
+    return null;
+  }
+  return {
+    x: ((clientX - rect.left) / rect.width) * canvas.width,
+    y: ((clientY - rect.top) / rect.height) * canvas.height,
+  };
+}
+
+function buildFittingDraftPreview(state, fittingDraft, worldPoint, screenPoint) {
+  if (!fittingDraft?.type || !worldPoint || !screenPoint) {
+    return null;
+  }
+
+  if (fittingDraft.type === "head_takeoff") {
+    return buildHeadTakeoffPlacementPreview(state, fittingDraft, worldPoint, screenPoint);
+  }
+
+  return {
+    type: fittingDraft.type,
+    label: getFittingTypeMeta(fittingDraft.type).label,
+    valid: false,
+    x: worldPoint.x,
+    y: worldPoint.y,
+    zoneId: null,
+    sizeSpec: null,
+    anchor: null,
   };
 }
 

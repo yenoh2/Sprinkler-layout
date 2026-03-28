@@ -1092,12 +1092,63 @@
         ]
       }
     ],
+    "fittings": [
+      {
+        "id": "1263b8de-bc0d-49c7-bd03-8db304f8eaa5",
+        "type": "head_takeoff",
+        "label": "",
+        "zoneId": "4897d3ce-4108-4b01-b95f-8c86a093342f",
+        "sizeSpec": "3/4 x 3/4 x 1/2 tee",
+        "anchor": {
+          "kind": "sprinkler",
+          "sprinklerId": "59ce04df-847e-49af-9be8-3e4758368e09"
+        },
+        "x": 875.65,
+        "y": 891.04,
+        "rotationDeg": 0,
+        "locked": false,
+        "status": "placed"
+      },
+      {
+        "id": "8e9f0693-8f2a-4abe-975c-0c80879ae4aa",
+        "type": "head_takeoff",
+        "label": "",
+        "zoneId": "4897d3ce-4108-4b01-b95f-8c86a093342f",
+        "sizeSpec": "3/4 x 3/4 x 1/2 tee",
+        "anchor": {
+          "kind": "sprinkler",
+          "sprinklerId": "c0f4b95e-954e-4606-b95c-8ad0950fe718"
+        },
+        "x": 783.2080876293453,
+        "y": 758.8977099861868,
+        "rotationDeg": 0,
+        "locked": false,
+        "status": "placed"
+      },
+      {
+        "id": "6c7d61a2-f85c-4ec1-983a-e1f10f19ce09",
+        "type": "head_takeoff",
+        "label": "",
+        "zoneId": "57ea6064-5e3f-4695-9431-2a56cbef8fdb",
+        "sizeSpec": "1 x 1 x 1/2 tee",
+        "anchor": {
+          "kind": "sprinkler",
+          "sprinklerId": "07f70478-75f3-4987-89a6-96d5a05c254b"
+        },
+        "x": 534.6046404895781,
+        "y": 624.3548976982826,
+        "rotationDeg": 0,
+        "locked": false,
+        "status": "placed"
+      }
+    ],
     "view": {
       "offsetX": 193.6109616917239,
       "offsetY": -263.6859958334388,
       "zoom": 0.8806210184944816,
-      "showCoverage": false,
+      "showCoverage": true,
       "showPipe": true,
+      "showFittings": true,
       "showGrid": false,
       "showLabels": false,
       "showZoneLabels": false,
@@ -1117,22 +1168,29 @@
       "activeTool": "select",
       "placementPattern": "arc",
       "pipePlacementKind": "main",
-      "selectedSprinklerId": null,
+      "selectedSprinklerId": "c0f4b95e-954e-4606-b95c-8ad0950fe718",
       "selectedValveBoxId": null,
       "selectedPipeRunId": null,
+      "selectedFittingId": null,
       "selectedPipeVertexIndex": null,
       "hint": "Ready to place sprinklers. 32 heads on plan.",
       "measurePoints": [],
       "measurePreviewPoint": null,
       "measureDistance": null,
+      "fittingDraft": null,
       "pipeDraft": null,
       "cursorWorld": null,
       "activeZoneId": null,
       "focusedZoneId": null,
-      "expandedZoneIds": [
-        "e696f5cc-8f48-4ff2-9fa9-5f4090e4466e"
-      ],
-      "appScreen": "layout"
+      "expandedZoneIds": [],
+      "appScreen": "layout",
+      "fittingsPanel": {
+        "x": 12,
+        "y": 12,
+        "tab": "common",
+        "zoneMode": "auto",
+        "zoneId": null
+      }
     }
   }
 }

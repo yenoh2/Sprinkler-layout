@@ -57,6 +57,7 @@ export const FITTINGS_PANEL_TABS = [
 
 const FITTING_TYPE_VALUES = new Set(FITTING_TYPE_OPTIONS.map((option) => option.value));
 const FITTINGS_PANEL_TAB_VALUES = new Set(FITTINGS_PANEL_TABS.map((tab) => tab.value));
+const SUPPORTED_MANUAL_PLACEMENT_TYPES = new Set(["head_takeoff"]);
 
 export function normalizeFittingType(value) {
   return FITTING_TYPE_VALUES.has(value) ? value : "head_takeoff";
@@ -76,4 +77,39 @@ export function getCommonFittingOptions() {
 
 export function getAllFittingOptions() {
   return [...FITTING_TYPE_OPTIONS];
+}
+
+export function isManualFittingPlacementSupported(type) {
+  return SUPPORTED_MANUAL_PLACEMENT_TYPES.has(normalizeFittingType(type));
+}
+
+export function formatNominalPipeSize(diameterInches) {
+  const value = Number(diameterInches);
+  if (!Number.isFinite(value) || value <= 0) {
+    return "Zone";
+  }
+  if (Math.abs(value - 0.5) <= 0.001) {
+    return "1/2";
+  }
+  if (Math.abs(value - 0.75) <= 0.001) {
+    return "3/4";
+  }
+  if (Math.abs(value - 1) <= 0.001) {
+    return "1";
+  }
+  if (Math.abs(value - 1.25) <= 0.001) {
+    return "1 1/4";
+  }
+  if (Math.abs(value - 1.5) <= 0.001) {
+    return "1 1/2";
+  }
+  return String(Number(value.toFixed(2)));
+}
+
+export function resolveHeadTakeoffSizeSpec(lineDiameterInches) {
+  if (!(Number(lineDiameterInches) > 0)) {
+    return 'Zone line x 1/2 tee';
+  }
+  const lineSize = formatNominalPipeSize(lineDiameterInches);
+  return `${lineSize} x ${lineSize} x 1/2 tee`;
 }

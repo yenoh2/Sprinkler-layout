@@ -621,6 +621,18 @@ canvas {
   background: rgba(247, 241, 231, 0.8);
 }
 
+.fitting-card.is-draggable {
+  cursor: grab;
+}
+
+.fitting-card.is-draggable:active {
+  cursor: grabbing;
+}
+
+.fitting-card.is-disabled {
+  opacity: 0.72;
+}
+
 .legend {
   display: grid;
   gap: 0.45rem;
