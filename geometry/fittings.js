@@ -53,6 +53,7 @@ export const FITTINGS_PANEL_TABS = [
   { value: "suggested", label: "Suggested" },
   { value: "common", label: "Common" },
   { value: "all", label: "All" },
+  { value: "ignored", label: "Ignored" },
 ];
 
 const FITTING_TYPE_VALUES = new Set(FITTING_TYPE_OPTIONS.map((option) => option.value));

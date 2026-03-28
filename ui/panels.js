@@ -527,8 +527,10 @@ function bindFittingsPanelInteractions(elements, store, interactions) {
   });
 
   elements.fittingsPanelContent?.addEventListener("pointerdown", (event) => {
-    const placeButton = event.target instanceof Element ? event.target.closest("[data-suggested-place]") : null;
-    if (placeButton) {
+    const actionButton = event.target instanceof Element
+      ? event.target.closest("[data-suggested-place], [data-suggested-ignore], [data-ignored-restore]")
+      : null;
+    if (actionButton) {
       return;
     }
 
@@ -557,23 +559,61 @@ function bindFittingsPanelInteractions(elements, store, interactions) {
 
   elements.fittingsPanelContent?.addEventListener("click", (event) => {
     const placeButton = event.target instanceof Element ? event.target.closest("[data-suggested-place]") : null;
-    if (!placeButton) {
+    if (placeButton) {
+      const card = placeButton.closest("[data-fitting-template]");
+      const payload = parseFittingCardPayload(card?.getAttribute("data-fitting-payload"));
+      if (!payload) {
+        return;
+      }
+
+      const placed = interactions.placeSuggestedFitting(payload);
+      if (placed) {
+        if (payload.ignoredFittingId) {
+          store.dispatch({ type: "DELETE_FITTING", payload: { id: payload.ignoredFittingId } });
+        }
+        event.preventDefault();
+        return;
+      }
+
+      alert("That suggestion is no longer valid to auto-place. Drag it onto the plan to place it manually.");
       return;
     }
 
-    const card = placeButton.closest("[data-fitting-template]");
-    const payload = parseFittingCardPayload(card?.getAttribute("data-fitting-payload"));
-    if (!payload) {
-      return;
-    }
-
-    const placed = interactions.placeSuggestedFitting(payload);
-    if (placed) {
+    const ignoreButton = event.target instanceof Element ? event.target.closest("[data-suggested-ignore]") : null;
+    if (ignoreButton) {
+      const card = ignoreButton.closest("[data-fitting-template]");
+      const payload = parseFittingCardPayload(card?.getAttribute("data-fitting-payload"));
+      if (!payload) {
+        return;
+      }
+      store.dispatch({
+        type: "ADD_FITTING",
+        payload: {
+          id: crypto.randomUUID(),
+          type: payload.type,
+          zoneId: payload.zoneId ?? null,
+          sizeSpec: payload.sizeSpec ?? null,
+          anchor: payload.targetAnchor ?? null,
+          x: payload.targetPoint?.x ?? 0,
+          y: payload.targetPoint?.y ?? 0,
+          rotationDeg: 0,
+          status: "ignored",
+        },
+      });
       event.preventDefault();
       return;
     }
 
-    alert("That suggestion is no longer valid to auto-place. Drag it onto the plan to place it manually.");
+    const restoreButton = event.target instanceof Element ? event.target.closest("[data-ignored-restore]") : null;
+    if (restoreButton) {
+      const card = restoreButton.closest("[data-fitting-template]");
+      const payload = parseFittingCardPayload(card?.getAttribute("data-fitting-payload"));
+      if (!payload?.ignoredFittingId) {
+        return;
+      }
+      store.dispatch({ type: "DELETE_FITTING", payload: { id: payload.ignoredFittingId } });
+      event.preventDefault();
+    }
   });
 }
 
@@ -812,13 +852,14 @@ function updateUi(elements, state, renderer, analyzer) {
   applyStatus(elements.readyStatus, isProjectReady(state) ? "Ready" : "Draft", isProjectReady(state), !isProjectReady(state) && !!state.background.src);
 
   const summary = renderer.buildExportSummary();
+  const placedFittingCount = (state.fittings ?? []).filter((fitting) => (fitting.status ?? "placed") === "placed").length;
   const lines = [
     ["Background", state.background.name || "None"],
     ["Scale", state.scale.calibrated ? `${state.scale.pixelsPerUnit.toFixed(2)} px/${state.scale.units}` : "Not calibrated"],
     ["Heads", String(summary.sprinklerCount)],
     ["Valve boxes", String(summary.valveBoxCount ?? 0)],
     ["Pipe runs", String(summary.pipeRunCount ?? 0)],
-    ["Fittings", String(state.fittings?.length ?? 0)],
+    ["Fittings", String(placedFittingCount)],
     ["Pipe length", state.scale.pixelsPerUnit ? `${summary.totalPipeLength.toFixed(1)} ${state.scale.units}` : "--"],
     ["Mean size", summary.meanRadius ? `${summary.meanRadius.toFixed(1)} ${state.scale.units}` : "--"],
     ["Peak rate", analysis?.summary.applicationRateMaxInHr ? `${analysis.summary.applicationRateMaxInHr.toFixed(2)} in/hr` : "--"],
@@ -881,6 +922,11 @@ function renderFittingsPanel(elements, state) {
     return;
   }
 
+  if (tab === "ignored") {
+    elements.fittingsPanelContent.innerHTML = renderIgnoredFittingsPanel(state, suggestions);
+    return;
+  }
+
   const options = tab === "common" ? getCommonFittingOptions() : getAllFittingOptions();
   elements.fittingsPanelContent.innerHTML = `
     <div class="fittings-panel-group">
@@ -894,6 +940,8 @@ function renderSuggestedFittingsPanel(state, suggestions) {
   const panelState = state.ui.fittingsPanel ?? { zoneMode: "auto", zoneId: null };
   const headTakeoffSuggestions = filterHeadTakeoffSuggestionsForPanel(suggestions?.headTakeoffs ?? [], panelState);
   const pipeConnectionSuggestions = filterPipeConnectionSuggestionsForPanel(suggestions?.pipeConnections ?? [], panelState);
+  const ignoredHeadTakeoffs = filterHeadTakeoffSuggestionsForPanel(suggestions?.ignoredHeadTakeoffs ?? [], panelState);
+  const ignoredPipeConnections = filterPipeConnectionSuggestionsForPanel(suggestions?.ignoredPipeConnections ?? [], panelState);
 
   if (!state.sprinklers?.length && !state.pipeRuns?.length) {
     return `
@@ -910,12 +958,31 @@ function renderSuggestedFittingsPanel(state, suggestions) {
     ${renderSuggestedGroup(
       "Heads",
       headTakeoffSuggestions,
-      buildHeadSuggestionEmptyMessage(state, panelState),
+      buildHeadSuggestionEmptyMessage(state, panelState, ignoredHeadTakeoffs.length),
     )}
     ${renderSuggestedGroup(
       "Pipe connections",
       pipeConnectionSuggestions,
-      buildPipeSuggestionEmptyMessage(state, panelState),
+      buildPipeSuggestionEmptyMessage(state, panelState, ignoredPipeConnections.length),
+    )}
+  `;
+}
+
+function renderIgnoredFittingsPanel(state, suggestions) {
+  const panelState = state.ui.fittingsPanel ?? { zoneMode: "auto", zoneId: null };
+  const ignoredHeadTakeoffs = filterHeadTakeoffSuggestionsForPanel(suggestions?.ignoredHeadTakeoffs ?? [], panelState);
+  const ignoredPipeConnections = filterPipeConnectionSuggestionsForPanel(suggestions?.ignoredPipeConnections ?? [], panelState);
+
+  return `
+    ${renderIgnoredGroup(
+      "Heads",
+      ignoredHeadTakeoffs,
+      buildIgnoredHeadEmptyMessage(state, panelState),
+    )}
+    ${renderIgnoredGroup(
+      "Pipe connections",
+      ignoredPipeConnections,
+      buildIgnoredPipeEmptyMessage(state, panelState),
     )}
   `;
 }
@@ -926,6 +993,17 @@ function renderSuggestedGroup(title, suggestions, emptyMessage) {
       <h4>${title}</h4>
       ${suggestions.length
         ? suggestions.map((suggestion) => renderSuggestedFittingCard(suggestion)).join("")
+        : `<div class="empty-card">${emptyMessage}</div>`}
+    </div>
+  `;
+}
+
+function renderIgnoredGroup(title, suggestions, emptyMessage) {
+  return `
+    <div class="fittings-panel-group">
+      <h4>${title}</h4>
+      ${suggestions.length
+        ? suggestions.map((suggestion) => renderIgnoredFittingCard(suggestion)).join("")
         : `<div class="empty-card">${emptyMessage}</div>`}
     </div>
   `;
@@ -960,6 +1038,30 @@ function renderSuggestedFittingCard(suggestion) {
       <p>${escapeHtml(supportText)}</p>
       <div class="fitting-card-actions">
         <button type="button" data-suggested-place>Place</button>
+        <button type="button" class="button-ghost" data-suggested-ignore>Ignore</button>
+      </div>
+    </article>
+  `;
+}
+
+function renderIgnoredFittingCard(suggestion) {
+  const payload = buildSuggestedPlacementPayload(suggestion);
+  const payloadAttribute = escapeHtml(JSON.stringify(payload));
+  const subtitle = buildSuggestedSubtitle(suggestion);
+  const supportText = "Ignored suggestions stay out of Suggested until you restore or place them.";
+
+  return `
+    <article
+      class="fitting-card is-draggable is-muted"
+      data-fitting-template="${escapeHtml(suggestion.type)}"
+      data-fitting-payload="${payloadAttribute}"
+    >
+      <strong>${escapeHtml(suggestion.referenceLabel || suggestion.sprinklerLabel || suggestion.label)}</strong>
+      <p>${escapeHtml(subtitle)}</p>
+      <p>${escapeHtml(supportText)}</p>
+      <div class="fitting-card-actions">
+        <button type="button" data-suggested-place>Place</button>
+        <button type="button" class="button-ghost" data-ignored-restore>Restore</button>
       </div>
     </article>
   `;
@@ -985,30 +1087,62 @@ function filterPipeConnectionSuggestionsForPanel(suggestions, panelState) {
   return suggestions;
 }
 
-function buildHeadSuggestionEmptyMessage(state, panelState) {
+function buildHeadSuggestionEmptyMessage(state, panelState, ignoredCount = 0) {
   if (!state.sprinklers?.length) {
     return "Place sprinkler heads first, then this group will suggest missing head takeoffs.";
   }
   if (panelState?.zoneMode === "main") {
     return "Head takeoffs are tied to zone lines, so there are no main-line head suggestions in this view.";
   }
-  if (panelState?.zoneMode === "zone" && panelState.zoneId) {
-    return "Every sprinkler in this zone already has a head takeoff placed.";
+  if (ignoredCount > 0) {
+    return "All head suggestions in this view are currently ignored. Open Ignored to review them.";
   }
-  return "Every sprinkler head on the plan already has a head takeoff placed.";
+  if (panelState?.zoneMode === "zone" && panelState.zoneId) {
+    return "No visible head suggestions remain in this zone.";
+  }
+  return "No visible head suggestions remain on the current plan.";
 }
 
-function buildPipeSuggestionEmptyMessage(state, panelState) {
+function buildPipeSuggestionEmptyMessage(state, panelState, ignoredCount = 0) {
   if ((state.pipeRuns?.length ?? 0) < 2) {
     return "Draw more connected pipe runs to surface tee and reducer suggestions here.";
   }
   if (panelState?.zoneMode === "main") {
     return "No unresolved main-line pipe connections are suggested right now.";
   }
+  if (ignoredCount > 0) {
+    return "All pipe-connection suggestions in this view are currently ignored. Open Ignored to review them.";
+  }
   if (panelState?.zoneMode === "zone" && panelState.zoneId) {
     return "No unresolved pipe-connection fittings are suggested in this zone right now.";
   }
   return "No unresolved pipe-connection fittings are suggested on the current plan.";
+}
+
+function buildIgnoredHeadEmptyMessage(state, panelState) {
+  if (!state.sprinklers?.length) {
+    return "Ignored head suggestions will appear here after you hide them from Suggested.";
+  }
+  if (panelState?.zoneMode === "main") {
+    return "There are no ignored head suggestions in the main-line view.";
+  }
+  if (panelState?.zoneMode === "zone" && panelState.zoneId) {
+    return "No ignored head suggestions are stored for this zone right now.";
+  }
+  return "No ignored head suggestions are stored right now.";
+}
+
+function buildIgnoredPipeEmptyMessage(state, panelState) {
+  if ((state.pipeRuns?.length ?? 0) < 2) {
+    return "Ignored pipe-connection suggestions will appear here after you hide them from Suggested.";
+  }
+  if (panelState?.zoneMode === "main") {
+    return "No ignored main-line pipe suggestions are stored right now.";
+  }
+  if (panelState?.zoneMode === "zone" && panelState.zoneId) {
+    return "No ignored pipe-connection suggestions are stored for this zone right now.";
+  }
+  return "No ignored pipe-connection suggestions are stored right now.";
 }
 
 function buildSuggestedPlacementPayload(suggestion) {
@@ -1021,6 +1155,7 @@ function buildSuggestedPlacementPayload(suggestion) {
     targetAnchor: suggestion.anchor ?? null,
     sizeSpec: suggestion.sizeSpec ?? null,
     label: suggestion.label ?? "",
+    ignoredFittingId: suggestion.ignoredFittingId ?? null,
   };
 }
 

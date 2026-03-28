@@ -620,7 +620,9 @@ canvas {
 .fitting-card-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 0.45rem;
   margin-top: 0.2rem;
+  flex-wrap: wrap;
 }
 
 .fitting-card-actions button {
@@ -630,6 +632,12 @@ canvas {
   border-color: rgba(125, 52, 17, 0.22);
   color: var(--accent-strong);
   font-size: 0.82rem;
+}
+
+.fitting-card-actions .button-ghost {
+  background: rgba(79, 64, 51, 0.06);
+  border-color: rgba(79, 64, 51, 0.14);
+  color: var(--ink-soft);
 }
 
 .fitting-card.is-muted {

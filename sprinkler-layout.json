@@ -707,14 +707,14 @@
     "valveBoxes": [
       {
         "id": "338c179c-eb9f-4791-83b5-03f580bf75fe",
-        "x": 766.5020540875246,
-        "y": 786.4051123467078,
+        "x": 761.5339104213286,
+        "y": 599.6370138929267,
         "label": "VB-1"
       },
       {
         "id": "d8e30f98-8a54-4c44-af79-1cb85269eebf",
-        "x": 761.8827104764603,
-        "y": 768.0293196428427,
+        "x": 763.146388103773,
+        "y": 576.1188155741938,
         "label": "VB-2"
       },
       {
@@ -733,8 +733,16 @@
         "diameterInches": 1,
         "points": [
           {
-            "x": 757.0836320262515,
-            "y": 749.041595091737
+            "x": 744.4741410474488,
+            "y": 591.1199306688659
+          },
+          {
+            "x": 753.0401733869138,
+            "y": 650.3217170264426
+          },
+          {
+            "x": 768.6468063059144,
+            "y": 758.8753385423045
           },
           {
             "x": 884.9823813612459,
@@ -758,12 +766,16 @@
         "diameterInches": 1,
         "points": [
           {
-            "x": 757.0836320262515,
-            "y": 749.041595091737
+            "x": 763.146388103773,
+            "y": 576.1188155741938
           },
           {
-            "x": 551.5334117497687,
-            "y": 743.1942017596406
+            "x": 744.4741410474488,
+            "y": 591.1199306688659
+          },
+          {
+            "x": 613.4539888208299,
+            "y": 609.6720869049391
           },
           {
             "x": 548.0690821945471,
@@ -822,56 +834,6 @@
         ]
       },
       {
-        "id": "9f31877b-7e07-405e-98f0-9ea4ed38a1ad",
-        "kind": "zone",
-        "zoneId": "a6115698-d745-41ee-ba29-f9b01b478e87",
-        "label": "Main line 5",
-        "diameterInches": 0.75,
-        "points": [
-          {
-            "x": 759.3931850630657,
-            "y": 733.8383724282863
-          },
-          {
-            "x": 759.3931850630657,
-            "y": 733.8383724282863
-          },
-          {
-            "x": 755.1480381357297,
-            "y": 539.0535519145199
-          },
-          {
-            "x": 722.32,
-            "y": 317.05
-          }
-        ]
-      },
-      {
-        "id": "973dc561-03ee-4a17-b3b7-94d289f44bb8",
-        "kind": "zone",
-        "zoneId": "a6115698-d745-41ee-ba29-f9b01b478e87",
-        "label": "NE line",
-        "diameterInches": 0.75,
-        "points": [
-          {
-            "x": 759.3931850630657,
-            "y": 733.8383724282863
-          },
-          {
-            "x": 538.03,
-            "y": 756.45
-          },
-          {
-            "x": 542.33,
-            "y": 579.97
-          },
-          {
-            "x": 497.97,
-            "y": 407.99
-          }
-        ]
-      },
-      {
         "id": "860f50ce-0383-4369-bcec-2ef00632b73e",
         "kind": "zone",
         "zoneId": "4897d3ce-4108-4b01-b95f-8c86a093342f",
@@ -879,16 +841,24 @@
         "diameterInches": 0.75,
         "points": [
           {
-            "x": 766.5020540875246,
-            "y": 786.4051123467078
+            "x": 783.2080876293453,
+            "y": 758.8977099861868
           },
           {
             "x": 783.2080876293453,
             "y": 758.8977099861868
           },
           {
+            "x": 780.0926696496907,
+            "y": 747.434388453733
+          },
+          {
             "x": 769.7861737287307,
             "y": 704.6014057678044
+          },
+          {
+            "x": 750.5673708772964,
+            "y": 606.4715745662587
           },
           {
             "x": 743.2241340388665,
@@ -929,8 +899,8 @@
         "diameterInches": 0.75,
         "points": [
           {
-            "x": 776.7148328391738,
-            "y": 732.6688937618671
+            "x": 780.0926696496907,
+            "y": 747.434388453733
           },
           {
             "x": 672.7849461825252,
@@ -1012,16 +982,16 @@
         "diameterInches": 0.75,
         "points": [
           {
-            "x": 766.5020540875246,
-            "y": 786.4051123467078
+            "x": 764.4096649433806,
+            "y": 600.4266626016547
           },
           {
-            "x": 757.0836320262515,
-            "y": 749.041595091737
+            "x": 726.1035518944554,
+            "y": 599.6370138929267
           },
           {
-            "x": 551.5334117497687,
-            "y": 743.1942017596406
+            "x": 546.421019365313,
+            "y": 626.975256586255
           },
           {
             "x": 539.9856465656966,
@@ -1075,19 +1045,40 @@
         ]
       },
       {
-        "id": "5924be2c-0d76-4214-beb4-7b4e547bdf79",
-        "kind": "zone",
-        "zoneId": "a6115698-d745-41ee-ba29-f9b01b478e87",
-        "label": "1\" -> 3/4 T",
+        "id": "adc384de-6bd3-4329-8dca-21fda522d303",
+        "kind": "main",
+        "zoneId": null,
+        "label": "Main line 5",
         "diameterInches": 1,
         "points": [
           {
-            "x": 759.3931850630657,
-            "y": 733.8383724282863
+            "x": 763.146388103773,
+            "y": 576.1188155741938
           },
           {
-            "x": 761.8827104764603,
-            "y": 768.0293196428427
+            "x": 761.5198741490337,
+            "y": 588.530852798762
+          },
+          {
+            "x": 764.4096649433806,
+            "y": 600.4266626016547
+          }
+        ]
+      },
+      {
+        "id": "f0a912f8-1991-45d7-9e6a-c2bcd9250757",
+        "kind": "zone",
+        "zoneId": "4897d3ce-4108-4b01-b95f-8c86a093342f",
+        "label": "Zone line 8",
+        "diameterInches": 0.75,
+        "points": [
+          {
+            "x": 761.5339104213286,
+            "y": 599.6370138929267
+          },
+          {
+            "x": 750.5673708772964,
+            "y": 606.4715745662587
           }
         ]
       }
@@ -1140,17 +1131,49 @@
         "rotationDeg": 0,
         "locked": false,
         "status": "placed"
+      },
+      {
+        "id": "f4d013ea-5a86-487a-8823-8d5495e59a4a",
+        "type": "head_takeoff",
+        "label": "",
+        "zoneId": "4897d3ce-4108-4b01-b95f-8c86a093342f",
+        "sizeSpec": "3/4 x 3/4 x 1/2 tee",
+        "anchor": {
+          "kind": "sprinkler",
+          "sprinklerId": "50e07bc8-3998-419b-bc6c-e12aeed99e2e"
+        },
+        "x": 761.75,
+        "y": 888.54,
+        "rotationDeg": 0,
+        "locked": false,
+        "status": "placed"
+      },
+      {
+        "id": "274793aa-6b8d-4cbf-b51a-97d1dec51b1f",
+        "type": "head_takeoff",
+        "label": "",
+        "zoneId": "4897d3ce-4108-4b01-b95f-8c86a093342f",
+        "sizeSpec": "3/4 x 3/4 x 1/2 tee",
+        "anchor": {
+          "kind": "sprinkler",
+          "sprinklerId": "6cf988dc-e094-487c-8d57-4a974deff488"
+        },
+        "x": 679.7136052929685,
+        "y": 754.8889884238333,
+        "rotationDeg": 0,
+        "locked": false,
+        "status": "placed"
       }
     ],
     "view": {
-      "offsetX": 193.6109616917239,
-      "offsetY": -263.6859958334388,
-      "zoom": 0.8806210184944816,
-      "showCoverage": true,
+      "offsetX": 281.2321315515018,
+      "offsetY": -218.83173535961453,
+      "zoom": 0.7743658686052447,
+      "showCoverage": false,
       "showPipe": true,
       "showFittings": true,
       "showGrid": false,
-      "showLabels": false,
+      "showLabels": true,
       "showZoneLabels": false,
       "coverageOpacity": 0.05,
       "zoneViewMode": "zone",
@@ -1165,15 +1188,15 @@
       "redoStack": []
     },
     "ui": {
-      "activeTool": "select",
+      "activeTool": "fittings",
       "placementPattern": "arc",
-      "pipePlacementKind": "main",
-      "selectedSprinklerId": "c0f4b95e-954e-4606-b95c-8ad0950fe718",
+      "pipePlacementKind": "zone",
+      "selectedSprinklerId": null,
       "selectedValveBoxId": null,
       "selectedPipeRunId": null,
       "selectedFittingId": null,
       "selectedPipeVertexIndex": null,
-      "hint": "Ready to place sprinklers. 32 heads on plan.",
+      "hint": "Use the fittings palette to organize fittings. 5 fittings on plan.",
       "measurePoints": [],
       "measurePreviewPoint": null,
       "measureDistance": null,
@@ -1187,7 +1210,7 @@
       "fittingsPanel": {
         "x": 12,
         "y": 12,
-        "tab": "common",
+        "tab": "suggested",
         "zoneMode": "auto",
         "zoneId": null
       }

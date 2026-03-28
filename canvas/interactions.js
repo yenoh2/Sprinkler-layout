@@ -520,6 +520,12 @@ export function createInteractionController(canvas, store, renderer) {
           rotationDeg: 0,
         },
       });
+      if (state.ui.fittingDraft?.ignoredFittingId) {
+        store.dispatch({
+          type: "DELETE_FITTING",
+          payload: { id: state.ui.fittingDraft.ignoredFittingId },
+        });
+      }
     }
     clearFittingPlacement();
   }
@@ -639,6 +645,7 @@ export function createInteractionController(canvas, store, renderer) {
         targetAnchor: input?.targetAnchor ?? null,
         sizeSpec: input?.sizeSpec ?? null,
         label: input?.label ?? "",
+        ignoredFittingId: input?.ignoredFittingId ?? null,
       },
       meta: { skipHistory: true },
     });

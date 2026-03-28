@@ -9,11 +9,16 @@ const DIRECTION_MERGE_COSINE = Math.cos((10 * Math.PI) / 180);
 const STRAIGHT_PAIR_MAX_DELTA_RAD = (40 * Math.PI) / 180;
 
 export function buildFittingSuggestions(state) {
-  const headTakeoffs = buildHeadTakeoffSuggestions(state);
-  const pipeConnections = buildPipeConnectionSuggestions(state);
+  const headCandidates = buildHeadTakeoffSuggestions(state);
+  const pipeCandidates = buildPipeConnectionSuggestions(state);
+  const [headTakeoffs, ignoredHeadTakeoffs] = partitionSuggestionsByIgnoredStatus(state, headCandidates);
+  const [pipeConnections, ignoredPipeConnections] = partitionSuggestionsByIgnoredStatus(state, pipeCandidates);
   return {
     headTakeoffs,
     pipeConnections,
+    ignoredHeadTakeoffs,
+    ignoredPipeConnections,
+    ignored: [...ignoredHeadTakeoffs, ...ignoredPipeConnections],
     all: [...headTakeoffs, ...pipeConnections],
   };
 }
@@ -596,17 +601,26 @@ function findNearestZonePipeForPoint(state, zoneId, point) {
 }
 
 function hasPlacedFittingNearSuggestion(state, suggestion) {
-  return (state.fittings ?? []).some((fitting) => {
-    if (fitting.status !== "placed") {
-      return false;
-    }
-    if (fitting.type !== suggestion.type) {
-      return false;
-    }
+  return Boolean(findSuggestionMarker(state, suggestion, "placed"));
+}
 
-    const point = resolvePlacedFittingPoint(state, fitting);
-    return point && distanceSquared(point, suggestion) <= CONNECTION_POINT_EPSILON ** 2;
-  });
+function partitionSuggestionsByIgnoredStatus(state, suggestions) {
+  const active = [];
+  const ignored = [];
+
+  for (const suggestion of suggestions ?? []) {
+    const ignoredMarker = findSuggestionMarker(state, suggestion, "ignored");
+    if (ignoredMarker) {
+      ignored.push({
+        ...suggestion,
+        ignoredFittingId: ignoredMarker.id,
+      });
+      continue;
+    }
+    active.push(suggestion);
+  }
+
+  return [active, ignored];
 }
 
 function hasPlacedHeadFittingMatchingSuggestion(state, suggestion) {
@@ -614,21 +628,58 @@ function hasPlacedHeadFittingMatchingSuggestion(state, suggestion) {
     return false;
   }
 
-  return (state.fittings ?? []).some((fitting) => {
-    if (fitting.status !== "placed") {
-      return false;
-    }
-    if (fitting.anchor?.kind !== "sprinkler" || fitting.anchor.sprinklerId !== suggestion.sprinklerId) {
-      return false;
-    }
-    if (fitting.type !== suggestion.type) {
-      return false;
-    }
-    return areCompatibleHeadFittingSizeSpecs(fitting.sizeSpec, suggestion.sizeSpec);
-  });
+  return Boolean(findSuggestionMarker(state, suggestion, "placed"));
 }
 
-function areCompatibleHeadFittingSizeSpecs(existingSizeSpec, suggestedSizeSpec) {
+function findSuggestionMarker(state, suggestion, status) {
+  for (const fitting of state.fittings ?? []) {
+    if (fitting.status !== status) {
+      continue;
+    }
+    if (isSprinklerSuggestion(suggestion)) {
+      if (matchesSprinklerSuggestionMarker(fitting, suggestion)) {
+        return fitting;
+      }
+      continue;
+    }
+    if (matchesPointSuggestionMarker(state, fitting, suggestion)) {
+      return fitting;
+    }
+  }
+
+  return null;
+}
+
+function isSprinklerSuggestion(suggestion) {
+  return suggestion?.anchor?.kind === "sprinkler" || Boolean(suggestion?.sprinklerId);
+}
+
+function matchesSprinklerSuggestionMarker(fitting, suggestion) {
+  if (!suggestion?.sprinklerId) {
+    return false;
+  }
+  if (fitting.anchor?.kind !== "sprinkler" || fitting.anchor.sprinklerId !== suggestion.sprinklerId) {
+    return false;
+  }
+  if (fitting.type !== suggestion.type) {
+    return false;
+  }
+  return areCompatibleSuggestionSizeSpecs(fitting.sizeSpec, suggestion.sizeSpec);
+}
+
+function matchesPointSuggestionMarker(state, fitting, suggestion) {
+  if (fitting.type !== suggestion.type) {
+    return false;
+  }
+  if (!areCompatibleSuggestionSizeSpecs(fitting.sizeSpec, suggestion.sizeSpec)) {
+    return false;
+  }
+
+  const point = resolvePlacedFittingPoint(state, fitting);
+  return Boolean(point && distanceSquared(point, suggestion) <= CONNECTION_POINT_EPSILON ** 2);
+}
+
+function areCompatibleSuggestionSizeSpecs(existingSizeSpec, suggestedSizeSpec) {
   if (!existingSizeSpec || !suggestedSizeSpec) {
     return true;
   }

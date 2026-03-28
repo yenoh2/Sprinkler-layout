@@ -565,11 +565,13 @@ function applyAction(state, action) {
     case "ADD_FITTING": {
       const fitting = normalizeFitting(action.payload);
       state.fittings.push(fitting);
-      state.ui.selectedFittingId = fitting.id;
-      state.ui.selectedSprinklerId = null;
-      state.ui.selectedValveBoxId = null;
-      state.ui.selectedPipeRunId = null;
-      state.ui.selectedPipeVertexIndex = null;
+      if (fitting.status === "placed") {
+        state.ui.selectedFittingId = fitting.id;
+        state.ui.selectedSprinklerId = null;
+        state.ui.selectedValveBoxId = null;
+        state.ui.selectedPipeRunId = null;
+        state.ui.selectedPipeVertexIndex = null;
+      }
       return state;
     }
     case "UPDATE_FITTING": {
@@ -609,6 +611,7 @@ function applyAction(state, action) {
         targetAnchor: normalizeFittingAnchor(action.payload.targetAnchor),
         sizeSpec: sanitizeFittingSizeSpec(action.payload.sizeSpec),
         label: String(action.payload.label || ""),
+        ignoredFittingId: action.payload.ignoredFittingId || null,
         preview: null,
       };
       state.ui.selectedSprinklerId = null;

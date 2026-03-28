@@ -417,6 +417,9 @@ export function createRenderer(canvas, store, analyzer) {
     }
     const selectedFitting = findSelectedFitting(state);
     state.fittings.forEach((fitting) => {
+      if ((fitting.status ?? "placed") !== "placed") {
+        return;
+      }
       const worldPoint = resolveFittingWorldPoint(state, fitting);
       const screenPoint = worldToScreen(worldPoint, state.view);
       const zoneColor = getZoneById(state, fitting.zoneId)?.color ?? "#7d6957";
@@ -852,6 +855,9 @@ export function createRenderer(canvas, store, analyzer) {
     }
     const screenPoint = worldToScreen(worldPoint, state.view);
     return [...state.fittings].reverse().find((fitting) => {
+      if ((fitting.status ?? "placed") !== "placed") {
+        return false;
+      }
       const center = worldToScreen(resolveFittingWorldPoint(state, fitting), state.view);
       return distanceSquared(screenPoint, center) <= 144;
     }) || null;
