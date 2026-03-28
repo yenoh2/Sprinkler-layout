@@ -585,6 +585,10 @@ function applyAction(state, action) {
         zoneMode: ["auto", "main", "zone"].includes(action.payload.zoneMode) ? action.payload.zoneMode : "auto",
         zoneId: action.payload.zoneId || null,
         sprinklerId: action.payload.sprinklerId || null,
+        targetPoint: normalizeDraftPoint(action.payload.targetPoint),
+        targetAnchor: normalizeFittingAnchor(action.payload.targetAnchor),
+        sizeSpec: sanitizeFittingSizeSpec(action.payload.sizeSpec),
+        label: String(action.payload.label || ""),
         preview: null,
       };
       state.ui.selectedSprinklerId = null;
@@ -986,6 +990,9 @@ function buildHint(state) {
   if (state.ui.activeTool === "fittings" && state.ui.fittingDraft?.type === "head_takeoff") {
     return "Drag over a sprinkler head and release to place a head takeoff. Press Esc to cancel.";
   }
+  if (state.ui.activeTool === "fittings" && state.ui.fittingDraft?.targetPoint) {
+    return "Drag over the suggested pipe connection and release to place the fitting. Press Esc to cancel.";
+  }
   if (state.ui.activeTool === "fittings") {
     return `Use the fittings palette to organize fittings. ${state.fittings.length} fitting${state.fittings.length === 1 ? "" : "s"} on plan.`;
   }
@@ -1323,6 +1330,15 @@ function normalizeFittingAnchor(anchor) {
 
 function sanitizeFittingSizeSpec(sizeSpec) {
   return sizeSpec == null ? null : String(sizeSpec).trim() || null;
+}
+
+function normalizeDraftPoint(point) {
+  const x = Number(point?.x);
+  const y = Number(point?.y);
+  if (!(Number.isFinite(x) && Number.isFinite(y))) {
+    return null;
+  }
+  return { x, y };
 }
 
 function normalizeFittingStatus(status) {

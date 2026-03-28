@@ -1,5 +1,5 @@
 import { clamp, normalizeAngle, toDegrees } from "../geometry/arcs.js";
-import { buildHeadTakeoffPlacementPreview } from "../analysis/fittings-analysis.js";
+import { buildHeadTakeoffPlacementPreview, buildTargetedFittingPlacementPreview } from "../analysis/fittings-analysis.js";
 import { getFittingTypeMeta, isManualFittingPlacementSupported } from "../geometry/fittings.js";
 import { pointsEqual } from "../geometry/pipes.js";
 import { buildStripPrimaryPatch, buildStripSecondaryPatch, isStripCoverage } from "../geometry/coverage.js";
@@ -596,7 +596,8 @@ export function createInteractionController(canvas, store, renderer) {
   function beginFittingPlacement(input, pointerEvent) {
     const state = store.getState();
     const type = input?.type;
-    if (!state.scale.calibrated || !isManualFittingPlacementSupported(type)) {
+    const isTargetedPlacement = Boolean(input?.sprinklerId || input?.targetPoint || input?.targetAnchor);
+    if (!state.scale.calibrated || (!isManualFittingPlacementSupported(type) && !isTargetedPlacement)) {
       return false;
     }
 
@@ -611,6 +612,10 @@ export function createInteractionController(canvas, store, renderer) {
         zoneMode: input?.zoneMode ?? state.ui.fittingsPanel?.zoneMode ?? "auto",
         zoneId: input?.zoneId ?? state.ui.fittingsPanel?.zoneId ?? null,
         sprinklerId: input?.sprinklerId ?? null,
+        targetPoint: input?.targetPoint ?? null,
+        targetAnchor: input?.targetAnchor ?? null,
+        sizeSpec: input?.sizeSpec ?? null,
+        label: input?.label ?? "",
       },
       meta: { skipHistory: true },
     });
@@ -780,6 +785,10 @@ function buildFittingDraftPreview(state, fittingDraft, worldPoint, screenPoint) 
 
   if (fittingDraft.type === "head_takeoff") {
     return buildHeadTakeoffPlacementPreview(state, fittingDraft, worldPoint, screenPoint);
+  }
+
+  if (fittingDraft.targetPoint || fittingDraft.targetAnchor) {
+    return buildTargetedFittingPlacementPreview(state, fittingDraft, worldPoint, screenPoint);
   }
 
   return {

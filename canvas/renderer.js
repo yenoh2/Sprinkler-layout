@@ -513,6 +513,34 @@ export function createRenderer(canvas, store, analyzer) {
       }
     }
 
+    if (fitting.anchor?.kind === "pipe_vertex" && fitting.anchor.pipeRunId && Number.isInteger(fitting.anchor.vertexIndex)) {
+      const pipeRun = state.pipeRuns.find((item) => item.id === fitting.anchor.pipeRunId) ?? null;
+      const point = pipeRun?.points?.[fitting.anchor.vertexIndex] ?? null;
+      if (point) {
+        return { x: point.x, y: point.y };
+      }
+    }
+
+    if (fitting.anchor?.kind === "pipe_segment" && fitting.anchor.pipeRunId && Number.isInteger(fitting.anchor.segmentIndex)) {
+      const pipeRun = state.pipeRuns.find((item) => item.id === fitting.anchor.pipeRunId) ?? null;
+      const start = pipeRun?.points?.[fitting.anchor.segmentIndex] ?? null;
+      const end = pipeRun?.points?.[fitting.anchor.segmentIndex + 1] ?? null;
+      if (start && end) {
+        const t = Number.isFinite(fitting.anchor.t) ? fitting.anchor.t : 0.5;
+        return {
+          x: start.x + (end.x - start.x) * t,
+          y: start.y + (end.y - start.y) * t,
+        };
+      }
+    }
+
+    if (fitting.anchor?.kind === "valve_box" && fitting.anchor.valveBoxId) {
+      const valveBox = state.valveBoxes.find((item) => item.id === fitting.anchor.valveBoxId) ?? null;
+      if (valveBox) {
+        return { x: valveBox.x, y: valveBox.y };
+      }
+    }
+
     return {
       x: fitting.x ?? 0,
       y: fitting.y ?? 0,

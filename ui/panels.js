@@ -529,19 +529,21 @@ function bindFittingsPanelInteractions(elements, store, interactions) {
   elements.fittingsPanelContent?.addEventListener("pointerdown", (event) => {
     const target = event.target instanceof Element ? event.target.closest("[data-fitting-template]") : null;
     const templateType = target?.getAttribute("data-fitting-template");
-    if (!templateType || !isManualFittingPlacementSupported(templateType)) {
+    const payload = parseFittingCardPayload(target?.getAttribute("data-fitting-payload"));
+    const isTargetedSuggestion = Boolean(payload);
+    if (!templateType || (!isManualFittingPlacementSupported(templateType) && !isTargetedSuggestion)) {
       return;
     }
 
     const panelState = store.getState().ui.fittingsPanel;
-    const sprinklerId = target?.getAttribute("data-fitting-sprinkler-id") || null;
-    const suggestionZoneId = target?.getAttribute("data-fitting-zone-id") || null;
-    const placementStarted = interactions.beginFittingPlacement({
-      type: templateType,
-      zoneMode: suggestionZoneId ? "zone" : panelState.zoneMode,
-      zoneId: suggestionZoneId ?? panelState.zoneId,
-      sprinklerId,
-    }, event);
+    const placementStarted = interactions.beginFittingPlacement(
+      payload ?? {
+        type: templateType,
+        zoneMode: panelState.zoneMode,
+        zoneId: panelState.zoneId,
+      },
+      event,
+    );
 
     if (placementStarted) {
       event.preventDefault();
@@ -865,48 +867,40 @@ function renderFittingsPanel(elements, state) {
 function renderSuggestedFittingsPanel(state, suggestions) {
   const panelState = state.ui.fittingsPanel ?? { zoneMode: "auto", zoneId: null };
   const headTakeoffSuggestions = filterHeadTakeoffSuggestionsForPanel(suggestions?.headTakeoffs ?? [], panelState);
+  const pipeConnectionSuggestions = filterPipeConnectionSuggestionsForPanel(suggestions?.pipeConnections ?? [], panelState);
 
-  if (!state.sprinklers?.length) {
+  if (!state.sprinklers?.length && !state.pipeRuns?.length) {
     return `
       <div class="fittings-panel-group">
-        <h4>Heads</h4>
+        <h4>Suggestions</h4>
         <div class="empty-card">
-          Place sprinkler heads first, then this tab will suggest missing head takeoffs automatically.
-        </div>
-      </div>
-    `;
-  }
-
-  if (panelState.zoneMode === "main") {
-    return `
-      <div class="fittings-panel-group">
-        <h4>Heads</h4>
-        <div class="empty-card">
-          Head takeoffs are tied to zone lines, so there are no main-line suggestions in this view yet.
-        </div>
-      </div>
-    `;
-  }
-
-  if (!headTakeoffSuggestions.length) {
-    const isZoneFiltered = panelState.zoneMode === "zone" && panelState.zoneId;
-    const message = isZoneFiltered
-      ? "Every sprinkler in this zone already has a head takeoff placed."
-      : "Every sprinkler head on the plan already has a head takeoff placed.";
-    return `
-      <div class="fittings-panel-group">
-        <h4>Heads</h4>
-        <div class="empty-card">
-          ${message}
+          Place sprinkler heads and pipe runs first, then this tab will suggest missing fittings automatically.
         </div>
       </div>
     `;
   }
 
   return `
+    ${renderSuggestedGroup(
+      "Heads",
+      headTakeoffSuggestions,
+      buildHeadSuggestionEmptyMessage(state, panelState),
+    )}
+    ${renderSuggestedGroup(
+      "Pipe connections",
+      pipeConnectionSuggestions,
+      buildPipeSuggestionEmptyMessage(state, panelState),
+    )}
+  `;
+}
+
+function renderSuggestedGroup(title, suggestions, emptyMessage) {
+  return `
     <div class="fittings-panel-group">
-      <h4>Heads</h4>
-      ${headTakeoffSuggestions.map((suggestion) => renderSuggestedFittingCard(suggestion)).join("")}
+      <h4>${title}</h4>
+      ${suggestions.length
+        ? suggestions.map((suggestion) => renderSuggestedFittingCard(suggestion)).join("")
+        : `<div class="empty-card">${emptyMessage}</div>`}
     </div>
   `;
 }
@@ -923,21 +917,21 @@ function renderFittingCard(option) {
 }
 
 function renderSuggestedFittingCard(suggestion) {
+  const payload = buildSuggestedPlacementPayload(suggestion);
+  const payloadAttribute = escapeHtml(JSON.stringify(payload));
   const needsZonePipeSizing = !suggestion.sizeSpec || suggestion.sizeSpec.startsWith("Zone line");
-  const supportText = needsZonePipeSizing
-    ? "Drag onto this sprinkler head to place it. The size will stay generic until a nearby zone pipe has a diameter."
-    : `Drag onto this sprinkler head to place ${escapeHtml(suggestion.sizeSpec)}.`;
+  const supportText = resolveSuggestedSupportText(suggestion, needsZonePipeSizing);
+  const subtitle = buildSuggestedSubtitle(suggestion);
 
   return `
     <article
       class="fitting-card is-draggable ${needsZonePipeSizing ? "is-muted" : ""}"
       data-fitting-template="${escapeHtml(suggestion.type)}"
-      data-fitting-sprinkler-id="${escapeHtml(suggestion.sprinklerId)}"
-      data-fitting-zone-id="${escapeHtml(suggestion.zoneId ?? "")}"
+      data-fitting-payload="${payloadAttribute}"
     >
-      <strong>${escapeHtml(suggestion.sprinklerLabel)}</strong>
-      <p>${escapeHtml(suggestion.zoneName)}${suggestion.sizeSpec ? ` | ${escapeHtml(suggestion.sizeSpec)}` : ""}</p>
-      <p>${supportText}</p>
+      <strong>${escapeHtml(suggestion.referenceLabel || suggestion.sprinklerLabel || suggestion.label)}</strong>
+      <p>${escapeHtml(subtitle)}</p>
+      <p>${escapeHtml(supportText)}</p>
     </article>
   `;
 }
@@ -950,6 +944,88 @@ function filterHeadTakeoffSuggestionsForPanel(suggestions, panelState) {
     return suggestions.filter((suggestion) => suggestion.zoneId === panelState.zoneId);
   }
   return suggestions;
+}
+
+function filterPipeConnectionSuggestionsForPanel(suggestions, panelState) {
+  if (panelState?.zoneMode === "main") {
+    return suggestions.filter((suggestion) => !suggestion.zoneId);
+  }
+  if (panelState?.zoneMode === "zone" && panelState.zoneId) {
+    return suggestions.filter((suggestion) => suggestion.zoneId === panelState.zoneId);
+  }
+  return suggestions;
+}
+
+function buildHeadSuggestionEmptyMessage(state, panelState) {
+  if (!state.sprinklers?.length) {
+    return "Place sprinkler heads first, then this group will suggest missing head takeoffs.";
+  }
+  if (panelState?.zoneMode === "main") {
+    return "Head takeoffs are tied to zone lines, so there are no main-line head suggestions in this view.";
+  }
+  if (panelState?.zoneMode === "zone" && panelState.zoneId) {
+    return "Every sprinkler in this zone already has a head takeoff placed.";
+  }
+  return "Every sprinkler head on the plan already has a head takeoff placed.";
+}
+
+function buildPipeSuggestionEmptyMessage(state, panelState) {
+  if ((state.pipeRuns?.length ?? 0) < 2) {
+    return "Draw more connected pipe runs to surface tee and reducer suggestions here.";
+  }
+  if (panelState?.zoneMode === "main") {
+    return "No unresolved main-line pipe connections are suggested right now.";
+  }
+  if (panelState?.zoneMode === "zone" && panelState.zoneId) {
+    return "No unresolved pipe-connection fittings are suggested in this zone right now.";
+  }
+  return "No unresolved pipe-connection fittings are suggested on the current plan.";
+}
+
+function buildSuggestedPlacementPayload(suggestion) {
+  return {
+    type: suggestion.type,
+    zoneMode: suggestion.zoneId ? "zone" : "auto",
+    zoneId: suggestion.zoneId ?? null,
+    sprinklerId: suggestion.sprinklerId ?? null,
+    targetPoint: { x: suggestion.x, y: suggestion.y },
+    targetAnchor: suggestion.anchor ?? null,
+    sizeSpec: suggestion.sizeSpec ?? null,
+    label: suggestion.label ?? "",
+  };
+}
+
+function buildSuggestedSubtitle(suggestion) {
+  const parts = [suggestion.zoneName || "Main / auto"];
+  if (suggestion.sizeSpec) {
+    parts.push(suggestion.sizeSpec);
+  }
+  if (suggestion.reason) {
+    parts.push(suggestion.reason);
+  }
+  return parts.join(" | ");
+}
+
+function resolveSuggestedSupportText(suggestion, needsZonePipeSizing) {
+  if (suggestion.type === "head_takeoff") {
+    return needsZonePipeSizing
+      ? "Drag onto this sprinkler head to place it. The size will stay generic until a nearby zone pipe has a diameter."
+      : `Drag onto this sprinkler head to place ${suggestion.sizeSpec}.`;
+  }
+
+  return `Drag onto this pipe connection to place ${suggestion.sizeSpec || getFittingTypeMeta(suggestion.type).label}.`;
+}
+
+function parseFittingCardPayload(rawValue) {
+  if (!rawValue) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(rawValue);
+  } catch {
+    return null;
+  }
 }
 
 function populateAnalysisZoneSelect(select, zones, value) {
@@ -988,10 +1064,12 @@ function formatFittingAnchor(anchor) {
     return `Sprinkler ${anchor.sprinklerId ?? "--"}`;
   }
   if (anchor.kind === "pipe_vertex") {
-    return `Pipe vertex ${anchor.pipeRunId ?? "--"}`;
+    const suffix = Number.isInteger(anchor.vertexIndex) ? ` vertex ${anchor.vertexIndex + 1}` : "";
+    return `Pipe ${anchor.pipeRunId ?? "--"}${suffix}`;
   }
   if (anchor.kind === "pipe_segment") {
-    return `Pipe segment ${anchor.pipeRunId ?? "--"}`;
+    const suffix = Number.isInteger(anchor.segmentIndex) ? ` segment ${anchor.segmentIndex + 1}` : "";
+    return `Pipe ${anchor.pipeRunId ?? "--"}${suffix}`;
   }
   if (anchor.kind === "valve_box") {
     return `Valve box ${anchor.valveBoxId ?? "--"}`;
