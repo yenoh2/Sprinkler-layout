@@ -101,17 +101,23 @@ export function createInteractionController(canvas, store, renderer) {
       if (!state.scale.calibrated) {
         return;
       }
-      const snappedPoint = getSnappedWorldPoint(state, worldPoint, {
+      const snapResult = getPipeSnapResult(state, worldPoint, {
         excludeDraftTerminal: true,
         pipeKind: state.ui.pipeDraft?.kind ?? state.ui.pipePlacementKind,
         pipeZoneId: state.ui.pipeDraft?.zoneId ?? (state.ui.pipePlacementKind === "zone" ? state.ui.activeZoneId ?? null : null),
       });
+      const snappedPoint = snapResult.point;
       if (!state.ui.pipeDraft) {
+        const initialZoneId = inferZoneIdFromPipeSnap(
+          state.ui.pipePlacementKind,
+          state.ui.activeZoneId ?? null,
+          snapResult.source,
+        );
         store.dispatch({
           type: "START_PIPE_DRAFT",
           payload: {
             kind: state.ui.pipePlacementKind,
-            zoneId: state.ui.pipePlacementKind === "zone" ? state.ui.activeZoneId ?? null : null,
+            zoneId: state.ui.pipePlacementKind === "zone" ? initialZoneId : null,
             diameterInches: state.ui.pipePlacementKind === "main" ? state.hydraulics.lineSizeInches : null,
             points: [snappedPoint],
           },
@@ -127,6 +133,18 @@ export function createInteractionController(canvas, store, renderer) {
 
       if (shouldAppend) {
         store.dispatch({ type: "APPEND_PIPE_DRAFT_POINT", payload: { point: snappedPoint } });
+        const inferredZoneId = inferZoneIdFromPipeSnap(
+          state.ui.pipeDraft?.kind ?? state.ui.pipePlacementKind,
+          state.ui.pipeDraft?.zoneId ?? null,
+          snapResult.source,
+        );
+        if (inferredZoneId && inferredZoneId !== state.ui.pipeDraft?.zoneId) {
+          store.dispatch({
+            type: "SET_PIPE_DRAFT_ZONE",
+            payload: { zoneId: inferredZoneId },
+            meta: { skipHistory: true },
+          });
+        }
       }
 
       if (event.detail >= 2 && nextPoints.length >= 2) {
@@ -306,14 +324,15 @@ export function createInteractionController(canvas, store, renderer) {
       store.dispatch({ type: "SET_MEASURE_PREVIEW", payload: { point: worldPoint } });
     }
     if (state.ui.activeTool === "pipe" && state.ui.pipeDraft?.points?.length) {
+      const previewSnap = getPipeSnapResult(state, worldPoint, {
+        excludeDraftTerminal: true,
+        pipeKind: state.ui.pipeDraft?.kind ?? state.ui.pipePlacementKind,
+        pipeZoneId: state.ui.pipeDraft?.zoneId ?? (state.ui.pipePlacementKind === "zone" ? state.ui.activeZoneId ?? null : null),
+      });
       store.dispatch({
         type: "SET_PIPE_DRAFT_PREVIEW",
         payload: {
-          point: getSnappedWorldPoint(state, worldPoint, {
-            excludeDraftTerminal: true,
-            pipeKind: state.ui.pipeDraft?.kind ?? state.ui.pipePlacementKind,
-            pipeZoneId: state.ui.pipeDraft?.zoneId ?? (state.ui.pipePlacementKind === "zone" ? state.ui.activeZoneId ?? null : null),
-          }),
+          point: previewSnap.point,
         },
       });
     }
@@ -686,12 +705,13 @@ export function createInteractionController(canvas, store, renderer) {
     }
     const pipeRun = state.pipeRuns.find((item) => item.id === nextDragState.id) ?? null;
     const pipeKind = pipeRun?.kind ?? null;
-    const snappedPoint = getSnappedWorldPoint(store.getState(), worldPoint, {
+    const snapResult = getPipeSnapResult(store.getState(), worldPoint, {
       excludePipeRunId: nextDragState.id,
       excludeVertexIndex: nextDragState.index,
       pipeKind,
       pipeZoneId: pipeRun?.zoneId ?? null,
     });
+    const snappedPoint = snapResult.point;
     const action = {
       type: "MOVE_PIPE_VERTEX",
       payload: { id: nextDragState.id, index: nextDragState.index, point: snappedPoint },
@@ -699,9 +719,11 @@ export function createInteractionController(canvas, store, renderer) {
     if (!nextDragState.historyStarted) {
       nextDragState.historyStarted = true;
       store.dispatch(action);
+      maybeInferZoneOnPipeEndpointSnap(pipeRun, nextDragState.index, snapResult.source);
       return;
     }
     store.dispatch({ ...action, meta: { skipHistory: true } });
+    maybeInferZoneOnPipeEndpointSnap(pipeRun, nextDragState.index, snapResult.source);
   }
 
   function updateDraggedPipeMidpoint(state, nextDragState, screenPoint, worldPoint) {
@@ -710,11 +732,12 @@ export function createInteractionController(canvas, store, renderer) {
     }
     const pipeRun = state.pipeRuns.find((item) => item.id === nextDragState.id) ?? null;
     const pipeKind = pipeRun?.kind ?? null;
-    const snappedPoint = getSnappedWorldPoint(store.getState(), worldPoint, {
+    const snapResult = getPipeSnapResult(store.getState(), worldPoint, {
       excludePipeRunId: nextDragState.id,
       pipeKind,
       pipeZoneId: pipeRun?.zoneId ?? null,
     });
+    const snappedPoint = snapResult.point;
     if (!nextDragState.historyStarted) {
       nextDragState.historyStarted = true;
       nextDragState.insertedIndex = nextDragState.index + 1;
@@ -742,6 +765,21 @@ export function createInteractionController(canvas, store, renderer) {
         diameterInches: currentState.ui.pipeDraft?.diameterInches ?? (currentState.ui.pipePlacementKind === "main" ? currentState.hydraulics.lineSizeInches : null),
         points,
       },
+    });
+  }
+
+  function maybeInferZoneOnPipeEndpointSnap(pipeRun, vertexIndex, snapSource) {
+    if (!isPipeEndpointSnapEligible(pipeRun, vertexIndex)) {
+      return;
+    }
+    const inferredZoneId = inferZoneIdFromPipeSnap(pipeRun.kind, pipeRun.zoneId ?? null, snapSource);
+    if (!inferredZoneId || inferredZoneId === pipeRun.zoneId) {
+      return;
+    }
+    store.dispatch({
+      type: "UPDATE_PIPE_RUN",
+      payload: { id: pipeRun.id, patch: { zoneId: inferredZoneId } },
+      meta: { skipHistory: true },
     });
   }
 }
@@ -874,6 +912,10 @@ function buildImmediateFittingPreview(state, input) {
 }
 
 function getSnappedWorldPoint(state, worldPoint, options = {}) {
+  return getPipeSnapResult(state, worldPoint, options).point;
+}
+
+function getPipeSnapResult(state, worldPoint, options = {}) {
   const excludeLastDraftPoint = options.excludeDraftTerminal ? state.ui.pipeDraft?.points?.at(-1) ?? null : null;
   const snapKind = normalizePipeKind(options.pipeKind ?? state.ui.pipeDraft?.kind ?? state.ui.pipePlacementKind);
   const pipeZoneId = options.pipeZoneId ?? null;
@@ -888,34 +930,62 @@ function getSnappedWorldPoint(state, worldPoint, options = {}) {
     if (snapKind === "zone" && candidateKind !== "zone") {
       return [];
     }
-    return pipeRun.points.filter((point, index) =>
-      !(pipeRun.id === options.excludePipeRunId && index === options.excludeVertexIndex),
-    );
+    return pipeRun.points
+      .filter((point, index) =>
+        !(pipeRun.id === options.excludePipeRunId && index === options.excludeVertexIndex),
+      )
+      .map((point, index) => ({
+        point,
+        source: {
+          kind: "pipe_point",
+          pipeRunId: pipeRun.id,
+          pipeKind: candidateKind,
+          zoneId: pipeRun.zoneId ?? null,
+          vertexIndex: index,
+        },
+      }));
   });
   const candidates = [
     ...(snapKind === "main"
       ? []
       : (state.sprinklers ?? [])
         .filter((sprinkler) => snapKind !== "zone" || isCompatibleZoneSnapTarget(pipeZoneId, sprinkler.zoneId ?? null))
-        .map((sprinkler) => ({ x: sprinkler.x, y: sprinkler.y }))),
-    ...(state.valveBoxes ?? []).map((valveBox) => ({ x: valveBox.x, y: valveBox.y })),
+        .map((sprinkler) => ({
+          point: { x: sprinkler.x, y: sprinkler.y },
+          source: {
+            kind: "sprinkler",
+            sprinklerId: sprinkler.id,
+            zoneId: sprinkler.zoneId ?? null,
+          },
+        }))),
+    ...(state.valveBoxes ?? []).map((valveBox) => ({
+      point: { x: valveBox.x, y: valveBox.y },
+      source: {
+        kind: "valve_box",
+        valveBoxId: valveBox.id,
+        zoneId: null,
+      },
+    })),
     ...pipePointCandidates,
-  ].filter((candidate) => !excludeLastDraftPoint || !pointsEqual(candidate, excludeLastDraftPoint));
+  ].filter((candidate) => !excludeLastDraftPoint || !pointsEqual(candidate.point, excludeLastDraftPoint));
 
   const screenPoint = worldToScreen(worldPoint, state.view);
-  let bestPoint = worldPoint;
+  let best = {
+    point: worldPoint,
+    source: null,
+  };
   let bestDistance = PIPE_SNAP_SCREEN_PX + 0.001;
 
   for (const candidate of candidates) {
-    const candidateScreen = worldToScreen(candidate, state.view);
+    const candidateScreen = worldToScreen(candidate.point, state.view);
     const distance = Math.hypot(candidateScreen.x - screenPoint.x, candidateScreen.y - screenPoint.y);
     if (distance <= PIPE_SNAP_SCREEN_PX && distance < bestDistance) {
       bestDistance = distance;
-      bestPoint = candidate;
+      best = candidate;
     }
   }
 
-  return bestPoint;
+  return best;
 }
 
 function isCompatibleZoneSnapTarget(pipeZoneId, targetZoneId) {
@@ -923,6 +993,26 @@ function isCompatibleZoneSnapTarget(pipeZoneId, targetZoneId) {
     return true;
   }
   return !targetZoneId || targetZoneId === pipeZoneId;
+}
+
+function inferZoneIdFromPipeSnap(pipeKind, currentZoneId, snapSource) {
+  if (normalizePipeKind(pipeKind) !== "zone" || currentZoneId || !snapSource) {
+    return currentZoneId || null;
+  }
+  if (snapSource.kind === "sprinkler") {
+    return snapSource.zoneId || null;
+  }
+  if (snapSource.kind === "pipe_point" && snapSource.pipeKind === "zone") {
+    return snapSource.zoneId || null;
+  }
+  return null;
+}
+
+function isPipeEndpointSnapEligible(pipeRun, vertexIndex) {
+  if (!pipeRun || normalizePipeKind(pipeRun.kind) !== "zone" || pipeRun.zoneId || !Number.isInteger(vertexIndex)) {
+    return false;
+  }
+  return vertexIndex === 0 || vertexIndex === pipeRun.points.length - 1;
 }
 
 function didPointerMoveEnough(startScreenPoint, screenPoint) {

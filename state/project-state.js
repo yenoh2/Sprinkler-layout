@@ -487,6 +487,12 @@ function applyAction(state, action) {
       }
       state.ui.pipeDraft.points = [...state.ui.pipeDraft.points, ...normalizePipePoints([action.payload.point])];
       return state;
+    case "SET_PIPE_DRAFT_ZONE":
+      if (!state.ui.pipeDraft) {
+        return null;
+      }
+      state.ui.pipeDraft.zoneId = action.payload.zoneId || null;
+      return state;
     case "SET_PIPE_DRAFT_PREVIEW":
       if (!state.ui.pipeDraft) {
         return null;
