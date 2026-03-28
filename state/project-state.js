@@ -1,6 +1,8 @@
 import { clamp, distanceBetween, normalizeAngle } from "../geometry/arcs.js";
 import { normalizeFittingType, normalizeFittingsPanelTab } from "../geometry/fittings.js";
-import { normalizePipeKind, normalizePipePoints } from "../geometry/pipes.js";
+import { distancePointToSegmentSquared, normalizePipeKind, normalizePipePoints } from "../geometry/pipes.js";
+
+const HEAD_CONNECTION_PIPE_EPSILON = 3;
 
 const HISTORY_ACTIONS = new Set([
   "ADD_SPRINKLER",
@@ -527,14 +529,26 @@ function applyAction(state, action) {
       Object.assign(pipeRun, sanitizePipeRunPatch(action.payload.patch, pipeRun, state));
       return state;
     }
-    case "DELETE_PIPE_RUN":
-      state.pipeRuns = state.pipeRuns.filter((pipeRun) => pipeRun.id !== action.payload.id);
-      detachFittingAnchors(state.fittings, "pipe_run", action.payload.id);
+    case "DELETE_PIPE_RUN": {
+      const pipeRun = findPipeRun(state, action.payload.id);
+      if (!pipeRun) {
+        return null;
+      }
+
+      const dependentFittingIds = collectDependentFittingIdsForPipeRun(state, pipeRun);
+      state.pipeRuns = state.pipeRuns.filter((item) => item.id !== action.payload.id);
+      if (dependentFittingIds.size) {
+        state.fittings = state.fittings.filter((fitting) => !dependentFittingIds.has(fitting.id));
+        if (state.ui.selectedFittingId && dependentFittingIds.has(state.ui.selectedFittingId)) {
+          state.ui.selectedFittingId = null;
+        }
+      }
       if (state.ui.selectedPipeRunId === action.payload.id) {
         state.ui.selectedPipeRunId = null;
         state.ui.selectedPipeVertexIndex = null;
       }
       return state;
+    }
     case "SELECT_PIPE_RUN":
       state.ui.selectedPipeRunId = action.payload.id || null;
       state.ui.selectedPipeVertexIndex = Number.isInteger(action.payload.vertexIndex) ? action.payload.vertexIndex : null;
@@ -1346,6 +1360,103 @@ function normalizeDraftPoint(point) {
 
 function normalizeFittingStatus(status) {
   return status === "ignored" ? "ignored" : "placed";
+}
+
+function collectDependentFittingIdsForPipeRun(state, pipeRun) {
+  const dependentIds = new Set();
+  if (!pipeRun?.id) {
+    return dependentIds;
+  }
+
+  for (const fitting of state.fittings ?? []) {
+    if (fitting.anchor?.pipeRunId === pipeRun.id) {
+      dependentIds.add(fitting.id);
+    }
+  }
+
+  if (normalizePipeKind(pipeRun.kind) !== "zone" || !pipeRun.zoneId) {
+    return dependentIds;
+  }
+
+  for (const fitting of state.fittings ?? []) {
+    if (dependentIds.has(fitting.id) || fitting.status !== "placed") {
+      continue;
+    }
+    if (!isSprinklerHeadFitting(fitting)) {
+      continue;
+    }
+
+    const sprinkler = findSprinkler(state, fitting.anchor.sprinklerId);
+    if (!sprinkler || sprinkler.zoneId !== pipeRun.zoneId) {
+      continue;
+    }
+
+    if (fitting.anchor.pipeRunId && fitting.anchor.pipeRunId === pipeRun.id) {
+      dependentIds.add(fitting.id);
+      continue;
+    }
+
+    if (pipeRunTouchesPoint(pipeRun, sprinkler)) {
+      dependentIds.add(fitting.id);
+      continue;
+    }
+
+    const nearestZonePipe = findNearestZonePipeRunForPoint(state.pipeRuns, sprinkler.zoneId, sprinkler);
+    if (nearestZonePipe?.id === pipeRun.id) {
+      dependentIds.add(fitting.id);
+    }
+  }
+
+  return dependentIds;
+}
+
+function isSprinklerHeadFitting(fitting) {
+  return fitting?.anchor?.kind === "sprinkler"
+    && Boolean(fitting.anchor.sprinklerId)
+    && ["head_takeoff", "elbow"].includes(fitting.type);
+}
+
+function findNearestZonePipeRunForPoint(pipeRuns, zoneId, point) {
+  if (!zoneId || !point) {
+    return null;
+  }
+
+  let bestPipeRun = null;
+  let bestDistanceSquared = Infinity;
+
+  for (const pipeRun of pipeRuns ?? []) {
+    if (normalizePipeKind(pipeRun.kind) !== "zone" || pipeRun.zoneId !== zoneId) {
+      continue;
+    }
+
+    const points = normalizePipePoints(pipeRun.points);
+    for (let index = 1; index < points.length; index += 1) {
+      const distanceSquared = distancePointToSegmentSquared(point, points[index - 1], points[index]);
+      if (distanceSquared < bestDistanceSquared) {
+        bestDistanceSquared = distanceSquared;
+        bestPipeRun = pipeRun;
+      }
+    }
+  }
+
+  return bestPipeRun;
+}
+
+function pipeRunTouchesPoint(pipeRun, point, epsilon = HEAD_CONNECTION_PIPE_EPSILON) {
+  const safePoint = normalizeDraftPoint(point);
+  if (!pipeRun?.points?.length || !safePoint) {
+    return false;
+  }
+
+  const safePoints = normalizePipePoints(pipeRun.points);
+  for (let index = 1; index < safePoints.length; index += 1) {
+    const distanceSquared = distancePointToSegmentSquared(safePoint, safePoints[index - 1], safePoints[index]);
+    if (distanceSquared <= epsilon ** 2) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function detachFittingAnchors(fittings, targetKind, targetId) {

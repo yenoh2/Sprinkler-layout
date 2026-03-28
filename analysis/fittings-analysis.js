@@ -19,16 +19,9 @@ export function buildFittingSuggestions(state) {
 }
 
 export function buildHeadTakeoffSuggestions(state) {
-  const existingBySprinklerId = new Set(
-    (state.fittings ?? [])
-      .filter((fitting) => fitting.status === "placed" && fitting.anchor?.kind === "sprinkler" && fitting.anchor.sprinklerId)
-      .map((fitting) => fitting.anchor.sprinklerId),
-  );
-
   return (state.sprinklers ?? [])
-    .filter((sprinkler) => !existingBySprinklerId.has(sprinkler.id))
     .map((sprinkler) => buildHeadTakeoffSuggestion(state, sprinkler))
-    .filter(Boolean)
+    .filter((suggestion) => suggestion && !hasPlacedHeadFittingMatchingSuggestion(state, suggestion))
     .sort((a, b) => a.zoneName.localeCompare(b.zoneName) || a.sprinklerLabel.localeCompare(b.sprinklerLabel, undefined, { numeric: true }));
 }
 
@@ -131,6 +124,7 @@ export function buildHeadTakeoffSuggestion(state, sprinkler) {
     anchor: {
       kind: "sprinkler",
       sprinklerId: sprinkler.id,
+      pipeRunId: nearestZonePipe?.id ?? null,
     },
   };
 }
@@ -613,6 +607,39 @@ function hasPlacedFittingNearSuggestion(state, suggestion) {
     const point = resolvePlacedFittingPoint(state, fitting);
     return point && distanceSquared(point, suggestion) <= CONNECTION_POINT_EPSILON ** 2;
   });
+}
+
+function hasPlacedHeadFittingMatchingSuggestion(state, suggestion) {
+  if (!suggestion?.sprinklerId) {
+    return false;
+  }
+
+  return (state.fittings ?? []).some((fitting) => {
+    if (fitting.status !== "placed") {
+      return false;
+    }
+    if (fitting.anchor?.kind !== "sprinkler" || fitting.anchor.sprinklerId !== suggestion.sprinklerId) {
+      return false;
+    }
+    if (fitting.type !== suggestion.type) {
+      return false;
+    }
+    return areCompatibleHeadFittingSizeSpecs(fitting.sizeSpec, suggestion.sizeSpec);
+  });
+}
+
+function areCompatibleHeadFittingSizeSpecs(existingSizeSpec, suggestedSizeSpec) {
+  if (!existingSizeSpec || !suggestedSizeSpec) {
+    return true;
+  }
+  if (existingSizeSpec === suggestedSizeSpec) {
+    return true;
+  }
+  return isGenericZoneLineSizeSpec(existingSizeSpec) || isGenericZoneLineSizeSpec(suggestedSizeSpec);
+}
+
+function isGenericZoneLineSizeSpec(sizeSpec) {
+  return typeof sizeSpec === "string" && sizeSpec.startsWith("Zone line");
 }
 
 function resolvePlacedFittingPoint(state, fitting) {
