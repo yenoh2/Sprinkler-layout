@@ -1,7 +1,7 @@
 import { clamp, normalizeAngle, toDegrees } from "../geometry/arcs.js";
 import { buildHeadTakeoffPlacementPreview, buildTargetedFittingPlacementPreview } from "../analysis/fittings-analysis.js";
 import { getFittingTypeMeta, isManualFittingPlacementSupported } from "../geometry/fittings.js";
-import { pointsEqual } from "../geometry/pipes.js";
+import { normalizePipeKind, pointsEqual } from "../geometry/pipes.js";
 import { buildStripPrimaryPatch, buildStripSecondaryPatch, isStripCoverage } from "../geometry/coverage.js";
 import { computePixelsPerUnitFromPoints, fitBackgroundToView, screenToWorld, worldToScreen } from "../geometry/scale.js";
 
@@ -103,6 +103,7 @@ export function createInteractionController(canvas, store, renderer) {
       }
       const snappedPoint = getSnappedWorldPoint(state, worldPoint, {
         excludeDraftTerminal: true,
+        pipeKind: state.ui.pipeDraft?.kind ?? state.ui.pipePlacementKind,
       });
       if (!state.ui.pipeDraft) {
         store.dispatch({
@@ -309,6 +310,7 @@ export function createInteractionController(canvas, store, renderer) {
         payload: {
           point: getSnappedWorldPoint(state, worldPoint, {
             excludeDraftTerminal: true,
+            pipeKind: state.ui.pipeDraft?.kind ?? state.ui.pipePlacementKind,
           }),
         },
       });
@@ -680,9 +682,11 @@ export function createInteractionController(canvas, store, renderer) {
     if (!didPointerMoveEnough(nextDragState.startScreenPoint, screenPoint) && !nextDragState.historyStarted) {
       return;
     }
+    const pipeKind = state.pipeRuns.find((pipeRun) => pipeRun.id === nextDragState.id)?.kind ?? null;
     const snappedPoint = getSnappedWorldPoint(store.getState(), worldPoint, {
       excludePipeRunId: nextDragState.id,
       excludeVertexIndex: nextDragState.index,
+      pipeKind,
     });
     const action = {
       type: "MOVE_PIPE_VERTEX",
@@ -700,8 +704,10 @@ export function createInteractionController(canvas, store, renderer) {
     if (!didPointerMoveEnough(nextDragState.startScreenPoint, screenPoint) && !nextDragState.historyStarted) {
       return;
     }
+    const pipeKind = state.pipeRuns.find((pipeRun) => pipeRun.id === nextDragState.id)?.kind ?? null;
     const snappedPoint = getSnappedWorldPoint(store.getState(), worldPoint, {
       excludePipeRunId: nextDragState.id,
+      pipeKind,
     });
     if (!nextDragState.historyStarted) {
       nextDragState.historyStarted = true;
@@ -863,14 +869,20 @@ function buildImmediateFittingPreview(state, input) {
 
 function getSnappedWorldPoint(state, worldPoint, options = {}) {
   const excludeLastDraftPoint = options.excludeDraftTerminal ? state.ui.pipeDraft?.points?.at(-1) ?? null : null;
+  const snapKind = normalizePipeKind(options.pipeKind ?? state.ui.pipeDraft?.kind ?? state.ui.pipePlacementKind);
+  const pipePointCandidates = (state.pipeRuns ?? []).flatMap((pipeRun) => {
+    const candidateKind = normalizePipeKind(pipeRun.kind);
+    if (candidateKind !== snapKind) {
+      return [];
+    }
+    return pipeRun.points.filter((point, index) =>
+      !(pipeRun.id === options.excludePipeRunId && index === options.excludeVertexIndex),
+    );
+  });
   const candidates = [
-    ...(state.sprinklers ?? []).map((sprinkler) => ({ x: sprinkler.x, y: sprinkler.y })),
+    ...(snapKind === "main" ? [] : (state.sprinklers ?? []).map((sprinkler) => ({ x: sprinkler.x, y: sprinkler.y }))),
     ...(state.valveBoxes ?? []).map((valveBox) => ({ x: valveBox.x, y: valveBox.y })),
-    ...(state.pipeRuns ?? []).flatMap((pipeRun) =>
-      pipeRun.points.filter((point, index) =>
-        !(pipeRun.id === options.excludePipeRunId && index === options.excludeVertexIndex),
-      ),
-    ),
+    ...pipePointCandidates,
   ].filter((candidate) => !excludeLastDraftPoint || !pointsEqual(candidate, excludeLastDraftPoint));
 
   const screenPoint = worldToScreen(worldPoint, state.view);
