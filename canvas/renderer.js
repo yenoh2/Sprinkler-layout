@@ -1,3 +1,4 @@
+import { resolvePlacedFittingSizeSpec } from "../analysis/fittings-analysis.js";
 import { pointFromAngle, pointInSprinkler, toRadians } from "../geometry/arcs.js";
 import { getFittingTypeMeta } from "../geometry/fittings.js";
 import { buildPipeMidpoints, calculatePipeLengthUnits, distancePointToSegmentSquared } from "../geometry/pipes.js";
@@ -73,7 +74,7 @@ export function createRenderer(canvas, store, analyzer) {
     }
     drawSprinklers(state);
     drawValveBoxes(state);
-    drawFittings(state);
+    drawFittings(state, analysis);
     drawPipeDraft(state);
     drawFittingDraft(state);
     drawSelectedHandles(state);
@@ -411,7 +412,7 @@ export function createRenderer(canvas, store, analyzer) {
     });
   }
 
-  function drawFittings(state) {
+  function drawFittings(state, analysis) {
     if (state.view.showFittings === false) {
       return;
     }
@@ -432,9 +433,10 @@ export function createRenderer(canvas, store, analyzer) {
       }
       drawFittingGlyph(screenPoint, zoneColor, fitting.type, isSelected, false);
       if (state.view.showLabels && isSelected) {
+        const sizeSpec = resolvePlacedFittingSizeSpec(state, fitting, analysis);
         ctx.fillStyle = zoneColor;
         ctx.font = "11px Aptos, Segoe UI, sans-serif";
-        ctx.fillText(fitting.sizeSpec || getFittingTypeMeta(fitting.type).label, screenPoint.x + 12, screenPoint.y - 12);
+        ctx.fillText(sizeSpec || getFittingTypeMeta(fitting.type).label, screenPoint.x + 12, screenPoint.y - 12);
       }
       ctx.restore();
     });

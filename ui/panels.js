@@ -1,5 +1,5 @@
 import { clamp } from "../geometry/arcs.js";
-import { buildFittingSuggestions } from "../analysis/fittings-analysis.js";
+import { buildFittingSuggestions, resolvePlacedFittingSizeSpec } from "../analysis/fittings-analysis.js";
 import { getAllFittingOptions, getCommonFittingOptions, getFittingTypeMeta, isManualFittingPlacementSupported } from "../geometry/fittings.js";
 import { PIPE_DIAMETER_OPTIONS, calculatePipeLengthUnits, formatPipeDiameterLabel } from "../geometry/pipes.js";
 import { fitBackgroundToView } from "../geometry/scale.js";
@@ -755,7 +755,7 @@ function updateUi(elements, state, renderer, analyzer) {
     button.classList.toggle("is-active", isActive);
     button.setAttribute("aria-selected", isActive ? "true" : "false");
   });
-  renderFittingsPanel(elements, state);
+  renderFittingsPanel(elements, state, analysis);
 
   const nextZonesListRenderKey = buildZonesListRenderKey(state, analysis);
   if (elements.zonesList.dataset.renderKey !== nextZonesListRenderKey) {
@@ -839,7 +839,7 @@ function updateUi(elements, state, renderer, analyzer) {
     const zoneLabel = resolveFittingZoneLabel(selectedFitting, state.zones);
     elements.fittingType.value = fittingType.label;
     elements.fittingZone.value = zoneLabel;
-    elements.fittingSize.value = selectedFitting.sizeSpec ?? "Auto";
+    elements.fittingSize.value = resolvePlacedFittingSizeSpec(state, selectedFitting, analysis) ?? "Auto";
     elements.fittingAnchor.value = formatFittingAnchor(selectedFitting.anchor);
   }
 
@@ -913,9 +913,9 @@ function populateFittingsZoneSelect(select, zones, panelState) {
   select.value = panelState?.zoneMode === "main" ? "main" : "auto";
 }
 
-function renderFittingsPanel(elements, state) {
+function renderFittingsPanel(elements, state, analysis) {
   const tab = state.ui.fittingsPanel?.tab ?? "suggested";
-  const suggestions = buildFittingSuggestions(state);
+  const suggestions = buildFittingSuggestions(state, analysis);
 
   if (tab === "suggested") {
     elements.fittingsPanelContent.innerHTML = renderSuggestedFittingsPanel(state, suggestions);

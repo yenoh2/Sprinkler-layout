@@ -1,4 +1,4 @@
-import { formatNominalPipeSize, getFittingTypeMeta, resolveHeadTakeoffSizeSpec } from "../geometry/fittings.js";
+import { formatNominalPipeSize, getFittingTypeMeta, resolveHeadElbowSizeSpec, resolveHeadTakeoffSizeSpec } from "../geometry/fittings.js";
 import { distancePointToSegmentSquared, pointsEqual } from "../geometry/pipes.js";
 import { worldToScreen } from "../geometry/scale.js";
 
@@ -8,11 +8,11 @@ const CONNECTION_POINT_EPSILON = 1;
 const DIRECTION_MERGE_COSINE = Math.cos((10 * Math.PI) / 180);
 const STRAIGHT_PAIR_MAX_DELTA_RAD = (40 * Math.PI) / 180;
 
-export function buildFittingSuggestions(state) {
-  const headCandidates = buildHeadTakeoffSuggestions(state);
+export function buildFittingSuggestions(state, analysis = null) {
+  const headCandidates = buildHeadTakeoffSuggestions(state, analysis);
   const pipeCandidates = buildPipeConnectionSuggestions(state);
-  const [headTakeoffs, ignoredHeadTakeoffs] = partitionSuggestionsByIgnoredStatus(state, headCandidates);
-  const [pipeConnections, ignoredPipeConnections] = partitionSuggestionsByIgnoredStatus(state, pipeCandidates);
+  const [headTakeoffs, ignoredHeadTakeoffs] = partitionSuggestionsByIgnoredStatus(state, headCandidates, analysis);
+  const [pipeConnections, ignoredPipeConnections] = partitionSuggestionsByIgnoredStatus(state, pipeCandidates, analysis);
   return {
     headTakeoffs,
     pipeConnections,
@@ -23,10 +23,10 @@ export function buildFittingSuggestions(state) {
   };
 }
 
-export function buildHeadTakeoffSuggestions(state) {
+export function buildHeadTakeoffSuggestions(state, analysis = null) {
   return (state.sprinklers ?? [])
-    .map((sprinkler) => buildHeadTakeoffSuggestion(state, sprinkler))
-    .filter((suggestion) => suggestion && !hasPlacedHeadFittingMatchingSuggestion(state, suggestion))
+    .map((sprinkler) => buildHeadTakeoffSuggestion(state, sprinkler, analysis))
+    .filter((suggestion) => suggestion && !hasPlacedHeadFittingMatchingSuggestion(state, suggestion, analysis))
     .sort((a, b) => a.zoneName.localeCompare(b.zoneName) || a.sprinklerLabel.localeCompare(b.sprinklerLabel, undefined, { numeric: true }));
 }
 
@@ -52,6 +52,7 @@ export function buildHeadTakeoffPlacementPreview(
   fittingDraft,
   worldPoint,
   screenPoint,
+  analysis = null,
   snapDistancePx = DEFAULT_HEAD_TAKEOFF_SNAP_SCREEN_PX,
 ) {
   const snappedSprinkler = findNearestHeadTakeoffSprinkler(state, fittingDraft, screenPoint, snapDistancePx);
@@ -68,7 +69,7 @@ export function buildHeadTakeoffPlacementPreview(
     };
   }
 
-  return buildHeadTakeoffSuggestion(state, snappedSprinkler);
+  return buildHeadTakeoffSuggestion(state, snappedSprinkler, analysis);
 }
 
 export function buildTargetedFittingPlacementPreview(
@@ -101,7 +102,7 @@ export function buildTargetedFittingPlacementPreview(
   };
 }
 
-export function buildHeadTakeoffSuggestion(state, sprinkler) {
+export function buildHeadTakeoffSuggestion(state, sprinkler, analysis = null) {
   if (!sprinkler) {
     return null;
   }
@@ -109,6 +110,7 @@ export function buildHeadTakeoffSuggestion(state, sprinkler) {
   const nearestZonePipe = findNearestZonePipeForPoint(state, sprinkler.zoneId, sprinkler);
   const isTerminalEndpoint = isTerminalHeadConnection(state, sprinkler, nearestZonePipe);
   const type = isTerminalEndpoint ? "elbow" : "head_takeoff";
+  const headConnectionDiameterInches = resolveSprinklerConnectionDiameterInches(sprinkler, analysis);
   const zoneName = state.zones.find((zone) => zone.id === sprinkler.zoneId)?.name ?? "Unassigned";
   return {
     id: `${type}:${sprinkler.id}`,
@@ -124,14 +126,34 @@ export function buildHeadTakeoffSuggestion(state, sprinkler) {
     x: sprinkler.x,
     y: sprinkler.y,
     sizeSpec: isTerminalEndpoint
-      ? resolveHeadElbowSizeSpec(nearestZonePipe?.diameterInches ?? null)
-      : resolveHeadTakeoffSizeSpec(nearestZonePipe?.diameterInches ?? null),
+      ? resolveHeadElbowSizeSpec(nearestZonePipe?.diameterInches ?? null, headConnectionDiameterInches)
+      : resolveHeadTakeoffSizeSpec(nearestZonePipe?.diameterInches ?? null, headConnectionDiameterInches),
     anchor: {
       kind: "sprinkler",
       sprinklerId: sprinkler.id,
       pipeRunId: nearestZonePipe?.id ?? null,
     },
   };
+}
+
+export function resolvePlacedFittingSizeSpec(state, fitting, analysis = null) {
+  if (!fitting) {
+    return null;
+  }
+  if (fitting.anchor?.kind !== "sprinkler" || !["head_takeoff", "elbow"].includes(fitting.type)) {
+    return fitting.sizeSpec ?? null;
+  }
+
+  const sprinkler = state.sprinklers.find((item) => item.id === fitting.anchor.sprinklerId) ?? null;
+  if (!sprinkler) {
+    return fitting.sizeSpec ?? null;
+  }
+
+  const nearestZonePipe = findNearestZonePipeForPoint(state, sprinkler.zoneId, sprinkler);
+  const headConnectionDiameterInches = resolveSprinklerConnectionDiameterInches(sprinkler, analysis);
+  return fitting.type === "elbow"
+    ? resolveHeadElbowSizeSpec(nearestZonePipe?.diameterInches ?? null, headConnectionDiameterInches)
+    : resolveHeadTakeoffSizeSpec(nearestZonePipe?.diameterInches ?? null, headConnectionDiameterInches);
 }
 
 function buildPipeConnectionSuggestion(state, candidate) {
@@ -543,13 +565,6 @@ function isTerminalHeadConnection(state, sprinkler, nearestZonePipe) {
   return mergedArms.length <= 1;
 }
 
-function resolveHeadElbowSizeSpec(lineDiameterInches) {
-  if (!(Number(lineDiameterInches) > 0)) {
-    return "Zone line x 1/2 elbow";
-  }
-  return `${formatNominalPipeSize(lineDiameterInches)} x 1/2 elbow`;
-}
-
 function findNearestHeadTakeoffSprinkler(state, fittingDraft, screenPoint, snapDistancePx) {
   let best = null;
 
@@ -604,12 +619,12 @@ function hasPlacedFittingNearSuggestion(state, suggestion) {
   return Boolean(findSuggestionMarker(state, suggestion, "placed"));
 }
 
-function partitionSuggestionsByIgnoredStatus(state, suggestions) {
+function partitionSuggestionsByIgnoredStatus(state, suggestions, analysis = null) {
   const active = [];
   const ignored = [];
 
   for (const suggestion of suggestions ?? []) {
-    const ignoredMarker = findSuggestionMarker(state, suggestion, "ignored");
+    const ignoredMarker = findSuggestionMarker(state, suggestion, "ignored", analysis);
     if (ignoredMarker) {
       ignored.push({
         ...suggestion,
@@ -623,21 +638,21 @@ function partitionSuggestionsByIgnoredStatus(state, suggestions) {
   return [active, ignored];
 }
 
-function hasPlacedHeadFittingMatchingSuggestion(state, suggestion) {
+function hasPlacedHeadFittingMatchingSuggestion(state, suggestion, analysis = null) {
   if (!suggestion?.sprinklerId) {
     return false;
   }
 
-  return Boolean(findSuggestionMarker(state, suggestion, "placed"));
+  return Boolean(findSuggestionMarker(state, suggestion, "placed", analysis));
 }
 
-function findSuggestionMarker(state, suggestion, status) {
+function findSuggestionMarker(state, suggestion, status, analysis = null) {
   for (const fitting of state.fittings ?? []) {
     if (fitting.status !== status) {
       continue;
     }
     if (isSprinklerSuggestion(suggestion)) {
-      if (matchesSprinklerSuggestionMarker(fitting, suggestion)) {
+      if (matchesSprinklerSuggestionMarker(state, fitting, suggestion, analysis)) {
         return fitting;
       }
       continue;
@@ -654,7 +669,7 @@ function isSprinklerSuggestion(suggestion) {
   return suggestion?.anchor?.kind === "sprinkler" || Boolean(suggestion?.sprinklerId);
 }
 
-function matchesSprinklerSuggestionMarker(fitting, suggestion) {
+function matchesSprinklerSuggestionMarker(state, fitting, suggestion, analysis = null) {
   if (!suggestion?.sprinklerId) {
     return false;
   }
@@ -664,7 +679,7 @@ function matchesSprinklerSuggestionMarker(fitting, suggestion) {
   if (fitting.type !== suggestion.type) {
     return false;
   }
-  return areCompatibleSuggestionSizeSpecs(fitting.sizeSpec, suggestion.sizeSpec);
+  return areCompatibleSuggestionSizeSpecs(resolvePlacedFittingSizeSpec(state, fitting, analysis), suggestion.sizeSpec);
 }
 
 function matchesPointSuggestionMarker(state, fitting, suggestion) {
@@ -740,6 +755,18 @@ function pointsNear(first, second) {
 
 function buildPointKey(point) {
   return `${Number(point.x.toFixed(2))}:${Number(point.y.toFixed(2))}`;
+}
+
+function resolveSprinklerConnectionDiameterInches(sprinkler, analysis) {
+  const recommendation = analysis?.recommendationsById?.[sprinkler?.id] ?? null;
+  const inletSizeInches = Number(recommendation?.inletSizeInches);
+  if (Number.isFinite(inletSizeInches) && inletSizeInches > 0) {
+    return inletSizeInches;
+  }
+  if (recommendation?.body === "Rain Bird 5004 PRS") {
+    return 0.75;
+  }
+  return null;
 }
 
 function distanceSquared(first, second) {

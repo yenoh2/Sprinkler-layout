@@ -8,7 +8,7 @@ import { computePixelsPerUnitFromPoints, fitBackgroundToView, screenToWorld, wor
 const PIPE_SNAP_SCREEN_PX = 12;
 const PIPE_HANDLE_DRAG_THRESHOLD_PX = 3;
 
-export function createInteractionController(canvas, store, renderer) {
+export function createInteractionController(canvas, store, renderer, analyzer) {
   let dragState = null;
   let fittingPlacementState = null;
   let panState = null;
@@ -491,10 +491,11 @@ export function createInteractionController(canvas, store, renderer) {
 
     const state = store.getState();
     const worldPoint = screenToWorld(screenPoint, state.view);
+    const analysis = analyzer?.getSnapshot(state) ?? null;
     store.dispatch({ type: "SET_CURSOR_WORLD", payload: { point: worldPoint }, meta: { skipHistory: true } });
     store.dispatch({
       type: "SET_FITTING_DRAFT_PREVIEW",
-      payload: { preview: buildFittingDraftPreview(state, state.ui.fittingDraft, worldPoint, screenPoint) },
+      payload: { preview: buildFittingDraftPreview(state, state.ui.fittingDraft, worldPoint, screenPoint, analysis) },
       meta: { skipHistory: true },
     });
   }
@@ -654,7 +655,8 @@ export function createInteractionController(canvas, store, renderer) {
 
   function placeSuggestedFitting(input) {
     const state = store.getState();
-    const preview = buildImmediateFittingPreview(state, input);
+    const analysis = analyzer?.getSnapshot(state) ?? null;
+    const preview = buildImmediateFittingPreview(state, input, analysis);
     if (!preview?.valid) {
       return false;
     }
@@ -864,13 +866,13 @@ function getCanvasPointFromClient(canvas, clientX, clientY) {
   };
 }
 
-function buildFittingDraftPreview(state, fittingDraft, worldPoint, screenPoint) {
+function buildFittingDraftPreview(state, fittingDraft, worldPoint, screenPoint, analysis = null) {
   if (!fittingDraft?.type || !worldPoint || !screenPoint) {
     return null;
   }
 
   if (fittingDraft.type === "head_takeoff") {
-    return buildHeadTakeoffPlacementPreview(state, fittingDraft, worldPoint, screenPoint);
+    return buildHeadTakeoffPlacementPreview(state, fittingDraft, worldPoint, screenPoint, analysis);
   }
 
   if (fittingDraft.targetPoint || fittingDraft.targetAnchor) {
@@ -889,7 +891,7 @@ function buildFittingDraftPreview(state, fittingDraft, worldPoint, screenPoint) 
   };
 }
 
-function buildImmediateFittingPreview(state, input) {
+function buildImmediateFittingPreview(state, input, analysis = null) {
   if (!input?.type) {
     return null;
   }
@@ -908,7 +910,7 @@ function buildImmediateFittingPreview(state, input) {
   };
 
   if (fittingDraft.type === "head_takeoff" && targetPoint && screenPoint) {
-    return buildHeadTakeoffPlacementPreview(state, fittingDraft, targetPoint, screenPoint);
+    return buildHeadTakeoffPlacementPreview(state, fittingDraft, targetPoint, screenPoint, analysis);
   }
 
   if ((fittingDraft.targetPoint || fittingDraft.targetAnchor) && targetPoint && screenPoint) {

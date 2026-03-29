@@ -1,6 +1,7 @@
 import { clamp, normalizeAngle } from "../geometry/arcs.js";
 import { getCoverageModel, pointFallsWithinCoverage, resolveCoverageBounds, resolveStripConfiguration } from "../geometry/coverage.js";
 import { getFittingTypeMeta } from "../geometry/fittings.js";
+import { resolvePlacedFittingSizeSpec } from "./fittings-analysis.js";
 import { calculatePipeLengthUnits, formatPipeDiameterLabel, getPipeKindLabel, normalizePipeKind } from "../geometry/pipes.js";
 
 const DEFAULT_ASSUMPTIONS = {
@@ -254,7 +255,7 @@ function analyzeProject(state, context) {
       )];
     }),
   );
-  const parts = buildPartsSnapshot(state, recommendations, zonesById);
+  const parts = buildPartsSnapshot(state, recommendations, recommendationsById, zonesById);
 
   return {
     designFlowLimitGpm: analysisContext.assumptions.designFlowLimitGpm,
@@ -280,7 +281,7 @@ function analyzeProject(state, context) {
   };
 }
 
-function buildPartsSnapshot(state, recommendations, zonesById) {
+function buildPartsSnapshot(state, recommendations, recommendationsById, zonesById) {
   const groupBy = ["exact_sku", "sku_family", "body_nozzle_split"].includes(state.parts?.groupBy)
     ? state.parts.groupBy
     : "body_nozzle_split";
@@ -305,7 +306,7 @@ function buildPartsSnapshot(state, recommendations, zonesById) {
   const rows = buildPartsRows(filteredRecommendations, groupBy, zoneOrder, zonesById);
   const bodyRows = rows.filter((row) => row.category === "Body");
   const nozzleRows = rows.filter((row) => row.category === "Nozzle");
-  const fittingRows = buildFittingRows(state, includedZoneIds, zoneOrder, zonesById);
+  const fittingRows = buildFittingRows(state, includedZoneIds, zoneOrder, zonesById, recommendationsById);
   const pipeRows = buildPipeRows(state, includedZoneIds, zoneOrder, zonesById);
   const totalMainPipeLength = pipeRows
     .filter((row) => row.kind === "main")
@@ -718,6 +719,7 @@ function buildRecommendationBase(sprinkler, zone, zonesById, details) {
     pattern: sprinkler.pattern,
     family: details.family,
     body: details.body,
+    inletSizeInches: resolveRecommendationInletSizeInches(details),
     nozzle: details.nozzle,
     nozzleType: details.nozzleType,
     skuFamily: details.skuFamily ?? details.nozzle,
@@ -751,6 +753,21 @@ function buildRecommendationBase(sprinkler, zone, zonesById, details) {
       : Math.max(0, (details.selectedRadiusFt ?? 0) - sprinkler.radius),
     comment: details.comment,
   };
+}
+
+function resolveRecommendationInletSizeInches(details) {
+  const explicit = Number(details?.inletSizeInches);
+  if (Number.isFinite(explicit) && explicit > 0) {
+    return explicit;
+  }
+
+  if (details?.body === "Rain Bird 5004 PRS") {
+    return 0.75;
+  }
+  if (details?.body === "Rain Bird 3504" || details?.body === "Rain Bird 1800 PRS") {
+    return 0.5;
+  }
+  return 0.5;
 }
 
 function buildSprayDatabase(series) {
@@ -1836,7 +1853,7 @@ function buildPipeRows(state, includedZoneIds, zoneOrder, zonesById) {
     .sort((a, b) => comparePipeRows(a, b));
 }
 
-function buildFittingRows(state, includedZoneIds, zoneOrder, zonesById) {
+function buildFittingRows(state, includedZoneIds, zoneOrder, zonesById, recommendationsById) {
   const rows = new Map();
 
   for (const fitting of state.fittings ?? []) {
@@ -1850,7 +1867,7 @@ function buildFittingRows(state, includedZoneIds, zoneOrder, zonesById) {
     }
 
     const meta = getFittingTypeMeta(fitting.type);
-    const itemLabel = fitting.sizeSpec || meta.label;
+    const itemLabel = resolvePlacedFittingSizeSpec(state, fitting, { recommendationsById }) || meta.label;
     const zoneName = fitting.zoneId
       ? (zonesById.get(fitting.zoneId)?.name ?? "Unassigned")
       : "Main";
@@ -1861,7 +1878,7 @@ function buildFittingRows(state, includedZoneIds, zoneOrder, zonesById) {
       itemLabel,
       zoneName,
       zoneOrderValue: fitting.zoneId ? (zoneOrder.get(fitting.zoneId) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER,
-      note: fitting.sizeSpec && fitting.sizeSpec !== meta.label ? meta.label : "",
+      note: itemLabel !== meta.label ? meta.label : "",
       variant: fitting.type,
       exactLabel: itemLabel,
     });

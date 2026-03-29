@@ -2,7 +2,7 @@ export const FITTING_TYPE_OPTIONS = [
   {
     value: "head_takeoff",
     label: "Head takeoff",
-    description: 'Tee from a zone line to a 1/2" head connection.',
+    description: "Tee from a zone line to a sprinkler head connection.",
     category: "common",
   },
   {
@@ -59,6 +59,7 @@ export const FITTINGS_PANEL_TABS = [
 const FITTING_TYPE_VALUES = new Set(FITTING_TYPE_OPTIONS.map((option) => option.value));
 const FITTINGS_PANEL_TAB_VALUES = new Set(FITTINGS_PANEL_TABS.map((tab) => tab.value));
 const SUPPORTED_MANUAL_PLACEMENT_TYPES = new Set(["head_takeoff"]);
+export const DEFAULT_HEAD_CONNECTION_DIAMETER_INCHES = 0.5;
 
 export function normalizeFittingType(value) {
   return FITTING_TYPE_VALUES.has(value) ? value : "head_takeoff";
@@ -107,10 +108,32 @@ export function formatNominalPipeSize(diameterInches) {
   return String(Number(value.toFixed(2)));
 }
 
-export function resolveHeadTakeoffSizeSpec(lineDiameterInches) {
+export function resolveHeadTakeoffSizeSpec(
+  lineDiameterInches,
+  headConnectionDiameterInches = DEFAULT_HEAD_CONNECTION_DIAMETER_INCHES,
+) {
+  const headConnectionSize = formatNominalPipeSize(resolveHeadConnectionDiameterInches(headConnectionDiameterInches));
   if (!(Number(lineDiameterInches) > 0)) {
-    return 'Zone line x 1/2 tee';
+    return `Zone line x ${headConnectionSize} tee`;
   }
   const lineSize = formatNominalPipeSize(lineDiameterInches);
-  return `${lineSize} x ${lineSize} x 1/2 tee`;
+  return `${lineSize} x ${lineSize} x ${headConnectionSize} tee`;
+}
+
+export function resolveHeadElbowSizeSpec(
+  lineDiameterInches,
+  headConnectionDiameterInches = DEFAULT_HEAD_CONNECTION_DIAMETER_INCHES,
+) {
+  const headConnectionSize = formatNominalPipeSize(resolveHeadConnectionDiameterInches(headConnectionDiameterInches));
+  if (!(Number(lineDiameterInches) > 0)) {
+    return `Zone line x ${headConnectionSize} elbow`;
+  }
+  return `${formatNominalPipeSize(lineDiameterInches)} x ${headConnectionSize} elbow`;
+}
+
+function resolveHeadConnectionDiameterInches(value) {
+  const diameter = Number(value);
+  return Number.isFinite(diameter) && diameter > 0
+    ? diameter
+    : DEFAULT_HEAD_CONNECTION_DIAMETER_INCHES;
 }
