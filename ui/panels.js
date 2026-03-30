@@ -2188,18 +2188,29 @@ function renderPartsTables(parts, units) {
   return [
     renderPartsTableSection("Bodies", parts.bodyRows, parts.showZoneUsage),
     renderPartsTableSection("Nozzles", parts.nozzleRows, parts.showZoneUsage),
-    renderPartsTableSection("Fittings", parts.fittingRows ?? [], parts.showZoneUsage),
+    renderPartsTableSection(
+      "Main Line Fittings",
+      parts.mainFittingRows ?? [],
+      parts.showZoneUsage,
+      "No included main line fittings yet.",
+    ),
+    renderPartsTableSection(
+      "Zone Line Fittings",
+      parts.zoneFittingRows ?? [],
+      parts.showZoneUsage,
+      "No included zone line fittings yet.",
+    ),
     renderPipeTableSection("Pipe", parts.pipeRows ?? [], parts.showZoneUsage, units),
     renderPipeTableSection("Wire", parts.wireRows ?? [], parts.showZoneUsage, units),
     renderPartsTableSection("Controllers", parts.controllerRows ?? [], parts.showZoneUsage),
   ].join("");
 }
 
-function renderPartsTableSection(title, rows, showZoneUsage) {
+function renderPartsTableSection(title, rows, showZoneUsage, emptyMessage = "No included items in this section yet.") {
   return `
     <div class="parts-table-section">
       <h3>${title}</h3>
-      ${rows.length ? renderPartsTable(rows, showZoneUsage) : '<div class="empty-card">No included items in this section yet.</div>'}
+      ${rows.length ? renderPartsTable(rows, showZoneUsage) : `<div class="empty-card">${emptyMessage}</div>`}
     </div>
   `;
 }

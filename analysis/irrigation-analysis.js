@@ -63,6 +63,8 @@ function buildEmptySnapshot(designFlowLimitGpm, targetDepthInches = 1) {
       bodyRows: [],
       nozzleRows: [],
       fittingRows: [],
+      mainFittingRows: [],
+      zoneFittingRows: [],
       pipeRows: [],
       wireRows: [],
       controllerRows: [],
@@ -337,7 +339,11 @@ function buildPartsSnapshot(state, recommendations, recommendationsById, zonesBy
   const rows = buildPartsRows(filteredRecommendations, groupBy, zoneOrder, zonesById);
   const bodyRows = rows.filter((row) => row.category === "Body");
   const nozzleRows = rows.filter((row) => row.category === "Nozzle");
-  const fittingRows = buildFittingRows(state, includedZoneIds, zoneOrder, zonesById, recommendationsById);
+  const {
+    allRows: fittingRows,
+    mainRows: mainFittingRows,
+    zoneRows: zoneFittingRows,
+  } = buildFittingRows(state, includedZoneIds, zoneOrder, zonesById, recommendationsById);
   const pipeRows = buildPipeRows(state, includedZoneIds, zoneOrder, zonesById);
   const wireRows = buildWireRows(state, includedZoneIds, zoneOrder, zonesById);
   const controllerRows = buildControllerRows(state, includedZoneIds, zoneOrder, zonesById);
@@ -359,11 +365,13 @@ function buildPartsSnapshot(state, recommendations, recommendationsById, zonesBy
     bodyRows,
     nozzleRows,
     fittingRows,
+    mainFittingRows,
+    zoneFittingRows,
     pipeRows,
     wireRows,
     controllerRows,
     includedHeadCount: filteredRecommendations.length,
-    lineItemCount: rows.length + fittingRows.length + pipeRows.length + wireRows.length + controllerRows.length,
+    lineItemCount: rows.length + mainFittingRows.length + zoneFittingRows.length + pipeRows.length + wireRows.length + controllerRows.length,
     totalBodyQuantity: bodyRows.reduce((sum, row) => sum + row.quantity, 0),
     totalNozzleQuantity: nozzleRows.reduce((sum, row) => sum + row.quantity, 0),
     totalFittingQuantity: fittingRows.reduce((sum, row) => sum + row.quantity, 0),
@@ -1978,7 +1986,10 @@ function buildControllerRows(state, includedZoneIds, zoneOrder, zonesById) {
 }
 
 function buildFittingRows(state, includedZoneIds, zoneOrder, zonesById, recommendationsById) {
-  const rows = new Map();
+  const allRows = new Map();
+  const mainRows = new Map();
+  const zoneRows = new Map();
+  const pipeRunsById = new Map((state.pipeRuns ?? []).map((pipeRun) => [pipeRun.id, pipeRun]));
 
   for (const fitting of state.fittings ?? []) {
     if ((fitting.status ?? "placed") !== "placed") {
@@ -1996,7 +2007,7 @@ function buildFittingRows(state, includedZoneIds, zoneOrder, zonesById, recommen
       ? (zonesById.get(fitting.zoneId)?.name ?? "Unassigned")
       : "Main";
 
-    addPartRow(rows, {
+    const rowInput = {
       category: "Fitting",
       itemKey: `fitting:${itemLabel}`,
       itemLabel,
@@ -2005,12 +2016,34 @@ function buildFittingRows(state, includedZoneIds, zoneOrder, zonesById, recommen
       note: itemLabel !== meta.label ? meta.label : "",
       variant: fitting.type,
       exactLabel: itemLabel,
-    });
+    };
+    addPartRow(allRows, rowInput);
+    addPartRow(
+      resolveFittingPartsBucket(fitting, pipeRunsById) === "zone" ? zoneRows : mainRows,
+      rowInput,
+    );
   }
 
+  return {
+    allRows: finalizeFittingPartRows(allRows),
+    mainRows: finalizeFittingPartRows(mainRows),
+    zoneRows: finalizeFittingPartRows(zoneRows),
+  };
+}
+
+function finalizeFittingPartRows(rows) {
   return [...rows.values()]
     .map((row) => finalizePartRow(row, "exact_sku"))
     .sort((a, b) => comparePartRows(a, b));
+}
+
+function resolveFittingPartsBucket(fitting, pipeRunsById) {
+  if (fitting.anchor?.kind === "sprinkler" || fitting.zoneId) {
+    return "zone";
+  }
+
+  const pipeKind = normalizePipeKind(pipeRunsById.get(fitting.anchor?.pipeRunId ?? "")?.kind);
+  return pipeKind === "zone" ? "zone" : "main";
 }
 
 function addPipeRow(rows, input) {
