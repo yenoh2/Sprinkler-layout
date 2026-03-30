@@ -187,17 +187,19 @@ function initializePipeControls(elements) {
 function bindEvents(elements, store, renderer, interactions, io) {
   elements.screenButtons.forEach((button) => {
     button.addEventListener("click", () => {
+      renderer.setHoveredFittingPreview(null);
       store.dispatch({ type: "SET_APP_SCREEN", payload: { screen: button.dataset.screen } });
     });
   });
 
   elements.toolButtons.forEach((button) => {
     button.addEventListener("click", () => {
+      renderer.setHoveredFittingPreview(null);
       store.dispatch({ type: "SET_ACTIVE_TOOL", payload: { tool: button.dataset.tool } });
     });
   });
 
-  bindFittingsPanelInteractions(elements, store, interactions);
+  bindFittingsPanelInteractions(elements, store, renderer, interactions);
 
   elements.placementPattern.addEventListener("change", () => {
     store.dispatch({ type: "SET_PLACEMENT_PATTERN", payload: { pattern: elements.placementPattern.value } });
@@ -460,8 +462,9 @@ function bindEvents(elements, store, renderer, interactions, io) {
   elements.redoButton.addEventListener("click", () => store.dispatch({ type: "REDO" }));
 }
 
-function bindFittingsPanelInteractions(elements, store, interactions) {
+function bindFittingsPanelInteractions(elements, store, renderer, interactions) {
   let dragState = null;
+  let hoveredPayloadKey = null;
 
   elements.fittingsPanelHandle?.addEventListener("pointerdown", (event) => {
     if (event.button !== 0) {
@@ -518,12 +521,30 @@ function bindFittingsPanelInteractions(elements, store, interactions) {
 
   elements.fittingsTabButtons.forEach((button) => {
     button.addEventListener("click", () => {
+      clearHoveredSuggestedPreview();
       store.dispatch({
         type: "SET_FITTINGS_PANEL_STATE",
         payload: { tab: button.dataset.fittingsTab },
         meta: { skipHistory: true },
       });
     });
+  });
+
+  elements.fittingsPanelContent?.addEventListener("pointerover", (event) => {
+    const card = event.target instanceof Element ? event.target.closest("[data-fitting-payload]") : null;
+    if (!card) {
+      return;
+    }
+    const rawPayload = card.getAttribute("data-fitting-payload") ?? "";
+    if (!rawPayload || rawPayload === hoveredPayloadKey) {
+      return;
+    }
+    hoveredPayloadKey = rawPayload;
+    renderer.setHoveredFittingPreview(buildHoveredFittingPreview(parseFittingCardPayload(rawPayload)));
+  });
+
+  elements.fittingsPanelContent?.addEventListener("pointerleave", () => {
+    clearHoveredSuggestedPreview();
   });
 
   elements.fittingsPanelContent?.addEventListener("pointerdown", (event) => {
@@ -542,6 +563,7 @@ function bindFittingsPanelInteractions(elements, store, interactions) {
       return;
     }
 
+    clearHoveredSuggestedPreview();
     const panelState = store.getState().ui.fittingsPanel;
     const placementStarted = interactions.beginFittingPlacement(
       payload ?? {
@@ -566,6 +588,7 @@ function bindFittingsPanelInteractions(elements, store, interactions) {
         return;
       }
 
+      clearHoveredSuggestedPreview();
       const placed = interactions.placeSuggestedFitting(payload);
       if (placed) {
         if (payload.ignoredFittingId) {
@@ -586,6 +609,7 @@ function bindFittingsPanelInteractions(elements, store, interactions) {
       if (!payload) {
         return;
       }
+      clearHoveredSuggestedPreview();
       store.dispatch({
         type: "ADD_FITTING",
         payload: {
@@ -611,10 +635,19 @@ function bindFittingsPanelInteractions(elements, store, interactions) {
       if (!payload?.ignoredFittingId) {
         return;
       }
+      clearHoveredSuggestedPreview();
       store.dispatch({ type: "DELETE_FITTING", payload: { id: payload.ignoredFittingId } });
       event.preventDefault();
     }
   });
+
+  function clearHoveredSuggestedPreview() {
+    if (!hoveredPayloadKey) {
+      return;
+    }
+    hoveredPayloadKey = null;
+    renderer.setHoveredFittingPreview(null);
+  }
 }
 
 function updateSprinklerSelection(elements, store) {
@@ -750,6 +783,9 @@ function updateUi(elements, state, renderer, analyzer) {
   const panelState = state.ui.fittingsPanel;
   elements.fittingsPanel.hidden = isPartsScreen || state.ui.activeTool !== "fittings";
   elements.fittingsPanel.style.transform = `translate(${panelState.x}px, ${panelState.y}px)`;
+  if (elements.fittingsPanel.hidden) {
+    renderer.setHoveredFittingPreview(null);
+  }
   elements.fittingsTabButtons.forEach((button) => {
     const isActive = button.dataset.fittingsTab === panelState.tab;
     button.classList.toggle("is-active", isActive);
@@ -1156,6 +1192,23 @@ function buildSuggestedPlacementPayload(suggestion) {
     sizeSpec: suggestion.sizeSpec ?? null,
     label: suggestion.label ?? "",
     ignoredFittingId: suggestion.ignoredFittingId ?? null,
+  };
+}
+
+function buildHoveredFittingPreview(payload) {
+  const x = Number(payload?.targetPoint?.x);
+  const y = Number(payload?.targetPoint?.y);
+  if (!(payload?.type && Number.isFinite(x) && Number.isFinite(y))) {
+    return null;
+  }
+
+  return {
+    type: payload.type,
+    x,
+    y,
+    zoneId: payload.zoneId ?? null,
+    sizeSpec: payload.sizeSpec ?? null,
+    label: payload.label ?? "",
   };
 }
 

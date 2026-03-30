@@ -34,6 +34,7 @@ export function createRenderer(canvas, store, analyzer) {
   const ctx = canvas.getContext("2d");
   const backgroundImage = new Image();
   let currentBackground = "";
+  let hoveredFittingPreview = null;
 
   function resize() {
     const frame = canvas.parentElement;
@@ -75,6 +76,7 @@ export function createRenderer(canvas, store, analyzer) {
     drawSprinklers(state);
     drawValveBoxes(state);
     drawFittings(state, analysis);
+    drawHoveredFittingPreview(state);
     drawPipeDraft(state);
     drawFittingDraft(state);
     drawSelectedHandles(state);
@@ -87,6 +89,15 @@ export function createRenderer(canvas, store, analyzer) {
     }
     currentBackground = src;
     backgroundImage.src = src;
+  }
+
+  function setHoveredFittingPreview(preview) {
+    const normalized = normalizeHoveredFittingPreview(preview);
+    if (hoveredFittingPreviewsEqual(hoveredFittingPreview, normalized)) {
+      return;
+    }
+    hoveredFittingPreview = normalized;
+    render(store.getState());
   }
 
   function drawGrid(state) {
@@ -440,6 +451,38 @@ export function createRenderer(canvas, store, analyzer) {
       }
       ctx.restore();
     });
+  }
+
+  function drawHoveredFittingPreview(state) {
+    if (state.ui.fittingDraft?.preview || !hoveredFittingPreview) {
+      return;
+    }
+
+    const preview = hoveredFittingPreview;
+    const screenPoint = worldToScreen({ x: preview.x, y: preview.y }, state.view);
+    const zoneColor = getZoneById(state, preview.zoneId)?.color ?? "#b65c2a";
+
+    ctx.save();
+    ctx.strokeStyle = zoneColor;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 5]);
+    ctx.beginPath();
+    ctx.arc(screenPoint.x, screenPoint.y, 18, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = zoneColor;
+    ctx.beginPath();
+    ctx.arc(screenPoint.x, screenPoint.y, 10, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 0.94;
+    drawFittingGlyph(screenPoint, zoneColor, preview.type, true, true);
+    if (state.view.showLabels) {
+      ctx.fillStyle = zoneColor;
+      ctx.font = "11px Aptos, Segoe UI, sans-serif";
+      ctx.fillText(preview.sizeSpec || preview.label || getFittingTypeMeta(preview.type).label, screenPoint.x + 12, screenPoint.y - 12);
+    }
+    ctx.restore();
   }
 
   function drawFittingDraft(state) {
@@ -941,6 +984,7 @@ export function createRenderer(canvas, store, analyzer) {
   return {
     resize,
     render,
+    setHoveredFittingPreview,
     getHitPipeRun,
     getPipeVertexHandleHit,
     getPipeMidpointHandleHit,
@@ -952,6 +996,27 @@ export function createRenderer(canvas, store, analyzer) {
     getStripHandleHit,
     buildExportSummary,
   };
+}
+
+function normalizeHoveredFittingPreview(preview) {
+  const x = Number(preview?.x);
+  const y = Number(preview?.y);
+  if (!(preview?.type && Number.isFinite(x) && Number.isFinite(y))) {
+    return null;
+  }
+
+  return {
+    type: preview.type,
+    x,
+    y,
+    zoneId: preview.zoneId ?? null,
+    sizeSpec: preview.sizeSpec ?? null,
+    label: preview.label ?? "",
+  };
+}
+
+function hoveredFittingPreviewsEqual(first, second) {
+  return JSON.stringify(first) === JSON.stringify(second);
 }
 
 function buildStripHandlePositions(state, sprinkler) {
