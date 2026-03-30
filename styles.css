@@ -31,6 +31,7 @@ body {
 
 button,
 input,
+textarea,
 select {
   font: inherit;
 }
@@ -50,6 +51,7 @@ button:disabled {
 }
 
 input,
+textarea,
 select {
   width: 100%;
   border-radius: 10px;
@@ -406,6 +408,13 @@ hr {
   display: grid;
   gap: 0.4rem;
   margin-bottom: 0.85rem;
+}
+
+.selection-note {
+  margin: -0.15rem 0 0.85rem;
+  color: var(--muted);
+  line-height: 1.45;
+  font-size: 0.9rem;
 }
 
 .field-compact {

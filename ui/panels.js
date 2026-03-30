@@ -3,7 +3,18 @@ import { buildFittingSuggestions, resolvePlacedFittingSizeSpec } from "../analys
 import { getAllFittingOptions, getCommonFittingOptions, getFittingTypeMeta, isManualFittingPlacementSupported } from "../geometry/fittings.js";
 import { PIPE_DIAMETER_OPTIONS, calculatePipeLengthUnits, formatPipeDiameterLabel } from "../geometry/pipes.js";
 import { fitBackgroundToView } from "../geometry/scale.js";
-import { cloneProjectSnapshot, findSelectedFitting, findSelectedPipeRun, findSelectedSprinkler, findSelectedValveBox, getNextZoneSeed, hasHydraulics, isProjectReady } from "../state/project-state.js";
+import {
+  cloneProjectSnapshot,
+  findSelectedController,
+  findSelectedFitting,
+  findSelectedPipeRun,
+  findSelectedSprinkler,
+  findSelectedValveBox,
+  findSelectedWireRun,
+  getNextZoneSeed,
+  hasHydraulics,
+  isProjectReady,
+} from "../state/project-state.js";
 
 export function bindPanels({ store, renderer, analyzer, interactions, io }) {
   const elements = bindElements();
@@ -49,6 +60,7 @@ function bindElements() {
     zonesList: document.getElementById("zones-list"),
     toggleCoverage: document.getElementById("toggle-coverage"),
     togglePipe: document.getElementById("toggle-pipe"),
+    toggleWire: document.getElementById("toggle-wire"),
     toggleFittings: document.getElementById("toggle-fittings"),
     toggleGrid: document.getElementById("toggle-grid"),
     toggleLabels: document.getElementById("toggle-labels"),
@@ -74,7 +86,9 @@ function bindElements() {
     selectionEmpty: document.getElementById("selection-empty"),
     selectionForm: document.getElementById("selection-form"),
     valveBoxForm: document.getElementById("valve-box-form"),
+    controllerForm: document.getElementById("controller-form"),
     pipeRunForm: document.getElementById("pipe-run-form"),
+    wireRunForm: document.getElementById("wire-run-form"),
     fittingForm: document.getElementById("fitting-form"),
     sprinklerCoverageModel: document.getElementById("sprinkler-coverage-model"),
     sprinklerLabel: document.getElementById("sprinkler-label"),
@@ -108,6 +122,12 @@ function bindElements() {
     valveBoxY: document.getElementById("valve-box-y"),
     valveBoxZones: document.getElementById("valve-box-zones"),
     deleteValveBoxButton: document.getElementById("delete-valve-box-button"),
+    controllerLabel: document.getElementById("controller-label"),
+    controllerX: document.getElementById("controller-x"),
+    controllerY: document.getElementById("controller-y"),
+    controllerStationCapacity: document.getElementById("controller-station-capacity"),
+    controllerConnectedBoxes: document.getElementById("controller-connected-boxes"),
+    deleteControllerButton: document.getElementById("delete-controller-button"),
     pipeLabel: document.getElementById("pipe-label"),
     pipeKind: document.getElementById("pipe-kind"),
     pipeZoneField: document.getElementById("pipe-zone-field"),
@@ -115,6 +135,15 @@ function bindElements() {
     pipeDiameter: document.getElementById("pipe-diameter"),
     pipeLength: document.getElementById("pipe-length"),
     deletePipeButton: document.getElementById("delete-pipe-button"),
+    wireLabel: document.getElementById("wire-label"),
+    wireController: document.getElementById("wire-controller"),
+    wireValveBox: document.getElementById("wire-valve-box"),
+    wireConductorCount: document.getElementById("wire-conductor-count"),
+    wireGauge: document.getElementById("wire-gauge"),
+    wireColor: document.getElementById("wire-color"),
+    wireLength: document.getElementById("wire-length"),
+    wireRequirement: document.getElementById("wire-requirement"),
+    deleteWireButton: document.getElementById("delete-wire-button"),
     fittingType: document.getElementById("fitting-type"),
     fittingZone: document.getElementById("fitting-zone"),
     fittingSize: document.getElementById("fitting-size"),
@@ -307,6 +336,9 @@ function bindEvents(elements, store, renderer, interactions, io) {
   elements.togglePipe.addEventListener("change", () => {
     store.dispatch({ type: "SET_VIEW", payload: { showPipe: elements.togglePipe.checked } });
   });
+  elements.toggleWire.addEventListener("change", () => {
+    store.dispatch({ type: "SET_VIEW", payload: { showWire: elements.toggleWire.checked } });
+  });
   elements.toggleFittings.addEventListener("change", () => {
     store.dispatch({ type: "SET_VIEW", payload: { showFittings: elements.toggleFittings.checked } });
   });
@@ -380,9 +412,19 @@ function bindEvents(elements, store, renderer, interactions, io) {
     element.addEventListener("input", () => updateValveBoxSelection(elements, store));
   });
 
+  [elements.controllerLabel, elements.controllerX, elements.controllerY, elements.controllerStationCapacity].forEach((element) => {
+    const eventName = element?.tagName === "SELECT" ? "change" : "input";
+    element?.addEventListener(eventName, () => updateControllerSelection(elements, store));
+  });
+
   [elements.pipeLabel, elements.pipeKind, elements.pipeZone, elements.pipeDiameter].forEach((element) => {
     const eventName = element.tagName === "SELECT" ? "change" : "input";
     element.addEventListener(eventName, () => updatePipeRunSelection(elements, store));
+  });
+
+  [elements.wireLabel, elements.wireController, elements.wireValveBox, elements.wireConductorCount, elements.wireGauge, elements.wireColor].forEach((element) => {
+    const eventName = element?.tagName === "SELECT" ? "change" : "input";
+    element?.addEventListener(eventName, () => updateWireRunSelection(elements, store));
   });
 
   elements.sprinklerZoneButton.addEventListener("click", () => {
@@ -444,10 +486,24 @@ function bindEvents(elements, store, renderer, interactions, io) {
     }
   });
 
+  elements.deleteControllerButton.addEventListener("click", () => {
+    const selected = findSelectedController(store.getState());
+    if (selected) {
+      store.dispatch({ type: "DELETE_CONTROLLER", payload: { id: selected.id } });
+    }
+  });
+
   elements.deletePipeButton.addEventListener("click", () => {
     const selected = findSelectedPipeRun(store.getState());
     if (selected) {
       store.dispatch({ type: "DELETE_PIPE_RUN", payload: { id: selected.id } });
+    }
+  });
+
+  elements.deleteWireButton.addEventListener("click", () => {
+    const selected = findSelectedWireRun(store.getState());
+    if (selected) {
+      store.dispatch({ type: "DELETE_WIRE_RUN", payload: { id: selected.id } });
     }
   });
 
@@ -701,6 +757,25 @@ function updateValveBoxSelection(elements, store) {
   });
 }
 
+function updateControllerSelection(elements, store) {
+  const selected = findSelectedController(store.getState());
+  if (!selected) {
+    return;
+  }
+  store.dispatch({
+    type: "UPDATE_CONTROLLER",
+    payload: {
+      id: selected.id,
+      patch: {
+        label: elements.controllerLabel.value,
+        x: Number(elements.controllerX.value),
+        y: Number(elements.controllerY.value),
+        stationCapacity: Number(elements.controllerStationCapacity.value),
+      },
+    },
+  });
+}
+
 function updatePipeRunSelection(elements, store) {
   const selected = findSelectedPipeRun(store.getState());
   if (!selected) {
@@ -715,6 +790,27 @@ function updatePipeRunSelection(elements, store) {
         kind: elements.pipeKind.value,
         zoneId: elements.pipeKind.value === "zone" ? (elements.pipeZone.value || null) : null,
         diameterInches: elements.pipeDiameter.value ? Number(elements.pipeDiameter.value) : null,
+      },
+    },
+  });
+}
+
+function updateWireRunSelection(elements, store) {
+  const selected = findSelectedWireRun(store.getState());
+  if (!selected) {
+    return;
+  }
+  store.dispatch({
+    type: "UPDATE_WIRE_RUN",
+    payload: {
+      id: selected.id,
+      patch: {
+        label: elements.wireLabel.value,
+        controllerId: elements.wireController.value || null,
+        valveBoxId: elements.wireValveBox.value || null,
+        conductorCount: Number(elements.wireConductorCount.value),
+        gaugeAwg: elements.wireGauge.value,
+        colorCode: elements.wireColor.value,
       },
     },
   });
@@ -747,6 +843,7 @@ function updateUi(elements, state, renderer, analyzer) {
   elements.zoneViewMode.value = state.view.zoneViewMode;
   elements.toggleCoverage.checked = state.view.showCoverage;
   elements.togglePipe.checked = state.view.showPipe !== false;
+  elements.toggleWire.checked = state.view.showWire !== false;
   elements.toggleFittings.checked = state.view.showFittings !== false;
   elements.toggleGrid.checked = state.view.showGrid;
   elements.toggleLabels.checked = state.view.showLabels;
@@ -768,11 +865,15 @@ function updateUi(elements, state, renderer, analyzer) {
 
   const selectedSprinkler = findSelectedSprinkler(state);
   const selectedValveBox = findSelectedValveBox(state);
+  const selectedController = findSelectedController(state);
   const selectedPipeRun = findSelectedPipeRun(state);
+  const selectedWireRun = findSelectedWireRun(state);
   const selectedFitting = findSelectedFitting(state);
   populateZoneSelect(elements.activeZoneSelect, state.zones, state.ui.activeZoneId);
   populateAnalysisZoneSelect(elements.analysisZoneSelect, state.zones, analysis?.selectedZoneId ?? state.view.analysisZoneId ?? "");
   populateZoneSelect(elements.pipeZone, state.zones, selectedPipeRun?.zoneId ?? "");
+  populateControllerSelect(elements.wireController, state.controllers, selectedWireRun?.controllerId ?? "");
+  populateValveBoxSelect(elements.wireValveBox, state.valveBoxes, selectedWireRun?.valveBoxId ?? "");
   populateFittingsZoneSelect(elements.fittingsZoneSelect, state.zones, state.ui.fittingsPanel);
   elements.analysisZoneSelect.disabled = (state.view.analysisOverlayMode ?? "application_rate") !== "zone_catch_can" || !state.zones.length;
   populateSprinklerZonePicker(elements, state.zones, selectedSprinkler?.zoneId ?? "");
@@ -802,16 +903,22 @@ function updateUi(elements, state, renderer, analyzer) {
     ? "Selected Sprinkler"
     : selectedValveBox
       ? "Selected Valve Box"
+      : selectedController
+        ? "Selected Controller"
       : selectedPipeRun
         ? "Selected Pipe Run"
+        : selectedWireRun
+          ? "Selected Wire Run"
         : selectedFitting
           ? "Selected Fitting"
           : "Selected Item";
   elements.selectionTitle.textContent = selectionTitle;
-  elements.selectionEmpty.hidden = Boolean(selectedSprinkler || selectedValveBox || selectedPipeRun || selectedFitting);
+  elements.selectionEmpty.hidden = Boolean(selectedSprinkler || selectedValveBox || selectedController || selectedPipeRun || selectedWireRun || selectedFitting);
   elements.selectionForm.hidden = !selectedSprinkler;
   elements.valveBoxForm.hidden = !selectedValveBox;
+  elements.controllerForm.hidden = !selectedController;
   elements.pipeRunForm.hidden = !selectedPipeRun;
+  elements.wireRunForm.hidden = !selectedWireRun;
   elements.fittingForm.hidden = !selectedFitting;
   if (selectedSprinkler) {
     const coverageValue = selectedSprinkler.coverageModel === "strip"
@@ -856,6 +963,21 @@ function updateUi(elements, state, renderer, analyzer) {
     elements.valveBoxZones.innerHTML = "";
   }
 
+  if (selectedController) {
+    const connectedBoxes = getConnectedValveBoxesForController(state, selectedController.id);
+    elements.controllerLabel.value = selectedController.label ?? "";
+    elements.controllerX.value = formatEditableNumber(selectedController.x);
+    elements.controllerY.value = formatEditableNumber(selectedController.y);
+    elements.controllerStationCapacity.value = String(selectedController.stationCapacity ?? 8);
+    elements.controllerConnectedBoxes.value = connectedBoxes.length
+      ? connectedBoxes
+        .map((valveBox) => formatValveBoxConnectionSummary(state, valveBox))
+        .join(", ")
+      : "No connected valve boxes yet.";
+  } else {
+    elements.controllerConnectedBoxes.value = "";
+  }
+
   if (selectedPipeRun) {
     elements.pipeLabel.value = selectedPipeRun.label ?? "";
     elements.pipeKind.value = selectedPipeRun.kind ?? "main";
@@ -868,6 +990,23 @@ function updateUi(elements, state, renderer, analyzer) {
     elements.pipeZoneField.hidden = false;
     elements.pipeZone.disabled = false;
     elements.pipeLength.value = "";
+  }
+
+  if (selectedWireRun) {
+    elements.wireLabel.value = selectedWireRun.label ?? "";
+    elements.wireController.value = selectedWireRun.controllerId ?? "";
+    elements.wireValveBox.value = selectedWireRun.valveBoxId ?? "";
+    elements.wireConductorCount.value = String(selectedWireRun.conductorCount ?? 2);
+    elements.wireGauge.value = selectedWireRun.gaugeAwg ?? "18";
+    elements.wireColor.value = selectedWireRun.colorCode ?? "";
+    elements.wireLength.value = formatPipeLengthValue(state, selectedWireRun.points);
+    elements.wireRequirement.textContent = buildWireRequirementText(state, selectedWireRun.valveBoxId, selectedWireRun.conductorCount);
+  } else {
+    if (elements.wireConductorCount) {
+      elements.wireConductorCount.value = "2";
+    }
+    elements.wireLength.value = "";
+    elements.wireRequirement.textContent = "Assign a valve box to compare the cable conductor count against the zones in that box.";
   }
 
   if (selectedFitting) {
@@ -894,9 +1033,12 @@ function updateUi(elements, state, renderer, analyzer) {
     ["Scale", state.scale.calibrated ? `${state.scale.pixelsPerUnit.toFixed(2)} px/${state.scale.units}` : "Not calibrated"],
     ["Heads", String(summary.sprinklerCount)],
     ["Valve boxes", String(summary.valveBoxCount ?? 0)],
+    ["Controllers", String(summary.controllerCount ?? 0)],
     ["Pipe runs", String(summary.pipeRunCount ?? 0)],
+    ["Wire runs", String(summary.wireRunCount ?? 0)],
     ["Fittings", String(placedFittingCount)],
     ["Pipe length", state.scale.pixelsPerUnit ? `${summary.totalPipeLength.toFixed(1)} ${state.scale.units}` : "--"],
+    ["Wire length", state.scale.pixelsPerUnit ? `${summary.totalWireLength.toFixed(1)} ${state.scale.units}` : "--"],
     ["Mean size", summary.meanRadius ? `${summary.meanRadius.toFixed(1)} ${state.scale.units}` : "--"],
     ["Peak rate", analysis?.summary.applicationRateMaxInHr ? `${analysis.summary.applicationRateMaxInHr.toFixed(2)} in/hr` : "--"],
     ["Avg rate", analysis?.summary.applicationRateAverageInHr ? `${analysis.summary.applicationRateAverageInHr.toFixed(2)} in/hr` : "--"],
@@ -925,6 +1067,28 @@ function populateZoneSelect(select, zones, value) {
   const current = value ?? "";
   const options = ['<option value="">Unassigned</option>']
     .concat(zones.map((zone) => `<option value="${zone.id}">${zone.name}</option>`));
+  select.innerHTML = options.join("");
+  select.value = current;
+}
+
+function populateControllerSelect(select, controllers, value) {
+  if (!select) {
+    return;
+  }
+  const current = value ?? "";
+  const options = ['<option value="">Unassigned</option>']
+    .concat((controllers ?? []).map((controller) => `<option value="${controller.id}">${escapeHtml(controller.label)}</option>`));
+  select.innerHTML = options.join("");
+  select.value = current;
+}
+
+function populateValveBoxSelect(select, valveBoxes, value) {
+  if (!select) {
+    return;
+  }
+  const current = value ?? "";
+  const options = ['<option value="">Unassigned</option>']
+    .concat((valveBoxes ?? []).map((valveBox) => `<option value="${valveBox.id}">${escapeHtml(valveBox.label)}</option>`));
   select.innerHTML = options.join("");
   select.value = current;
 }
@@ -1625,6 +1789,60 @@ function collectRuntimeGroupCounts(zones) {
   return counts;
 }
 
+function getConnectedValveBoxesForController(state, controllerId) {
+  if (!controllerId) {
+    return [];
+  }
+  const valveBoxesById = new Map((state.valveBoxes ?? []).map((valveBox) => [valveBox.id, valveBox]));
+  const connected = new Map();
+  (state.wireRuns ?? []).forEach((wireRun) => {
+    if (wireRun.controllerId !== controllerId || !wireRun.valveBoxId) {
+      return;
+    }
+    const valveBox = valveBoxesById.get(wireRun.valveBoxId) ?? null;
+    if (valveBox) {
+      connected.set(valveBox.id, valveBox);
+    }
+  });
+  return [...connected.values()];
+}
+
+function formatValveBoxConnectionSummary(state, valveBox) {
+  const zones = getZonesForValveBox(state, valveBox?.id);
+  const label = valveBox?.label || "Valve box";
+  return `${label} (${zones.length} zone${zones.length === 1 ? "" : "s"})`;
+}
+
+function getZonesForValveBox(state, valveBoxId) {
+  if (!valveBoxId) {
+    return [];
+  }
+  return (state.zones ?? []).filter((zone) => zone.valveBoxId === valveBoxId);
+}
+
+function getRequiredWireConductorsForValveBox(state, valveBoxId) {
+  if (!valveBoxId) {
+    return null;
+  }
+  return getZonesForValveBox(state, valveBoxId).length + 1;
+}
+
+function buildWireRequirementText(state, valveBoxId, conductorCount) {
+  if (!valveBoxId) {
+    return "Assign a valve box to compare the cable conductor count against the zones in that box.";
+  }
+
+  const zones = getZonesForValveBox(state, valveBoxId);
+  const required = getRequiredWireConductorsForValveBox(state, valveBoxId) ?? 1;
+  const provided = Number.isFinite(Number(conductorCount)) ? Number(conductorCount) : null;
+  const comparison = provided == null
+    ? ""
+    : provided >= required
+      ? ` ${provided}-conductor cable meets the minimum.`
+      : ` ${provided}-conductor cable is below the minimum.`;
+  return `Required minimum: ${required} (${zones.length} zone${zones.length === 1 ? "" : "s"} + common).${comparison}`;
+}
+
 function collectRuntimeGroupNames(zones) {
   const namesByKey = new Map();
   for (const zone of zones ?? []) {
@@ -1697,6 +1915,9 @@ function buildZonesListRenderKey(state, analysis) {
         includeInPartsList: zone.includeInPartsList !== false,
         valveBoxId: zone.valveBoxId ?? null,
         valveBoxLabel: zone.valveBoxId ? (state.valveBoxes ?? []).find((valveBox) => valveBox.id === zone.valveBoxId)?.label ?? null : null,
+        controllerId: zone.controllerId ?? null,
+        controllerLabel: zone.controllerId ? (state.controllers ?? []).find((controller) => controller.id === zone.controllerId)?.label ?? null : null,
+        stationNumber: zone.stationNumber ?? null,
         headCount: headCountsByZoneId.get(zone.id) ?? 0,
         metrics: metrics ? {
           totalFlowGpm: metrics.totalFlowGpm,
@@ -1915,14 +2136,23 @@ function renderPartsScreen(elements, state, analysis) {
 
   const includedZoneCount = parts.zones.filter((zone) => zone.included).length;
   const excludedZoneCount = parts.zones.length - includedZoneCount;
-  elements.partsSummary.textContent = `${parts.includedHeadCount} included head${parts.includedHeadCount === 1 ? "" : "s"}, ${parts.lineItemCount} line item${parts.lineItemCount === 1 ? "" : "s"}, ${parts.totalBodyQuantity} bodies, ${parts.totalNozzleQuantity} nozzles, ${parts.totalFittingQuantity} fitting${parts.totalFittingQuantity === 1 ? "" : "s"}, ${parts.totalMainPipeLength.toFixed(1)} ${state.scale.units} main pipe, ${parts.totalZonePipeLength.toFixed(1)} ${state.scale.units} zone pipe, ${parts.totalPipeLength.toFixed(1)} ${state.scale.units} total pipe. ${includedZoneCount} zone${includedZoneCount === 1 ? "" : "s"} included${excludedZoneCount ? `, ${excludedZoneCount} excluded` : ""}.`;
+  elements.partsSummary.textContent = `${parts.includedHeadCount} included head${parts.includedHeadCount === 1 ? "" : "s"}, ${parts.lineItemCount} line item${parts.lineItemCount === 1 ? "" : "s"}, ${parts.totalBodyQuantity} bodies, ${parts.totalNozzleQuantity} nozzles, ${parts.totalFittingQuantity} fitting${parts.totalFittingQuantity === 1 ? "" : "s"}, ${parts.totalControllerQuantity ?? 0} controller${(parts.totalControllerQuantity ?? 0) === 1 ? "" : "s"}, ${parts.totalMainPipeLength.toFixed(1)} ${state.scale.units} main pipe, ${parts.totalZonePipeLength.toFixed(1)} ${state.scale.units} zone pipe, ${(parts.totalWireLength ?? 0).toFixed(1)} ${state.scale.units} control wire. ${includedZoneCount} zone${includedZoneCount === 1 ? "" : "s"} included${excludedZoneCount ? `, ${excludedZoneCount} excluded` : ""}.`;
 
   const rows = parts.groupBy === "body_nozzle_split"
-    ? parts.bodyRows.concat(parts.nozzleRows).concat(parts.fittingRows ?? []).concat(parts.pipeRows ?? [])
-    : parts.rows.concat(parts.fittingRows ?? []).concat(parts.pipeRows ?? []);
+    ? parts.bodyRows
+      .concat(parts.nozzleRows)
+      .concat(parts.fittingRows ?? [])
+      .concat(parts.pipeRows ?? [])
+      .concat(parts.wireRows ?? [])
+      .concat(parts.controllerRows ?? [])
+    : parts.rows
+      .concat(parts.fittingRows ?? [])
+      .concat(parts.pipeRows ?? [])
+      .concat(parts.wireRows ?? [])
+      .concat(parts.controllerRows ?? []);
   const hasRows = rows.length > 0;
   elements.partsEmpty.hidden = hasRows;
-  elements.partsEmpty.textContent = hasRows ? "" : "No included recommended heads, placed fittings, or pipe runs yet.";
+  elements.partsEmpty.textContent = hasRows ? "" : "No included recommended heads, fittings, pipe, wire, or controllers yet.";
   elements.partsTable.innerHTML = hasRows
     ? renderPartsTables(parts, state.scale.units)
     : "";
@@ -1960,6 +2190,8 @@ function renderPartsTables(parts, units) {
     renderPartsTableSection("Nozzles", parts.nozzleRows, parts.showZoneUsage),
     renderPartsTableSection("Fittings", parts.fittingRows ?? [], parts.showZoneUsage),
     renderPipeTableSection("Pipe", parts.pipeRows ?? [], parts.showZoneUsage, units),
+    renderPipeTableSection("Wire", parts.wireRows ?? [], parts.showZoneUsage, units),
+    renderPartsTableSection("Controllers", parts.controllerRows ?? [], parts.showZoneUsage),
   ].join("");
 }
 
@@ -2006,10 +2238,13 @@ function renderPartsTable(rows, showZoneUsage) {
 }
 
 function renderPipeTableSection(title, rows, showZoneUsage, units) {
+  const emptyMessage = title === "Wire"
+    ? "No included wire runs yet."
+    : "No included pipe runs yet.";
   return `
     <div class="parts-table-section">
       <h3>${title}</h3>
-      ${rows.length ? renderPipeTable(rows, showZoneUsage, units) : '<div class="empty-card">No included pipe runs yet.</div>'}
+      ${rows.length ? renderPipeTable(rows, showZoneUsage, units) : `<div class="empty-card">${emptyMessage}</div>`}
     </div>
   `;
 }

@@ -3,6 +3,7 @@ import { getCoverageModel, pointFallsWithinCoverage, resolveCoverageBounds, reso
 import { getFittingTypeMeta } from "../geometry/fittings.js";
 import { resolvePlacedFittingSizeSpec } from "./fittings-analysis.js";
 import { calculatePipeLengthUnits, formatPipeDiameterLabel, getPipeKindLabel, normalizePipeKind } from "../geometry/pipes.js";
+import { formatWireRunLabel } from "../geometry/wires.js";
 
 const DEFAULT_ASSUMPTIONS = {
   sprayArcNormalizeToleranceDeg: 10,
@@ -63,15 +64,19 @@ function buildEmptySnapshot(designFlowLimitGpm, targetDepthInches = 1) {
       nozzleRows: [],
       fittingRows: [],
       pipeRows: [],
+      wireRows: [],
+      controllerRows: [],
       showZoneUsage: true,
       includedHeadCount: 0,
       lineItemCount: 0,
       totalBodyQuantity: 0,
       totalNozzleQuantity: 0,
       totalFittingQuantity: 0,
+      totalControllerQuantity: 0,
       totalMainPipeLength: 0,
       totalZonePipeLength: 0,
       totalPipeLength: 0,
+      totalWireLength: 0,
     },
     grid: null,
     summary: {
@@ -121,6 +126,9 @@ function buildCacheKey(state) {
       runtimeMinutes: zone.runtimeMinutes ?? null,
       runtimeGroupName: zone.runtimeGroupName ?? null,
       includeInPartsList: zone.includeInPartsList !== false,
+      valveBoxId: zone.valveBoxId ?? null,
+      controllerId: zone.controllerId ?? null,
+      stationNumber: zone.stationNumber ?? null,
     })),
     sprinklers: (state.sprinklers ?? []).map((sprinkler) => ({
       id: sprinkler.id,
@@ -148,6 +156,29 @@ function buildCacheKey(state) {
       label: pipeRun.label ?? "",
       diameterInches: pipeRun.diameterInches ?? null,
       points: pipeRun.points ?? [],
+    })),
+    controllers: (state.controllers ?? []).map((controller) => ({
+      id: controller.id,
+      label: controller.label ?? "",
+      stationCapacity: controller.stationCapacity ?? 8,
+      x: controller.x,
+      y: controller.y,
+    })),
+    valveBoxes: (state.valveBoxes ?? []).map((valveBox) => ({
+      id: valveBox.id,
+      label: valveBox.label ?? "",
+      x: valveBox.x,
+      y: valveBox.y,
+    })),
+    wireRuns: (state.wireRuns ?? []).map((wireRun) => ({
+      id: wireRun.id,
+      controllerId: wireRun.controllerId ?? null,
+      valveBoxId: wireRun.valveBoxId ?? null,
+      label: wireRun.label ?? "",
+      conductorCount: wireRun.conductorCount ?? 2,
+      gaugeAwg: wireRun.gaugeAwg ?? "18",
+      colorCode: wireRun.colorCode ?? null,
+      points: wireRun.points ?? [],
     })),
     fittings: (state.fittings ?? []).map((fitting) => ({
       id: fitting.id,
@@ -308,12 +339,15 @@ function buildPartsSnapshot(state, recommendations, recommendationsById, zonesBy
   const nozzleRows = rows.filter((row) => row.category === "Nozzle");
   const fittingRows = buildFittingRows(state, includedZoneIds, zoneOrder, zonesById, recommendationsById);
   const pipeRows = buildPipeRows(state, includedZoneIds, zoneOrder, zonesById);
+  const wireRows = buildWireRows(state, includedZoneIds, zoneOrder, zonesById);
+  const controllerRows = buildControllerRows(state, includedZoneIds, zoneOrder, zonesById);
   const totalMainPipeLength = pipeRows
     .filter((row) => row.kind === "main")
     .reduce((sum, row) => sum + row.length, 0);
   const totalZonePipeLength = pipeRows
     .filter((row) => row.kind === "zone")
     .reduce((sum, row) => sum + row.length, 0);
+  const totalWireLength = wireRows.reduce((sum, row) => sum + row.length, 0);
 
   return {
     groupBy,
@@ -326,14 +360,18 @@ function buildPartsSnapshot(state, recommendations, recommendationsById, zonesBy
     nozzleRows,
     fittingRows,
     pipeRows,
+    wireRows,
+    controllerRows,
     includedHeadCount: filteredRecommendations.length,
-    lineItemCount: rows.length + fittingRows.length + pipeRows.length,
+    lineItemCount: rows.length + fittingRows.length + pipeRows.length + wireRows.length + controllerRows.length,
     totalBodyQuantity: bodyRows.reduce((sum, row) => sum + row.quantity, 0),
     totalNozzleQuantity: nozzleRows.reduce((sum, row) => sum + row.quantity, 0),
     totalFittingQuantity: fittingRows.reduce((sum, row) => sum + row.quantity, 0),
+    totalControllerQuantity: controllerRows.reduce((sum, row) => sum + row.quantity, 0),
     totalMainPipeLength,
     totalZonePipeLength,
     totalPipeLength: totalMainPipeLength + totalZonePipeLength,
+    totalWireLength,
   };
 }
 
@@ -1853,6 +1891,92 @@ function buildPipeRows(state, includedZoneIds, zoneOrder, zonesById) {
     .sort((a, b) => comparePipeRows(a, b));
 }
 
+function buildWireRows(state, includedZoneIds, zoneOrder, zonesById) {
+  const rows = new Map();
+  const pixelsPerUnit = Number(state.scale?.pixelsPerUnit);
+
+  for (const wireRun of state.wireRuns ?? []) {
+    const linkedZones = getZonesForValveBox(state, wireRun.valveBoxId);
+    const includedZones = linkedZones.filter((zone) => includedZoneIds.has(zone.id));
+    const include = !linkedZones.length || includedZones.length > 0;
+    if (!include) {
+      continue;
+    }
+
+    const displayZones = includedZones.length ? includedZones : linkedZones;
+    const zoneName = displayZones.length
+      ? displayZones.map((zone) => zonesById.get(zone.id)?.name ?? zone.name ?? "Unassigned").join(", ")
+      : null;
+    const zoneOrderValue = displayZones.length
+      ? Math.min(...displayZones.map((zone) => zoneOrder.get(zone.id) ?? Number.MAX_SAFE_INTEGER))
+      : Number.MAX_SAFE_INTEGER;
+    const requiredConductors = getRequiredWireConductorsForValveBox(state, wireRun.valveBoxId);
+    const noteParts = [];
+    const valveBox = wireRun.valveBoxId
+      ? (state.valveBoxes ?? []).find((item) => item.id === wireRun.valveBoxId) ?? null
+      : null;
+    if (valveBox?.label) {
+      noteParts.push(`Box ${valveBox.label}`);
+    } else if (!wireRun.valveBoxId) {
+      noteParts.push("No valve box assigned");
+    }
+    if (wireRun.colorCode) {
+      noteParts.push(`Color ${wireRun.colorCode}`);
+    }
+    if (requiredConductors && wireRun.conductorCount < requiredConductors) {
+      noteParts.push(`Needs ${requiredConductors} conductors minimum`);
+    }
+    addPipeRow(rows, {
+      kind: "wire",
+      category: "Wire",
+      itemKey: `wire:${wireRun.gaugeAwg ?? "18"}:${wireRun.conductorCount ?? 2}`,
+      itemLabel: formatWireRunLabel(wireRun.conductorCount, wireRun.gaugeAwg),
+      length: pixelsPerUnit > 0 ? calculatePipeLengthUnits(wireRun.points, pixelsPerUnit) : 0,
+      zoneName,
+      zoneOrderValue,
+      note: noteParts.join(" | "),
+    });
+  }
+
+  return [...rows.values()]
+    .map((row) => finalizePipeRow(row))
+    .sort((a, b) => comparePipeRows(a, b));
+}
+
+function buildControllerRows(state, includedZoneIds, zoneOrder, zonesById) {
+  return (state.controllers ?? [])
+    .flatMap((controller) => {
+      const linkedWireRuns = (state.wireRuns ?? []).filter((wireRun) => wireRun.controllerId === controller.id);
+      const linkedValveBoxes = getConnectedValveBoxesForController(state, controller.id);
+      const linkedZones = linkedValveBoxes.flatMap((valveBox) => getZonesForValveBox(state, valveBox.id));
+      const includedZones = linkedZones.filter((zone) => includedZoneIds.has(zone.id));
+      if (linkedZones.length && !includedZones.length) {
+        return [];
+      }
+      const zones = (includedZones.length ? includedZones : linkedZones)
+        .map((zone) => ({
+          name: zonesById.get(zone.id)?.name ?? zone.name ?? "Unassigned",
+          order: zoneOrder.get(zone.id) ?? Number.MAX_SAFE_INTEGER,
+        }))
+        .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
+        .map((entry) => entry.name);
+      return [{
+        category: "Controller",
+        itemKey: `controller:${controller.id}`,
+        itemLabel: `${controller.label || "Controller"} - ${controller.stationCapacity ?? 8}-station controller`,
+        quantity: 1,
+        zones,
+        zonesLabel: zones.join(", "),
+        notes: linkedValveBoxes.length
+          ? `${linkedWireRuns.length} wire run${linkedWireRuns.length === 1 ? "" : "s"} | ${linkedValveBoxes.length} valve box${linkedValveBoxes.length === 1 ? "" : "es"}`
+          : linkedWireRuns.length
+            ? `${linkedWireRuns.length} wire run${linkedWireRuns.length === 1 ? "" : "s"} | no valve box assigned`
+            : "No connected wire runs",
+      }];
+    })
+    .sort((a, b) => comparePartRows(a, b));
+}
+
 function buildFittingRows(state, includedZoneIds, zoneOrder, zonesById, recommendationsById) {
   const rows = new Map();
 
@@ -1927,9 +2051,41 @@ function finalizePipeRow(row) {
 }
 
 function comparePipeRows(a, b) {
-  const kindOrder = { main: 0, zone: 1 };
+  const kindOrder = { main: 0, zone: 1, wire: 2 };
   return (kindOrder[a.kind] ?? 99) - (kindOrder[b.kind] ?? 99)
     || a.itemLabel.localeCompare(b.itemLabel, undefined, { numeric: true, sensitivity: "base" });
+}
+
+function getZonesForValveBox(state, valveBoxId) {
+  if (!valveBoxId) {
+    return [];
+  }
+  return (state.zones ?? []).filter((zone) => zone.valveBoxId === valveBoxId);
+}
+
+function getRequiredWireConductorsForValveBox(state, valveBoxId) {
+  if (!valveBoxId) {
+    return null;
+  }
+  return getZonesForValveBox(state, valveBoxId).length + 1;
+}
+
+function getConnectedValveBoxesForController(state, controllerId) {
+  if (!controllerId) {
+    return [];
+  }
+  const valveBoxesById = new Map((state.valveBoxes ?? []).map((valveBox) => [valveBox.id, valveBox]));
+  const connected = new Map();
+  (state.wireRuns ?? []).forEach((wireRun) => {
+    if (wireRun.controllerId !== controllerId || !wireRun.valveBoxId) {
+      return;
+    }
+    const valveBox = valveBoxesById.get(wireRun.valveBoxId) ?? null;
+    if (valveBox) {
+      connected.set(valveBox.id, valveBox);
+    }
+  });
+  return [...connected.values()];
 }
 
 function buildPartsRows(recommendations, groupBy, zoneOrder, zonesById) {

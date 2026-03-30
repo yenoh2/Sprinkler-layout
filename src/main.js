@@ -1,4 +1,13 @@
-import { buildCopiedSprinklerLabel, createInitialState, createStore, findSelectedPipeRun, findSelectedSprinkler, findSelectedValveBox } from "../state/project-state.js";
+import {
+  buildCopiedSprinklerLabel,
+  createInitialState,
+  createStore,
+  findSelectedController,
+  findSelectedPipeRun,
+  findSelectedSprinkler,
+  findSelectedValveBox,
+  findSelectedWireRun,
+} from "../state/project-state.js";
 import { createRenderer } from "../canvas/renderer.js";
 import { createInteractionController } from "../canvas/interactions.js";
 import { bindPanels } from "../ui/panels.js";
@@ -88,6 +97,7 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Delete" || event.key === "Backspace") {
     const state = store.getState();
     const selectedPipeRun = findSelectedPipeRun(state);
+    const selectedWireRun = findSelectedWireRun(state);
     if (selectedPipeRun && Number.isInteger(state.ui.selectedPipeVertexIndex)) {
       event.preventDefault();
       store.dispatch({
@@ -101,6 +111,11 @@ document.addEventListener("keydown", (event) => {
       store.dispatch({ type: "DELETE_PIPE_RUN", payload: { id: selectedPipeRun.id } });
       return;
     }
+    if (selectedWireRun) {
+      event.preventDefault();
+      store.dispatch({ type: "DELETE_WIRE_RUN", payload: { id: selectedWireRun.id } });
+      return;
+    }
     if (state.ui.selectedSprinklerId) {
       event.preventDefault();
       store.dispatch({ type: "DELETE_SPRINKLER", payload: { id: state.ui.selectedSprinklerId } });
@@ -109,6 +124,11 @@ document.addEventListener("keydown", (event) => {
     if (state.ui.selectedValveBoxId) {
       event.preventDefault();
       store.dispatch({ type: "DELETE_VALVE_BOX", payload: { id: state.ui.selectedValveBoxId } });
+      return;
+    }
+    if (state.ui.selectedControllerId) {
+      event.preventDefault();
+      store.dispatch({ type: "DELETE_CONTROLLER", payload: { id: state.ui.selectedControllerId } });
       return;
     }
     if (state.ui.selectedFittingId) {
@@ -130,6 +150,11 @@ document.addEventListener("keydown", (event) => {
       interactions.cancelPipeDraft();
       return;
     }
+    if (state.ui.activeTool === "wire" && state.ui.wireDraft) {
+      event.preventDefault();
+      interactions.cancelWireDraft();
+      return;
+    }
     if (state.ui.activeTool === "measure" && (state.ui.measurePoints.length || state.ui.measurePreviewPoint)) {
       event.preventDefault();
       store.dispatch({ type: "CLEAR_MEASURE" });
@@ -142,6 +167,11 @@ document.addEventListener("keydown", (event) => {
     if (state.ui.activeTool === "pipe" && state.ui.pipeDraft?.points?.length >= 2) {
       event.preventDefault();
       interactions.finishPipeDraft();
+      return;
+    }
+    if (state.ui.activeTool === "wire" && state.ui.wireDraft?.points?.length >= 2) {
+      event.preventDefault();
+      interactions.finishWireDraft();
     }
   }
 });
@@ -230,7 +260,7 @@ function pasteSprinklerFromClipboard() {
     return false;
   }
 
-  if (findSelectedValveBox(store.getState())) {
+  if (findSelectedValveBox(store.getState()) || findSelectedController(store.getState())) {
     return false;
   }
 

@@ -16,7 +16,7 @@ The sprinkler layout tool shall allow a user to load a scale drawing of a yard, 
 
 - Full hydraulic simulation for friction loss across every branch and fitting.
 - Automatic pipe routing or trench planning in the first version.
-- Valve wiring, controller programming, or irrigation scheduling.
+- Automatic wire routing or valve wiring generation, controller programming, or irrigation scheduling.
 - Plant-specific watering recommendations beyond sprinkler coverage layout.
 
 ## 4. Primary Users

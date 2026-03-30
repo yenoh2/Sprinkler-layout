@@ -27,7 +27,7 @@ export function createInteractionController(canvas, store, renderer, analyzer) {
 
   function syncState(state) {
     document.getElementById("hint-text").textContent = `Hint: ${state.ui.hint}`;
-    canvas.style.cursor = dragState?.kind?.includes("handle") || dragState?.kind?.startsWith("pipe-") || fittingPlacementState
+    canvas.style.cursor = dragState || fittingPlacementState
       ? "grabbing"
       : getCursorForTool(state.ui.activeTool);
   }
@@ -153,12 +153,89 @@ export function createInteractionController(canvas, store, renderer, analyzer) {
       return;
     }
 
+    if (state.ui.activeTool === "wire") {
+      if (!state.scale.calibrated) {
+        return;
+      }
+      const snapResult = getWireSnapResult(state, worldPoint, {
+        excludeDraftTerminal: true,
+      });
+      const snappedPoint = snapResult.point;
+      if (!state.ui.wireDraft) {
+        const initialValveBoxId = inferValveBoxIdFromWireSnap(null, snapResult.source);
+        const initialControllerId = inferControllerIdFromWireSnap(null, snapResult.source);
+        store.dispatch({
+          type: "START_WIRE_DRAFT",
+          payload: {
+            controllerId: initialControllerId,
+            valveBoxId: initialValveBoxId,
+            conductorCount: initialValveBoxId ? getRequiredWireConductorsForValveBox(state, initialValveBoxId) : null,
+            gaugeAwg: "18",
+            points: [snappedPoint],
+          },
+        });
+        return;
+      }
+
+      const lastPoint = state.ui.wireDraft.points.at(-1) ?? null;
+      const shouldAppend = !pointsEqual(lastPoint, snappedPoint);
+      const nextPoints = shouldAppend
+        ? [...state.ui.wireDraft.points, snappedPoint]
+        : [...state.ui.wireDraft.points];
+
+      if (shouldAppend) {
+        store.dispatch({ type: "APPEND_WIRE_DRAFT_POINT", payload: { point: snappedPoint } });
+        const inferredValveBoxId = inferValveBoxIdFromWireSnap(
+          state.ui.wireDraft?.valveBoxId ?? null,
+          snapResult.source,
+        );
+        if (inferredValveBoxId && inferredValveBoxId !== state.ui.wireDraft?.valveBoxId) {
+          store.dispatch({
+            type: "SET_WIRE_DRAFT_VALVE_BOX",
+            payload: { valveBoxId: inferredValveBoxId },
+            meta: { skipHistory: true },
+          });
+        }
+        const inferredControllerId = inferControllerIdFromWireSnap(
+          state.ui.wireDraft?.controllerId ?? null,
+          snapResult.source,
+        );
+        if (inferredControllerId && inferredControllerId !== state.ui.wireDraft?.controllerId) {
+          store.dispatch({
+            type: "SET_WIRE_DRAFT_CONTROLLER",
+            payload: { controllerId: inferredControllerId },
+            meta: { skipHistory: true },
+          });
+        }
+      }
+
+      if (event.detail >= 2 && nextPoints.length >= 2) {
+        commitWireDraft(nextPoints);
+      }
+      return;
+    }
+
     if (state.ui.activeTool === "valve-box") {
       if (!state.scale.calibrated) {
         return;
       }
       store.dispatch({
         type: "ADD_VALVE_BOX",
+        payload: {
+          id: crypto.randomUUID(),
+          x: worldPoint.x,
+          y: worldPoint.y,
+        },
+      });
+      return;
+    }
+
+    if (state.ui.activeTool === "controller") {
+      if (!state.scale.calibrated) {
+        return;
+      }
+      store.dispatch({
+        type: "ADD_CONTROLLER",
         payload: {
           id: crypto.randomUUID(),
           x: worldPoint.x,
@@ -269,6 +346,21 @@ export function createInteractionController(canvas, store, renderer, analyzer) {
       return;
     }
 
+    const controllerHit = renderer.getHitController?.(worldPoint);
+    if (controllerHit) {
+      store.dispatch({ type: "SELECT_CONTROLLER", payload: { id: controllerHit.id } });
+      dragState = {
+        kind: "move-controller",
+        id: controllerHit.id,
+        startX: controllerHit.x,
+        startY: controllerHit.y,
+        lastX: controllerHit.x,
+        lastY: controllerHit.y,
+      };
+      canvas.setPointerCapture(event.pointerId);
+      return;
+    }
+
     const fittingHit = renderer.getHitFitting?.(worldPoint) ?? null;
     const sprinklerHit = renderer.getHitSprinkler(worldPoint) ?? null;
 
@@ -294,6 +386,15 @@ export function createInteractionController(canvas, store, renderer, analyzer) {
         store.dispatch({ type: "SELECT_FITTING", payload: { id: fittingHit.id } });
         return;
       }
+    }
+
+    const wireRunHit = renderer.getHitWireRun?.(worldPoint);
+    if (wireRunHit) {
+      store.dispatch({
+        type: "SELECT_WIRE_RUN",
+        payload: { id: wireRunHit.id },
+      });
+      return;
     }
 
     const pipeRunHit = renderer.getHitPipeRun?.(worldPoint);
@@ -331,6 +432,17 @@ export function createInteractionController(canvas, store, renderer, analyzer) {
       });
       store.dispatch({
         type: "SET_PIPE_DRAFT_PREVIEW",
+        payload: {
+          point: previewSnap.point,
+        },
+      });
+    }
+    if (state.ui.activeTool === "wire" && state.ui.wireDraft?.points?.length) {
+      const previewSnap = getWireSnapResult(state, worldPoint, {
+        excludeDraftTerminal: true,
+      });
+      store.dispatch({
+        type: "SET_WIRE_DRAFT_PREVIEW",
         payload: {
           point: previewSnap.point,
         },
@@ -425,6 +537,17 @@ export function createInteractionController(canvas, store, renderer, analyzer) {
       return;
     }
 
+    if (dragState.kind === "move-controller") {
+      dragState.lastX = worldPoint.x;
+      dragState.lastY = worldPoint.y;
+      store.dispatch({
+        type: "MOVE_CONTROLLER",
+        payload: { id: dragState.id, x: worldPoint.x, y: worldPoint.y },
+        meta: { skipHistory: true },
+      });
+      return;
+    }
+
     dragState.lastX = worldPoint.x;
     dragState.lastY = worldPoint.y;
     store.dispatch({
@@ -462,6 +585,12 @@ export function createInteractionController(canvas, store, renderer, analyzer) {
     if (dragState?.kind === "move-valve-box" && (dragState.startX !== dragState.lastX || dragState.startY !== dragState.lastY)) {
       store.dispatch({
         type: "MOVE_VALVE_BOX",
+        payload: { id: dragState.id, x: dragState.lastX, y: dragState.lastY },
+      });
+    }
+    if (dragState?.kind === "move-controller" && (dragState.startX !== dragState.lastX || dragState.startY !== dragState.lastY)) {
+      store.dispatch({
+        type: "MOVE_CONTROLLER",
         payload: { id: dragState.id, x: dragState.lastX, y: dragState.lastY },
       });
     }
@@ -602,11 +731,28 @@ export function createInteractionController(canvas, store, renderer, analyzer) {
     return true;
   }
 
+  function finishWireDraft() {
+    const state = store.getState();
+    if (!state.ui.wireDraft?.points?.length || state.ui.wireDraft.points.length < 2) {
+      return false;
+    }
+    commitWireDraft(state.ui.wireDraft.points);
+    return true;
+  }
+
   function cancelPipeDraft() {
     if (!store.getState().ui.pipeDraft) {
       return false;
     }
     store.dispatch({ type: "CLEAR_PIPE_DRAFT" });
+    return true;
+  }
+
+  function cancelWireDraft() {
+    if (!store.getState().ui.wireDraft) {
+      return false;
+    }
+    store.dispatch({ type: "CLEAR_WIRE_DRAFT" });
     return true;
   }
 
@@ -696,7 +842,9 @@ export function createInteractionController(canvas, store, renderer, analyzer) {
     applyRatioCalibration,
     fitBackground,
     finishPipeDraft,
+    finishWireDraft,
     cancelPipeDraft,
+    cancelWireDraft,
     beginFittingPlacement,
     placeSuggestedFitting,
     cancelFittingDraft,
@@ -772,6 +920,22 @@ export function createInteractionController(canvas, store, renderer, analyzer) {
         kind: currentState.ui.pipeDraft?.kind ?? currentState.ui.pipePlacementKind,
         zoneId: currentState.ui.pipeDraft?.zoneId ?? (currentState.ui.pipePlacementKind === "zone" ? currentState.ui.activeZoneId ?? null : null),
         diameterInches: currentState.ui.pipeDraft?.diameterInches ?? (currentState.ui.pipePlacementKind === "main" ? currentState.hydraulics.lineSizeInches : null),
+        points,
+      },
+    });
+  }
+
+  function commitWireDraft(points) {
+    const currentState = store.getState();
+    store.dispatch({
+      type: "ADD_WIRE_RUN",
+      payload: {
+        id: crypto.randomUUID(),
+        controllerId: currentState.ui.wireDraft?.controllerId ?? null,
+        valveBoxId: currentState.ui.wireDraft?.valveBoxId ?? null,
+        conductorCount: currentState.ui.wireDraft?.conductorCount ?? null,
+        gaugeAwg: currentState.ui.wireDraft?.gaugeAwg ?? "18",
+        colorCode: currentState.ui.wireDraft?.colorCode ?? null,
         points,
       },
     });
@@ -924,6 +1088,57 @@ function getSnappedWorldPoint(state, worldPoint, options = {}) {
   return getPipeSnapResult(state, worldPoint, options).point;
 }
 
+function getWireSnapResult(state, worldPoint, options = {}) {
+  const excludeLastDraftPoint = options.excludeDraftTerminal ? state.ui.wireDraft?.points?.at(-1) ?? null : null;
+  const wirePointCandidates = (state.wireRuns ?? []).flatMap((wireRun) =>
+    wireRun.points.map((point, index) => ({
+      point,
+      source: {
+        kind: "wire_point",
+        wireRunId: wireRun.id,
+        controllerId: wireRun.controllerId ?? null,
+        valveBoxId: wireRun.valveBoxId ?? null,
+        vertexIndex: index,
+      },
+    })),
+  );
+  const candidates = [
+    ...(state.controllers ?? []).map((controller) => ({
+      point: { x: controller.x, y: controller.y },
+      source: {
+        kind: "controller",
+        controllerId: controller.id,
+      },
+    })),
+    ...(state.valveBoxes ?? []).map((valveBox) => ({
+      point: { x: valveBox.x, y: valveBox.y },
+      source: {
+        kind: "valve_box",
+        valveBoxId: valveBox.id,
+      },
+    })),
+    ...wirePointCandidates,
+  ].filter((candidate) => !excludeLastDraftPoint || !pointsEqual(candidate.point, excludeLastDraftPoint));
+
+  const screenPoint = worldToScreen(worldPoint, state.view);
+  let best = {
+    point: worldPoint,
+    source: null,
+  };
+  let bestDistance = PIPE_SNAP_SCREEN_PX + 0.001;
+
+  for (const candidate of candidates) {
+    const candidateScreen = worldToScreen(candidate.point, state.view);
+    const distance = Math.hypot(candidateScreen.x - screenPoint.x, candidateScreen.y - screenPoint.y);
+    if (distance <= PIPE_SNAP_SCREEN_PX && distance < bestDistance) {
+      bestDistance = distance;
+      best = candidate;
+    }
+  }
+
+  return best;
+}
+
 function getPipeSnapResult(state, worldPoint, options = {}) {
   const excludeLastDraftPoint = options.excludeDraftTerminal ? state.ui.pipeDraft?.points?.at(-1) ?? null : null;
   const snapKind = normalizePipeKind(options.pipeKind ?? state.ui.pipeDraft?.kind ?? state.ui.pipePlacementKind);
@@ -1017,6 +1232,40 @@ function inferZoneIdFromPipeSnap(pipeKind, currentZoneId, snapSource) {
   return null;
 }
 
+function inferValveBoxIdFromWireSnap(currentValveBoxId, snapSource) {
+  if (currentValveBoxId) {
+    return currentValveBoxId;
+  }
+  if (snapSource?.kind === "valve_box") {
+    return snapSource.valveBoxId || null;
+  }
+  if (snapSource?.kind === "wire_point") {
+    return snapSource.valveBoxId || null;
+  }
+  return null;
+}
+
+function inferControllerIdFromWireSnap(currentControllerId, snapSource) {
+  if (currentControllerId) {
+    return currentControllerId;
+  }
+  if (snapSource?.kind === "controller") {
+    return snapSource.controllerId || null;
+  }
+  if (snapSource?.kind === "wire_point") {
+    return snapSource.controllerId || null;
+  }
+  return null;
+}
+
+function getRequiredWireConductorsForValveBox(state, valveBoxId) {
+  if (!valveBoxId) {
+    return null;
+  }
+  const zoneCount = (state.zones ?? []).filter((zone) => zone.valveBoxId === valveBoxId).length;
+  return zoneCount + 1;
+}
+
 function isPipeEndpointSnapEligible(pipeRun, vertexIndex) {
   if (!pipeRun || normalizePipeKind(pipeRun.kind) !== "zone" || pipeRun.zoneId || !Number.isInteger(vertexIndex)) {
     return false;
@@ -1039,8 +1288,10 @@ function getCursorForTool(tool) {
   switch (tool) {
     case "place":
     case "pipe":
+    case "wire":
     case "fittings":
     case "valve-box":
+    case "controller":
       return "crosshair";
     case "calibrate":
     case "measure":

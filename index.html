@@ -22,8 +22,10 @@
           <button type="button" data-tool="select" class="tool-button is-active">Select</button>
           <button type="button" data-tool="place" class="tool-button">Place</button>
           <button type="button" data-tool="pipe" class="tool-button">Pipe</button>
+          <button type="button" data-tool="wire" class="tool-button">Wire</button>
           <button type="button" data-tool="fittings" class="tool-button">Fittings</button>
           <button type="button" data-tool="valve-box" class="tool-button">Valve Box</button>
+          <button type="button" data-tool="controller" class="tool-button">Controller</button>
           <button type="button" data-tool="calibrate" class="tool-button">Calibrate</button>
           <button type="button" data-tool="measure" class="tool-button">Measure</button>
           <button type="button" data-tool="pan" class="tool-button">Pan</button>
@@ -138,6 +140,10 @@
           <label class="checkbox-row">
             <input id="toggle-pipe" type="checkbox" checked>
             <span>Show pipe</span>
+          </label>
+          <label class="checkbox-row">
+            <input id="toggle-wire" type="checkbox" checked>
+            <span>Show wire</span>
           </label>
           <label class="checkbox-row">
             <input id="toggle-fittings" type="checkbox" checked>
@@ -263,7 +269,7 @@
       <aside class="details-panel">
         <section class="panel">
           <h2 id="selection-title">Selected Item</h2>
-          <div id="selection-empty" class="empty-card">Select a sprinkler, valve box, pipe run, or fitting to edit its properties.</div>
+          <div id="selection-empty" class="empty-card">Select a sprinkler, valve box, controller, pipe run, wire run, or fitting to edit its properties.</div>
           <div id="selection-form" hidden>
             <label class="field">
               <span>Coverage</span>
@@ -396,6 +402,33 @@
               <button id="delete-valve-box-button" type="button" class="danger-button">Delete</button>
             </div>
           </div>
+          <div id="controller-form" hidden>
+            <label class="field">
+              <span>Label</span>
+              <input id="controller-label" type="text">
+            </label>
+            <div class="field-group">
+              <label class="field">
+                <span>X</span>
+                <input id="controller-x" type="number" step="0.01">
+              </label>
+              <label class="field">
+                <span>Y</span>
+                <input id="controller-y" type="number" step="0.01">
+              </label>
+            </div>
+            <label class="field">
+              <span>Station capacity</span>
+              <input id="controller-station-capacity" type="number" min="1" step="1" value="8">
+            </label>
+            <label class="field">
+              <span>Connected valve boxes</span>
+              <textarea id="controller-connected-boxes" rows="3" readonly></textarea>
+            </label>
+            <div class="button-row">
+              <button id="delete-controller-button" type="button" class="danger-button">Delete</button>
+            </div>
+          </div>
           <div id="pipe-run-form" hidden>
             <label class="field">
               <span>Label</span>
@@ -433,6 +466,50 @@
             </label>
             <div class="button-row">
               <button id="delete-pipe-button" type="button" class="danger-button">Delete</button>
+            </div>
+          </div>
+          <div id="wire-run-form" hidden>
+            <label class="field">
+              <span>Label</span>
+              <input id="wire-label" type="text">
+            </label>
+            <div class="field-group">
+              <label class="field">
+                <span>Conductors</span>
+                <input id="wire-conductor-count" type="number" min="1" step="1" value="2">
+              </label>
+              <label class="field">
+                <span>Gauge</span>
+                <select id="wire-gauge">
+                  <option value="18" selected>18 AWG</option>
+                  <option value="16">16 AWG</option>
+                  <option value="14">14 AWG</option>
+                </select>
+              </label>
+            </div>
+            <label class="field">
+              <span>Controller</span>
+              <select id="wire-controller">
+                <option value="">Unassigned</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Valve box</span>
+              <select id="wire-valve-box">
+                <option value="">Unassigned</option>
+              </select>
+            </label>
+            <div id="wire-requirement" class="selection-note"></div>
+            <label class="field">
+              <span>Color / notes</span>
+              <input id="wire-color" type="text" placeholder="e.g. white jacket, red stripe">
+            </label>
+            <label class="field">
+              <span>Length</span>
+              <input id="wire-length" type="text" readonly>
+            </label>
+            <div class="button-row">
+              <button id="delete-wire-button" type="button" class="danger-button">Delete</button>
             </div>
           </div>
           <div id="fitting-form" hidden>

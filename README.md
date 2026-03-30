@@ -15,8 +15,10 @@ This project is built as a static HTML/CSS/JavaScript app with no backend and no
   - arc coverage
   - strip patterns
 - Draw main and zone pipe runs
+- Draw manual multiconductor control-wire runs
 - Assign and manage irrigation zones
 - Place valve boxes and suggested/explicit fittings
+- Place controllers and track control cable runs to valve boxes
 - Review overlap and irrigation analysis overlays:
   - application rate
   - zone catch-can depth
@@ -31,7 +33,7 @@ This project is built as a static HTML/CSS/JavaScript app with no backend and no
 
 ## Current Scope
 
-This tool is aimed at residential sprinkler layout planning and review. It helps with geometry, spacing, zone grouping, nozzle recommendations, and high-level hydraulic guidance.
+This tool is aimed at residential sprinkler layout planning and review. It helps with geometry, spacing, zone grouping, nozzle recommendations, manual controller-to-valve-box wire planning, and high-level hydraulic guidance.
 
 It does not currently do full hydraulic simulation, pressure-loss modeling, trench routing, controller programming, or cloud sync.
 
@@ -68,9 +70,10 @@ Use the Live Server extension and open the project folder.
 3. Enter supply line size, pressure, and optionally a design flow cap.
 4. Place sprinkler heads and adjust radius, arc, strip geometry, labels, and zone assignment.
 5. Draw main and zone pipes.
-6. Add valve boxes and use the fittings palette for suggested or manual fittings.
-7. Review coverage and analysis overlays.
-8. Switch to the Parts screen to review bodies, nozzles, fittings, and pipe totals.
+6. Add valve boxes, controllers, and manual multiconductor wire runs.
+7. Use the fittings palette for suggested or manual fittings.
+8. Review coverage and analysis overlays.
+9. Switch to the Parts screen to review bodies, nozzles, fittings, pipe totals, controllers, and control-wire totals.
 9. Save the layout as JSON or export a PNG snapshot.
 
 ## Keyboard Shortcuts

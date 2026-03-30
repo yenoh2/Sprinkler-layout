@@ -4,7 +4,7 @@ import { getFittingTypeMeta } from "../geometry/fittings.js";
 import { buildPipeMidpoints, calculatePipeLengthUnits, distancePointToSegmentSquared } from "../geometry/pipes.js";
 import { buildStripFootprintWorldPoints, buildStripHandleWorldPoints, isStripCoverage } from "../geometry/coverage.js";
 import { toPixels, worldToScreen } from "../geometry/scale.js";
-import { findSelectedFitting, findSelectedPipeRun, findSelectedSprinkler, findSelectedValveBox, getZoneById, hasHydraulics, isProjectReady } from "../state/project-state.js";
+import { findSelectedController, findSelectedFitting, findSelectedPipeRun, findSelectedSprinkler, findSelectedValveBox, findSelectedWireRun, getZoneById, hasHydraulics, isProjectReady } from "../state/project-state.js";
 
 const RATE_COLOR_STOPS = [
   { stop: 0, rgb: [24, 76, 107], alpha: 0 },
@@ -73,11 +73,16 @@ export function createRenderer(canvas, store, analyzer) {
     if (state.view.showPipe) {
       drawPipeRuns(state);
     }
+    if (state.view.showWire !== false) {
+      drawWireRuns(state);
+    }
     drawSprinklers(state);
     drawValveBoxes(state);
+    drawControllers(state);
     drawFittings(state, analysis);
     drawHoveredFittingPreview(state);
     drawPipeDraft(state);
+    drawWireDraft(state);
     drawFittingDraft(state);
     drawSelectedHandles(state);
     drawOverlayWarnings(state);
@@ -361,6 +366,75 @@ export function createRenderer(canvas, store, analyzer) {
     ctx.restore();
   }
 
+  function drawWireRuns(state) {
+    const selectedWireRun = findSelectedWireRun(state);
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    state.wireRuns.forEach((wireRun) => {
+      if (!wireRun.points?.length || wireRun.points.length < 2) {
+        return;
+      }
+      const isSelected = selectedWireRun?.id === wireRun.id;
+      const isFocusedOut = Boolean(state.ui.focusedZoneId) && !wireRunTouchesZone(state, wireRun, state.ui.focusedZoneId);
+      const strokeColor = resolveWireStrokeColor(state, wireRun, isSelected, isFocusedOut);
+
+      ctx.strokeStyle = `rgba(255, 247, 235, ${isFocusedOut ? 0.28 : 0.44})`;
+      ctx.lineWidth = isSelected ? 7 : 5;
+      drawPipePath(ctx, wireRun.points, state.view);
+      ctx.stroke();
+
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = isSelected ? 3.8 : 2.8;
+      drawPipePath(ctx, wireRun.points, state.view);
+      ctx.stroke();
+
+      if (state.view.showLabels) {
+        const labelPoint = worldToScreen(resolvePipeLabelPoint(wireRun.points), state.view);
+        ctx.fillStyle = isSelected ? "#b65c2a" : strokeColor;
+        ctx.font = "12px Aptos, Segoe UI, sans-serif";
+        ctx.fillText(wireRun.label || wireRun.id, labelPoint.x + 8, labelPoint.y + 14);
+      }
+    });
+
+    ctx.restore();
+  }
+
+  function drawWireDraft(state) {
+    if (state.view.showWire === false || !state.ui.wireDraft?.points?.length) {
+      return;
+    }
+
+    const draftPoints = state.ui.wireDraft.previewPoint
+      ? [...state.ui.wireDraft.points, state.ui.wireDraft.previewPoint]
+      : [...state.ui.wireDraft.points];
+    if (draftPoints.length < 1) {
+      return;
+    }
+
+    const draftWireRun = {
+      valveBoxId: state.ui.wireDraft.valveBoxId,
+      colorCode: state.ui.wireDraft.colorCode,
+    };
+
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = resolveWireStrokeColor(state, draftWireRun, true, false);
+    ctx.lineWidth = 3;
+    ctx.setLineDash([6, 5]);
+    drawPipePath(ctx, draftPoints, state.view);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    draftPoints.forEach((point, index) => {
+      const screenPoint = worldToScreen(point, state.view);
+      drawPipeHandle(ctx, screenPoint, index === draftPoints.length - 1 ? "#fff7eb" : "#ffffff", "#4f4033", 4.5);
+    });
+    ctx.restore();
+  }
+
   function drawSprinklers(state) {
     const selected = findSelectedSprinkler(state);
     state.sprinklers.forEach((sprinkler) => {
@@ -417,6 +491,38 @@ export function createRenderer(canvas, store, analyzer) {
           ctx.fillStyle = primaryZone?.color ?? "#7d6957";
           ctx.font = "11px Aptos, Segoe UI, sans-serif";
           ctx.fillText(zoneText, center.x + 16, center.y + 12);
+        }
+      }
+      ctx.restore();
+    });
+  }
+
+  function drawControllers(state) {
+    const selectedController = findSelectedController(state);
+    state.controllers.forEach((controller) => {
+      const center = worldToScreen({ x: controller.x, y: controller.y }, state.view);
+      const linkedValveBoxes = getConnectedValveBoxesForController(state, controller.id);
+      const linkedWireRuns = state.wireRuns.filter((wireRun) => wireRun.controllerId === controller.id);
+      const isSelected = selectedController?.id === controller.id;
+      const isFocusedOut = Boolean(state.ui.focusedZoneId) && !controllerTouchesZone(state, controller.id, state.ui.focusedZoneId);
+      ctx.save();
+      if (isFocusedOut) {
+        ctx.globalAlpha = 0.35;
+      }
+      drawControllerSymbol(center, isSelected);
+      if (state.view.showLabels) {
+        ctx.fillStyle = "#2f2418";
+        ctx.font = "12px Aptos, Segoe UI, sans-serif";
+        ctx.fillText(controller.label || controller.id, center.x + 18, center.y - 2);
+        if ((linkedValveBoxes.length || linkedWireRuns.length) && state.view.showZoneLabels) {
+          const connectionText = linkedValveBoxes.length === 1
+            ? (linkedValveBoxes[0].label || "Valve box")
+            : linkedValveBoxes.length > 1
+              ? `${linkedValveBoxes.length} valve boxes`
+              : `${linkedWireRuns.length} wire run${linkedWireRuns.length === 1 ? "" : "s"}`;
+          ctx.fillStyle = "#7d6957";
+          ctx.font = "11px Aptos, Segoe UI, sans-serif";
+          ctx.fillText(connectionText, center.x + 18, center.y + 12);
         }
       }
       ctx.restore();
@@ -513,6 +619,25 @@ export function createRenderer(canvas, store, analyzer) {
     ctx.fillStyle = "#4f4033";
     ctx.font = "bold 8px Aptos, Segoe UI, sans-serif";
     ctx.fillText("VB", left + 5, top + 13);
+  }
+
+  function drawControllerSymbol(center, isSelected) {
+    const width = 26;
+    const height = 22;
+    const left = center.x - width / 2;
+    const top = center.y - height / 2;
+    ctx.fillStyle = "#fff7eb";
+    ctx.strokeStyle = isSelected ? "#b65c2a" : "#4f4033";
+    ctx.lineWidth = isSelected ? 2.6 : 2;
+    ctx.fillRect(left, top, width, height);
+    ctx.strokeRect(left, top, width, height);
+
+    ctx.fillStyle = "#4f4033";
+    ctx.fillRect(left + 5, top + 4, width - 10, 2);
+    ctx.fillRect(left + 5, top + 8, width - 10, 2);
+    ctx.fillRect(left + 7, top + 13, 3, 3);
+    ctx.fillRect(left + 12, top + 13, 3, 3);
+    ctx.fillRect(left + 17, top + 13, 3, 3);
   }
 
   function drawFittingGlyph(center, accentColor, type, isSelected, isDraft) {
@@ -833,6 +958,25 @@ export function createRenderer(canvas, store, analyzer) {
     ) || null;
   }
 
+  function getHitWireRun(worldPoint) {
+    const state = store.getState();
+    if (state.view.showWire === false) {
+      return null;
+    }
+    const screenPoint = worldToScreen(worldPoint, state.view);
+
+    return [...state.wireRuns].reverse().find((wireRun) =>
+      wireRun.points?.some((point, index) => {
+        if (index === 0) {
+          return false;
+        }
+        const start = worldToScreen(wireRun.points[index - 1], state.view);
+        const end = worldToScreen(point, state.view);
+        return distancePointToSegmentSquared(screenPoint, start, end) <= 49;
+      }),
+    ) || null;
+  }
+
   function getPipeVertexHandleHit(worldPoint) {
     const state = store.getState();
     const selectedPipeRun = findSelectedPipeRun(state);
@@ -883,6 +1027,15 @@ export function createRenderer(canvas, store, analyzer) {
     return [...state.valveBoxes].reverse().find((valveBox) => {
       const center = worldToScreen({ x: valveBox.x, y: valveBox.y }, state.view);
       return Math.abs(screenPoint.x - center.x) <= 14 && Math.abs(screenPoint.y - center.y) <= 12;
+    }) || null;
+  }
+
+  function getHitController(worldPoint) {
+    const state = store.getState();
+    const screenPoint = worldToScreen(worldPoint, state.view);
+    return [...state.controllers].reverse().find((controller) => {
+      const center = worldToScreen({ x: controller.x, y: controller.y }, state.view);
+      return Math.abs(screenPoint.x - center.x) <= 15 && Math.abs(screenPoint.y - center.y) <= 13;
     }) || null;
   }
 
@@ -957,11 +1110,17 @@ export function createRenderer(canvas, store, analyzer) {
     const totalPipeLength = state.scale.pixelsPerUnit
       ? state.pipeRuns.reduce((sum, pipeRun) => sum + calculatePipeLengthUnits(pipeRun.points, state.scale.pixelsPerUnit), 0)
       : 0;
+    const totalWireLength = state.scale.pixelsPerUnit
+      ? state.wireRuns.reduce((sum, wireRun) => sum + calculatePipeLengthUnits(wireRun.points, state.scale.pixelsPerUnit), 0)
+      : 0;
     return {
       sprinklerCount: state.sprinklers.length,
       valveBoxCount: state.valveBoxes.length,
+      controllerCount: state.controllers.length,
       pipeRunCount: state.pipeRuns.length,
+      wireRunCount: state.wireRuns.length,
       totalPipeLength,
+      totalWireLength,
       meanRadius: state.sprinklers.length
         ? state.sprinklers.reduce((sum, sprinkler) =>
           sum + (isStripCoverage(sprinkler) ? Math.max(sprinkler.stripLength ?? 0, sprinkler.stripWidth ?? 0) : sprinkler.radius), 0,
@@ -979,10 +1138,12 @@ export function createRenderer(canvas, store, analyzer) {
     render,
     setHoveredFittingPreview,
     getHitPipeRun,
+    getHitWireRun,
     getPipeVertexHandleHit,
     getPipeMidpointHandleHit,
     getHitSprinkler,
     getHitValveBox,
+    getHitController,
     getHitFitting,
     getArcHandleHit,
     getRadiusHandleHit,
@@ -1052,6 +1213,85 @@ function resolvePipeStrokeColor(state, pipeRun, isSelected, isFocusedOut) {
   }
   const zoneColor = getZoneById(state, pipeRun.zoneId)?.color ?? "#6f6a63";
   return hexToRgba(zoneColor, isFocusedOut ? 0.36 : (isSelected ? 0.98 : 0.9));
+}
+
+function resolveWireStrokeColor(state, wireRun, isSelected, isFocusedOut) {
+  const accent = resolveWireAccentColor(state, wireRun);
+  return hexToRgba(accent, isFocusedOut ? 0.34 : (isSelected ? 0.98 : 0.9));
+}
+
+function resolveWireAccentColor(state, wireRun) {
+  const token = String(wireRun?.colorCode ?? "")
+    .trim()
+    .toLowerCase();
+  if (/^#[0-9a-f]{3,8}$/i.test(token)) {
+    return token;
+  }
+
+  const namedColors = {
+    white: "#d7d0c3",
+    red: "#c9483d",
+    blue: "#3876b4",
+    yellow: "#d1a12f",
+    green: "#4d8b31",
+    orange: "#d18e2f",
+    black: "#4f4033",
+    brown: "#7d6957",
+    purple: "#8f5bb6",
+  };
+  if (namedColors[token]) {
+    return namedColors[token];
+  }
+
+  const primaryZone = getPrimaryValveBoxZone(state, wireRun?.valveBoxId ?? null);
+  if (primaryZone?.color) {
+    return primaryZone.color;
+  }
+  return "#7d6957";
+}
+
+function wireRunTouchesZone(state, wireRun, zoneId) {
+  if (!wireRun?.valveBoxId || !zoneId) {
+    return false;
+  }
+  return getZonesForValveBox(state, wireRun.valveBoxId).some((zone) => zone.id === zoneId);
+}
+
+function controllerTouchesZone(state, controllerId, zoneId) {
+  if (!controllerId || !zoneId) {
+    return false;
+  }
+  return getConnectedValveBoxesForController(state, controllerId)
+    .some((valveBox) => getZonesForValveBox(state, valveBox.id).some((zone) => zone.id === zoneId));
+}
+
+function getConnectedValveBoxesForController(state, controllerId) {
+  if (!controllerId) {
+    return [];
+  }
+  const valveBoxesById = new Map((state.valveBoxes ?? []).map((valveBox) => [valveBox.id, valveBox]));
+  const connected = new Map();
+  (state.wireRuns ?? []).forEach((wireRun) => {
+    if (wireRun.controllerId !== controllerId || !wireRun.valveBoxId) {
+      return;
+    }
+    const valveBox = valveBoxesById.get(wireRun.valveBoxId) ?? null;
+    if (valveBox) {
+      connected.set(valveBox.id, valveBox);
+    }
+  });
+  return [...connected.values()];
+}
+
+function getPrimaryValveBoxZone(state, valveBoxId) {
+  return getZonesForValveBox(state, valveBoxId)[0] ?? null;
+}
+
+function getZonesForValveBox(state, valveBoxId) {
+  if (!valveBoxId) {
+    return [];
+  }
+  return (state.zones ?? []).filter((zone) => zone.valveBoxId === valveBoxId);
 }
 
 function resolvePipeLabelPoint(points) {
