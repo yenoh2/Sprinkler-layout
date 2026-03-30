@@ -463,17 +463,10 @@ export function createRenderer(canvas, store, analyzer) {
     const zoneColor = getZoneById(state, preview.zoneId)?.color ?? "#b65c2a";
 
     ctx.save();
-    ctx.strokeStyle = zoneColor;
-    ctx.lineWidth = 2;
-    ctx.setLineDash([8, 5]);
+    ctx.globalAlpha = 0.75;
+    ctx.fillStyle = "#000000";
     ctx.beginPath();
-    ctx.arc(screenPoint.x, screenPoint.y, 18, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.globalAlpha = 0.18;
-    ctx.fillStyle = zoneColor;
-    ctx.beginPath();
-    ctx.arc(screenPoint.x, screenPoint.y, 10, 0, Math.PI * 2);
+    ctx.arc(screenPoint.x, screenPoint.y, 16, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalAlpha = 0.94;
     drawFittingGlyph(screenPoint, zoneColor, preview.type, true, true);
