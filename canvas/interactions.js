@@ -246,7 +246,11 @@ export function createInteractionController(canvas, store, renderer, analyzer) {
     }
 
     if (state.ui.activeTool === "calibrate") {
-      store.dispatch({ type: "ADD_CALIBRATION_POINT", payload: { point: worldPoint } });
+      if (state.ui.calibrationMode === "rectify") {
+        store.dispatch({ type: "ADD_RECTIFICATION_POINT", payload: { point: worldPoint } });
+      } else {
+        store.dispatch({ type: "ADD_CALIBRATION_POINT", payload: { point: worldPoint } });
+      }
       return;
     }
 

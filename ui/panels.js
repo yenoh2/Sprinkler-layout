@@ -2,6 +2,7 @@ import { clamp } from "../geometry/arcs.js";
 import { buildFittingSuggestions, resolvePlacedFittingSizeSpec } from "../analysis/fittings-analysis.js";
 import { getAllFittingOptions, getCommonFittingOptions, getFittingTypeMeta, isManualFittingPlacementSupported } from "../geometry/fittings.js";
 import { PIPE_DIAMETER_OPTIONS, calculatePipeLengthUnits, formatPipeDiameterLabel } from "../geometry/pipes.js";
+import { applyHomography, multiplyMatrices, rectifyImageDataUrl } from "../geometry/rectification.js";
 import { fitBackgroundToView } from "../geometry/scale.js";
 import {
   cloneProjectSnapshot,
@@ -48,6 +49,12 @@ function bindElements() {
     resetCalibrationPointsButton: document.getElementById("reset-calibration-points-button"),
     applyTwoPointButton: document.getElementById("apply-two-point-button"),
     calibrationPointsLabel: document.getElementById("calibration-points-label"),
+    rectificationReferenceWidth: document.getElementById("rectification-reference-width"),
+    rectificationReferenceHeight: document.getElementById("rectification-reference-height"),
+    pickRectificationButton: document.getElementById("pick-rectification-button"),
+    clearRectificationButton: document.getElementById("clear-rectification-button"),
+    applyRectificationButton: document.getElementById("apply-rectification-button"),
+    rectificationPointsLabel: document.getElementById("rectification-points-label"),
     lineSizeSelect: document.getElementById("line-size-select"),
     pressureInput: document.getElementById("pressure-input"),
     designFlowLimitInput: document.getElementById("design-flow-limit-input"),
@@ -290,8 +297,107 @@ function bindEvents(elements, store, renderer, interactions, io) {
   });
 
   elements.resetCalibrationPointsButton.addEventListener("click", () => {
+    store.dispatch({ type: "SET_CALIBRATION_MODE", payload: { mode: "scale" } });
     store.dispatch({ type: "SET_ACTIVE_TOOL", payload: { tool: "calibrate" } });
     store.dispatch({ type: "CLEAR_CALIBRATION_POINTS" });
+  });
+
+  elements.pickRectificationButton.addEventListener("click", () => {
+    store.dispatch({ type: "SET_CALIBRATION_MODE", payload: { mode: "rectify" } });
+    store.dispatch({ type: "SET_ACTIVE_TOOL", payload: { tool: "calibrate" } });
+    store.dispatch({ type: "CLEAR_RECTIFICATION_POINTS" });
+  });
+
+  elements.clearRectificationButton.addEventListener("click", () => {
+    store.dispatch({ type: "CLEAR_RECTIFICATION_POINTS" });
+  });
+
+  elements.applyRectificationButton.addEventListener("click", async () => {
+    const state = store.getState();
+    const corners = state.ui.rectificationPoints ?? [];
+    const referenceWidth = Number(elements.rectificationReferenceWidth.value);
+    const referenceHeight = Number(elements.rectificationReferenceHeight.value);
+    if (corners.length < 4 || !(referenceWidth > 0) || !(referenceHeight > 0) || !state.background.src) {
+      alert("Pick four corners and enter a valid reference width and height.");
+      return;
+    }
+
+    if (hasPlacedLayoutItems(state) && !window.confirm("Apply rectification and move existing layout items onto the corrected image?")) {
+      return;
+    }
+
+    const originalLabel = elements.applyRectificationButton.textContent;
+    elements.applyRectificationButton.disabled = true;
+    elements.applyRectificationButton.textContent = "Applying...";
+    try {
+      const currentInverseMatrix = state.background.rectification?.enabled
+        ? state.background.rectification.inverseMatrix
+        : null;
+      const canMapToOriginalSource = !state.background.rectification?.enabled || Boolean(currentInverseMatrix);
+      const sourceCorners = canMapToOriginalSource && currentInverseMatrix
+        ? corners.map((point) => applyHomography(point, currentInverseMatrix))
+        : corners.map((point) => ({ ...point }));
+      if (sourceCorners.some((point) => !point)) {
+        alert("The current rectification mapping could not be reversed cleanly.");
+        return;
+      }
+
+      const sourceImageSrc = canMapToOriginalSource
+        ? (state.background.sourceSrc || state.background.src)
+        : state.background.src;
+      const sourceImageWidth = canMapToOriginalSource
+        ? (state.background.sourceWidth || state.background.width)
+        : state.background.width;
+      const sourceImageHeight = canMapToOriginalSource
+        ? (state.background.sourceHeight || state.background.height)
+        : state.background.height;
+      const result = await rectifyImageDataUrl(
+        sourceImageSrc,
+        sourceCorners,
+        referenceWidth,
+        referenceHeight,
+      );
+      if (!result) {
+        alert("Rectification could not be solved from those points.");
+        return;
+      }
+
+      const layoutTransformMatrix = currentInverseMatrix
+        ? multiplyMatrices(result.plan.matrix, currentInverseMatrix)
+        : result.plan.matrix;
+
+      store.dispatch({
+        type: "APPLY_BACKGROUND_RECTIFICATION",
+        payload: {
+          transformMatrix: layoutTransformMatrix,
+          background: {
+            src: result.src,
+            width: result.width,
+            height: result.height,
+            sourceSrc: sourceImageSrc,
+            sourceWidth: sourceImageWidth,
+            sourceHeight: sourceImageHeight,
+            rectification: {
+              enabled: true,
+              referenceWidth: result.plan.referenceWidth,
+              referenceHeight: result.plan.referenceHeight,
+              outputWidth: result.width,
+              outputHeight: result.height,
+              matrix: result.plan.matrix,
+              inverseMatrix: result.plan.inverseMatrix,
+            },
+          },
+        },
+      });
+      interactions.fitBackground();
+    } catch (error) {
+      console.error(error);
+      alert("Rectification failed. Try a cleaner four-corner selection.");
+    } finally {
+      elements.applyRectificationButton.textContent = originalLabel;
+      const latestState = store.getState();
+      elements.applyRectificationButton.disabled = (latestState.ui.rectificationPoints?.length ?? 0) < 4 || !latestState.background.src;
+    }
   });
 
   const updateHydraulics = () => {
@@ -862,6 +968,18 @@ function updateUi(elements, state, renderer, analyzer) {
       ? "Calibration points: 1 selected. Click the second point on the plan."
       : "Calibration points: 0 selected. Click Pick New Points, then click the first point on the plan.";
   elements.applyTwoPointButton.disabled = calibrationPointCount < 2;
+  const rectificationPointCount = state.ui.rectificationPoints?.length ?? 0;
+  elements.rectificationPointsLabel.textContent = rectificationPointCount >= 4
+    ? "Rectification corners: 4 selected. Click Apply Rectification, or click a new corner to start over."
+    : rectificationPointCount === 3
+      ? "Rectification corners: 3 selected. Click the bottom-left corner."
+      : rectificationPointCount === 2
+        ? "Rectification corners: 2 selected. Click the bottom-right corner."
+        : rectificationPointCount === 1
+          ? "Rectification corners: 1 selected. Click the top-right corner."
+          : "Rectification corners: 0 selected. Click Pick 4 Corners to begin.";
+  elements.clearRectificationButton.disabled = rectificationPointCount < 1;
+  elements.applyRectificationButton.disabled = rectificationPointCount < 4 || !state.background.src;
   elements.historySummary.textContent = `${state.history.undoStack.length} undo / ${state.history.redoStack.length} redo`;
   elements.undoButton.disabled = !state.history.undoStack.length;
   elements.redoButton.disabled = !state.history.redoStack.length;
@@ -1034,6 +1152,7 @@ function updateUi(elements, state, renderer, analyzer) {
   const lines = [
     ["Background", state.background.name || "None"],
     ["Scale", state.scale.calibrated ? `${state.scale.pixelsPerUnit.toFixed(2)} px/${state.scale.units}` : "Not calibrated"],
+    ["Rectified", state.background.rectification?.enabled ? `Yes (${state.background.rectification.referenceWidth} x ${state.background.rectification.referenceHeight})` : "No"],
     ["Heads", String(summary.sprinklerCount)],
     ["Valve boxes", String(summary.valveBoxCount ?? 0)],
     ["Controllers", String(summary.controllerCount ?? 0)],
@@ -2358,6 +2477,17 @@ function renderSprinklerAnalysis(node, selected, analysis) {
     "</div>",
     compatibility ? renderCompatibilityCard(compatibility) : "",
   ].join("");
+}
+
+function hasPlacedLayoutItems(state) {
+  return Boolean(
+    state.sprinklers?.length
+    || state.pipeRuns?.length
+    || state.wireRuns?.length
+    || state.valveBoxes?.length
+    || state.controllers?.length
+    || state.fittings?.length
+  );
 }
 
 function renderCompatibilityCard(compatibility) {

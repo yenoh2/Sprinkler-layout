@@ -64,6 +64,7 @@ export function createRenderer(canvas, store, analyzer) {
     if (state.view.showGrid) {
       drawGrid(state);
     }
+    drawRectificationOverlay(state);
     drawCalibrationLine(state);
     drawMeasureLine(state);
     drawAnalysisOverlay(state, analysis);
@@ -144,6 +145,43 @@ export function createRenderer(canvas, store, analyzer) {
       ctx.lineTo(second.x, second.y);
       ctx.stroke();
     }
+    ctx.restore();
+  }
+
+  function drawRectificationOverlay(state) {
+    if (!state.ui.rectificationPoints?.length) {
+      return;
+    }
+
+    const labels = ["TL", "TR", "BR", "BL"];
+    const points = state.ui.rectificationPoints.map((point) => worldToScreen(point, state.view));
+
+    ctx.save();
+    ctx.strokeStyle = "rgba(33, 102, 172, 0.9)";
+    ctx.fillStyle = "rgba(33, 102, 172, 0.9)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 6]);
+
+    if (points.length >= 2) {
+      ctx.beginPath();
+      ctx.moveTo(points[0].x, points[0].y);
+      points.slice(1).forEach((point) => ctx.lineTo(point.x, point.y));
+      if (points.length === 4) {
+        ctx.closePath();
+      }
+      ctx.stroke();
+    }
+
+    ctx.setLineDash([]);
+    points.forEach((point, index) => {
+      drawMarker(point);
+      ctx.fillStyle = "rgba(255, 247, 235, 0.98)";
+      ctx.fillRect(point.x + 10, point.y - 18, 28, 18);
+      ctx.fillStyle = "rgba(33, 102, 172, 0.98)";
+      ctx.font = "11px Aptos, Segoe UI, sans-serif";
+      ctx.fillText(labels[index] ?? String(index + 1), point.x + 14, point.y - 5);
+      ctx.fillStyle = "rgba(33, 102, 172, 0.9)";
+    });
     ctx.restore();
   }
 

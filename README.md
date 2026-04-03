@@ -8,6 +8,7 @@ This project is built as a static HTML/CSS/JavaScript app with no backend and no
 
 - Import a yard image (`PNG` or `JPG`) as the drawing background
 - Calibrate scale with a two-point reference measurement
+- Optionally rectify photographed plans with a four-corner reference rectangle before scale calibration
 - Place and edit sprinkler heads with:
   - full-circle coverage
   - arc coverage

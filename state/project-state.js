@@ -1,6 +1,8 @@
 import { clamp, distanceBetween, normalizeAngle } from "../geometry/arcs.js";
 import { normalizeFittingType, normalizeFittingsPanelTab } from "../geometry/fittings.js";
 import { distancePointToSegmentSquared, normalizePipeKind, normalizePipePoints } from "../geometry/pipes.js";
+import { applyHomography, sanitizeReferenceDimension } from "../geometry/rectification.js";
+import { computePixelsPerUnitFromPoints } from "../geometry/scale.js";
 import { normalizeWireGauge, normalizeWireKind, sanitizeWireColorCode, sanitizeWireConductorCount } from "../geometry/wires.js";
 
 const HEAD_CONNECTION_PIPE_EPSILON = 3;
@@ -33,6 +35,7 @@ const HISTORY_ACTIONS = new Set([
   "SET_SCALE",
   "SET_HYDRAULICS",
   "SET_BACKGROUND",
+  "APPLY_BACKGROUND_RECTIFICATION",
   "SET_ANALYSIS",
   "LOAD_PROJECT",
   "DUPLICATE_SPRINKLER",
@@ -59,6 +62,18 @@ export function createInitialState() {
       width: 0,
       height: 0,
       name: "",
+      sourceSrc: "",
+      sourceWidth: 0,
+      sourceHeight: 0,
+      rectification: {
+        enabled: false,
+        referenceWidth: 10,
+        referenceHeight: 10,
+        outputWidth: 0,
+        outputHeight: 0,
+        matrix: null,
+        inverseMatrix: null,
+      },
     },
     scale: {
       mode: "twoPoint",
@@ -135,6 +150,8 @@ export function createInitialState() {
       focusedZoneId: null,
       expandedZoneIds: [],
       appScreen: "layout",
+      calibrationMode: "scale",
+      rectificationPoints: [],
       fittingsPanel: {
         x: 28,
         y: 28,
@@ -218,6 +235,9 @@ function applyAction(state, action) {
         state.ui.wireDraft = null;
       }
       return state;
+    case "SET_CALIBRATION_MODE":
+      state.ui.calibrationMode = normalizeCalibrationMode(action.payload.mode);
+      return state;
     case "SET_PLACEMENT_PATTERN":
       state.ui.placementPattern = ["full", "arc", "strip"].includes(action.payload.pattern)
         ? action.payload.pattern
@@ -253,7 +273,7 @@ function applyAction(state, action) {
       state.view.zoom = 1;
       return state;
     case "SET_BACKGROUND":
-      state.background = { ...action.payload };
+      state.background = normalizeBackgroundPayload(action.payload, createInitialState().background);
       state.ui.selectedSprinklerId = null;
       state.ui.selectedValveBoxId = null;
       state.ui.selectedControllerId = null;
@@ -263,6 +283,18 @@ function applyAction(state, action) {
       state.ui.selectedPipeVertexIndex = null;
       state.ui.pipeDraft = null;
       state.ui.wireDraft = null;
+      state.ui.rectificationPoints = [];
+      state.ui.calibrationMode = "scale";
+      return state;
+    case "ADD_RECTIFICATION_POINT":
+      if (state.ui.rectificationPoints.length >= 4) {
+        state.ui.rectificationPoints = [action.payload.point];
+        return state;
+      }
+      state.ui.rectificationPoints = appendBounded(state.ui.rectificationPoints, action.payload.point, 4);
+      return state;
+    case "CLEAR_RECTIFICATION_POINTS":
+      state.ui.rectificationPoints = [];
       return state;
     case "ADD_CALIBRATION_POINT":
       if (state.scale.calibrationPoints.length >= 2) {
@@ -276,6 +308,9 @@ function applyAction(state, action) {
       return state;
     case "SET_SCALE":
       applyScalePatch(state, action.payload);
+      return state;
+    case "APPLY_BACKGROUND_RECTIFICATION":
+      applyBackgroundRectification(state, action.payload);
       return state;
     case "SET_HYDRAULICS":
       state.hydraulics = {
@@ -1264,6 +1299,56 @@ function appendBounded(items, item, limit) {
   return [...items, item].slice(-limit);
 }
 
+function applyBackgroundRectification(state, payload) {
+  const transformMatrix = normalizeMatrix(payload?.transformMatrix);
+  if (!transformMatrix) {
+    return;
+  }
+
+  state.sprinklers = state.sprinklers.map((sprinkler) => transformEntityPoint(sprinkler, transformMatrix));
+  state.valveBoxes = state.valveBoxes.map((valveBox) => transformEntityPoint(valveBox, transformMatrix));
+  state.controllers = state.controllers.map((controller) => transformEntityPoint(controller, transformMatrix));
+  state.pipeRuns = state.pipeRuns.map((pipeRun) => ({
+    ...pipeRun,
+    points: transformPoints(pipeRun.points, transformMatrix),
+  }));
+  state.wireRuns = state.wireRuns.map((wireRun) => ({
+    ...wireRun,
+    points: transformPoints(wireRun.points, transformMatrix),
+  }));
+  state.fittings = state.fittings.map((fitting) => transformEntityPoint(fitting, transformMatrix));
+  state.scale.calibrationPoints = transformPoints(state.scale.calibrationPoints, transformMatrix);
+  state.ui.measurePoints = transformPoints(state.ui.measurePoints, transformMatrix);
+  state.ui.measurePreviewPoint = transformPoint(state.ui.measurePreviewPoint, transformMatrix);
+  state.ui.cursorWorld = transformPoint(state.ui.cursorWorld, transformMatrix);
+  state.ui.rectificationPoints = [];
+  state.ui.calibrationMode = "scale";
+  state.ui.fittingDraft = null;
+  state.ui.pipeDraft = null;
+  state.ui.wireDraft = null;
+
+  state.background = normalizeBackgroundPayload(
+    {
+      ...state.background,
+      ...payload?.background,
+      rectification: payload?.background?.rectification ?? state.background.rectification,
+    },
+    state.background,
+  );
+
+  const recalibratedPixelsPerUnit = computePixelsPerUnitFromPoints(
+    state.scale.calibrationPoints,
+    Number(state.scale.distanceUnits),
+  );
+  if (recalibratedPixelsPerUnit > 0) {
+    state.scale.pixelsPerUnit = recalibratedPixelsPerUnit;
+    state.scale.calibrated = true;
+  } else {
+    state.scale.pixelsPerUnit = 0;
+    state.scale.calibrated = false;
+  }
+}
+
 function applyScalePatch(state, payload) {
   const { preserveSprinklerFootprint = false, ...scalePatch } = payload ?? {};
   const previousPixelsPerUnit = Number(state.scale.pixelsPerUnit);
@@ -1284,6 +1369,93 @@ function applyScalePatch(state, payload) {
     ...scalePatch,
     calibrated: nextPixelsPerUnit > 0,
   };
+}
+
+function normalizeBackgroundPayload(background, fallback) {
+  const base = fallback ? structuredClone(fallback) : structuredClone(createInitialState().background);
+  const src = String(background?.src ?? base.src ?? "");
+  const width = sanitizePositiveDimension(background?.width, base.width ?? 0);
+  const height = sanitizePositiveDimension(background?.height, base.height ?? 0);
+  const name = String(background?.name ?? base.name ?? "");
+  const sourceSrc = String(background?.sourceSrc ?? base.sourceSrc ?? src);
+  const sourceWidth = sanitizePositiveDimension(background?.sourceWidth, base.sourceWidth || width);
+  const sourceHeight = sanitizePositiveDimension(background?.sourceHeight, base.sourceHeight || height);
+  return {
+    ...base,
+    ...background,
+    src,
+    width,
+    height,
+    name,
+    sourceSrc,
+    sourceWidth,
+    sourceHeight,
+    rectification: normalizeRectificationState(background?.rectification, base.rectification),
+  };
+}
+
+function normalizeRectificationState(rectification, fallback) {
+  const base = fallback ? structuredClone(fallback) : structuredClone(createInitialState().background.rectification);
+  return {
+    ...base,
+    ...rectification,
+    enabled: Boolean(rectification?.enabled ?? base.enabled),
+    referenceWidth: sanitizeReferenceDimension(rectification?.referenceWidth, base.referenceWidth),
+    referenceHeight: sanitizeReferenceDimension(rectification?.referenceHeight, base.referenceHeight),
+    outputWidth: sanitizePositiveDimension(rectification?.outputWidth, base.outputWidth),
+    outputHeight: sanitizePositiveDimension(rectification?.outputHeight, base.outputHeight),
+    matrix: normalizeMatrix(rectification?.matrix) ?? base.matrix ?? null,
+    inverseMatrix: normalizeMatrix(rectification?.inverseMatrix) ?? base.inverseMatrix ?? null,
+  };
+}
+
+function sanitizePositiveDimension(value, fallback = 0) {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) && numericValue >= 0 ? numericValue : fallback;
+}
+
+function transformEntityPoint(entity, matrix) {
+  const point = transformPoint(entity, matrix);
+  if (!point) {
+    return entity;
+  }
+  return {
+    ...entity,
+    x: point.x,
+    y: point.y,
+  };
+}
+
+function transformPoints(points, matrix) {
+  return (points ?? [])
+    .map((point) => transformPoint(point, matrix))
+    .filter(Boolean);
+}
+
+function transformPoint(point, matrix) {
+  if (!point) {
+    return null;
+  }
+  const transformed = applyHomography(point, matrix);
+  if (!transformed) {
+    return null;
+  }
+  return {
+    x: transformed.x,
+    y: transformed.y,
+  };
+}
+
+function normalizeMatrix(matrix) {
+  if (!Array.isArray(matrix) || matrix.length !== 3) {
+    return null;
+  }
+  const normalized = matrix.map((row) =>
+    Array.isArray(row) && row.length === 3
+      ? row.map((value) => Number(value))
+      : null
+  );
+  return normalized.every((row) => row && row.every((value) => Number.isFinite(value))) ? normalized : null;
 }
 
 function scaleSprinklerGeometry(sprinkler, geometryScale) {
@@ -1329,6 +1501,21 @@ function buildHint(state) {
   }
   if (!state.background.src) {
     return "Import a yard image to begin.";
+  }
+  if (state.ui.activeTool === "calibrate" && state.ui.calibrationMode === "rectify" && !state.ui.rectificationPoints.length) {
+    return "Click the top-left corner of the reference rectangle.";
+  }
+  if (state.ui.activeTool === "calibrate" && state.ui.calibrationMode === "rectify" && state.ui.rectificationPoints.length === 1) {
+    return "Click the top-right corner of the reference rectangle.";
+  }
+  if (state.ui.activeTool === "calibrate" && state.ui.calibrationMode === "rectify" && state.ui.rectificationPoints.length === 2) {
+    return "Click the bottom-right corner of the reference rectangle.";
+  }
+  if (state.ui.activeTool === "calibrate" && state.ui.calibrationMode === "rectify" && state.ui.rectificationPoints.length === 3) {
+    return "Click the bottom-left corner of the reference rectangle.";
+  }
+  if (state.ui.activeTool === "calibrate" && state.ui.calibrationMode === "rectify" && state.ui.rectificationPoints.length >= 4) {
+    return "Enter the reference width and height, then apply rectification. Clicking a new point starts over.";
   }
   if (state.ui.activeTool === "calibrate" && !state.scale.calibrationPoints.length) {
     return "Click the first calibration point on the drawing.";
@@ -1389,7 +1576,7 @@ function normalizeLoadedProject(project) {
     ...initial,
     ...project,
     meta: { ...initial.meta, ...project.meta },
-    background: { ...initial.background, ...project.background },
+    background: normalizeBackgroundPayload(project.background, initial.background),
     scale: { ...initial.scale, ...project.scale },
     hydraulics: { ...initial.hydraulics, ...sanitizeHydraulicsPatch(project.hydraulics) },
     analysis: { ...initial.analysis, ...sanitizeAnalysisPatch(project.analysis) },
@@ -1412,6 +1599,8 @@ function normalizeLoadedProject(project) {
       pipeDraft: null,
       wireDraft: null,
       expandedZoneIds: [],
+      calibrationMode: normalizeCalibrationMode(project.ui?.calibrationMode),
+      rectificationPoints: normalizeDraftPoints(project.ui?.rectificationPoints, 4),
       fittingsPanel: sanitizeFittingsPanelState({
         ...initial.ui.fittingsPanel,
         ...project.ui?.fittingsPanel,
@@ -1766,6 +1955,20 @@ function normalizeDraftPoint(point) {
 
 function normalizeFittingStatus(status) {
   return status === "ignored" ? "ignored" : "placed";
+}
+
+function normalizeCalibrationMode(mode) {
+  return mode === "rectify" ? "rectify" : "scale";
+}
+
+function normalizeDraftPoints(points, limit) {
+  if (!Array.isArray(points)) {
+    return [];
+  }
+  return points
+    .slice(0, limit)
+    .map((point) => normalizeDraftPoint(point))
+    .filter(Boolean);
 }
 
 function collectDependentFittingIdsForPipeRun(state, pipeRun) {

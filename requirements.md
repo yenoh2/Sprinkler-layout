@@ -49,6 +49,7 @@ The sprinkler layout tool shall allow a user to load a scale drawing of a yard, 
 
 - The system shall allow the user to define the drawing scale after import.
 - The system shall support two-point scale calibration by letting the user click two points on the drawing and enter the real-world distance between them.
+- The system should optionally support four-corner image rectification for photographed plans by mapping a known rectangular reference area into a corrected rectangle before scale calibration.
 - The system shall convert on-screen distances into real-world units after calibration.
 - The system shall support at minimum `feet` and `meters`.
 - The system shall display the current scale clearly in the interface.
