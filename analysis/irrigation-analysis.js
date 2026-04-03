@@ -1,6 +1,7 @@
 import { clamp, normalizeAngle } from "../geometry/arcs.js";
 import { getCoverageModel, pointFallsWithinCoverage, resolveCoverageBounds, resolveStripConfiguration } from "../geometry/coverage.js";
-import { getFittingTypeMeta } from "../geometry/fittings.js";
+import { formatNominalPipeSize, getFittingTypeMeta } from "../geometry/fittings.js";
+import { formatNozzleLabel } from "../geometry/nozzle-labels.js";
 import { resolvePlacedFittingSizeSpec } from "./fittings-analysis.js";
 import { calculatePipeLengthUnits, formatPipeDiameterLabel, getPipeKindLabel, normalizePipeKind } from "../geometry/pipes.js";
 import { formatWireRunLabel } from "../geometry/wires.js";
@@ -13,6 +14,9 @@ const DEFAULT_ASSUMPTIONS = {
   maxExactRotorSearchStates: 250000,
   rotorBeamWidth: 160,
 };
+
+const FUNNY_PIPE_ELBOWS_PER_HEAD_CONNECTION = 2;
+const HEAD_CONNECTION_FITTING_TYPES = new Set(["head_takeoff", "elbow"]);
 
 export const HEATMAP_DETAIL_OPTIONS = [
   { value: 12, label: "Fine" },
@@ -767,6 +771,12 @@ function buildRecommendationBase(sprinkler, zone, zonesById, details) {
     body: details.body,
     inletSizeInches: resolveRecommendationInletSizeInches(details),
     nozzle: details.nozzle,
+    nozzleLabel: formatNozzleLabel({
+      ...details,
+      family: details.family,
+      coverageModel,
+      selectedArcDeg: installedArcDeg,
+    }),
     nozzleType: details.nozzleType,
     skuFamily: details.skuFamily ?? details.nozzle,
     radiusClassFt: details.radiusClassFt,
@@ -1134,7 +1144,7 @@ function buildZoneCompatibility(recommendation, sprinkler, zone, zoneReport, zon
       zonePreferredFamily: preferredFamily,
       familyCounts,
       headline: `Fits the ${preferredFamily}-dominant zone family.`,
-      detail: `${assignedZone.name} is currently ${countsLabel}. This head stays in-family with ${recommendation.body} ${recommendation.nozzle}.`,
+      detail: `${assignedZone.name} is currently ${countsLabel}. This head stays in-family with ${recommendation.body} ${recommendation.nozzleLabel || recommendation.nozzle}.`,
       suggestions: preferredFit.canFit
         ? [`Preferred family fit: ${preferredFit.label}.`]
         : [],
@@ -1149,7 +1159,7 @@ function buildZoneCompatibility(recommendation, sprinkler, zone, zoneReport, zon
       zonePreferredFamily: preferredFamily,
       familyCounts,
       headline: `${capitalize(preferredFamily)} fit is available, but this head is crossing families.`,
-      detail: `${assignedZone.name} is ${countsLabel}. Current recommendation is ${recommendation.body} ${recommendation.nozzle}, while the best ${preferredFamily} fit is ${preferredFit.label}.`,
+      detail: `${assignedZone.name} is ${countsLabel}. Current recommendation is ${recommendation.body} ${recommendation.nozzleLabel || recommendation.nozzle}, while the best ${preferredFamily} fit is ${preferredFit.label}.`,
       suggestions: [
         `Prefer ${preferredFamily} here to keep the zone uniform unless there is a strong design reason not to.`,
         "Review neighboring heads and precipitation balance before accepting the mismatch.",
@@ -1180,7 +1190,14 @@ function describeSprayFit(sprinkler, sprayData, assumptions) {
     const strip = resolveStripConfiguration(sprinkler);
     const candidate = pickStripCandidate(strip, sprayData.stripSeries);
     return candidate
-      ? { canFit: true, label: `Rain Bird 1800 PRS ${candidate.model}` }
+      ? {
+        canFit: true,
+        label: `Rain Bird 1800 PRS ${formatNozzleLabel({
+          nozzle: candidate.model,
+          nozzleType: "strip",
+          coverageModel: "strip",
+        })}`,
+      }
       : { canFit: false, label: "No valid strip fit" };
   }
   const radiusClass = pickRadiusClass(
@@ -1195,11 +1212,31 @@ function describeSprayFit(sprinkler, sprayData, assumptions) {
   const normalizedArc = nearestFixedArc(sprinkler.desiredArcDeg);
   const fixed = sprayData.fixedByRadius.get(radiusClass)?.get(normalizedArc) ?? null;
   if (fixed && Math.abs(sprinkler.desiredArcDeg - normalizedArc) <= assumptions.sprayArcNormalizeToleranceDeg) {
-    return { canFit: true, label: `Rain Bird 1800 PRS ${fixed.series}` };
+    return {
+      canFit: true,
+      label: `Rain Bird 1800 PRS ${formatNozzleLabel({
+        family: "spray",
+        nozzle: fixed.series,
+        nozzleType: "fixed",
+        radiusClassFt: radiusClass,
+        selectedRadiusFt: fixed.radiusFt,
+        selectedArcDeg: normalizedArc,
+      })}`,
+    };
   }
   const variable = sprayData.variableByRadius.get(radiusClass) ?? null;
   return variable
-    ? { canFit: true, label: `Rain Bird 1800 PRS ${variable.model}` }
+    ? {
+      canFit: true,
+      label: `Rain Bird 1800 PRS ${formatNozzleLabel({
+        family: "spray",
+        nozzle: variable.model,
+        nozzleType: "variable",
+        radiusClassFt: radiusClass,
+        selectedRadiusFt: variable.maxRadiusFt,
+        selectedArcDeg: sprinkler.desiredArcDeg,
+      })}`,
+    }
     : { canFit: false, label: "No valid spray fit" };
 }
 
@@ -1210,7 +1247,7 @@ function describeRotorFit(sprinkler, zone, zonesById, context) {
   const candidates = buildRotorCandidatesForHead(sprinkler, zone, zonesById, context);
   const bestCandidate = candidates[0] ?? null;
   return bestCandidate
-    ? { canFit: true, label: `${bestCandidate.body} ${bestCandidate.nozzle}` }
+    ? { canFit: true, label: `${bestCandidate.body} ${bestCandidate.nozzleLabel || bestCandidate.nozzle}` }
     : { canFit: false, label: "No valid rotor fit" };
 }
 
@@ -2003,25 +2040,26 @@ function buildFittingRows(state, includedZoneIds, zoneOrder, zonesById, recommen
 
     const meta = getFittingTypeMeta(fitting.type);
     const itemLabel = resolvePlacedFittingSizeSpec(state, fitting, { recommendationsById }) || meta.label;
-    const zoneName = fitting.zoneId
-      ? (zonesById.get(fitting.zoneId)?.name ?? "Unassigned")
-      : "Main";
+    const zoneMeta = resolveFittingZoneMeta(state, fitting, zoneOrder, zonesById);
 
     const rowInput = {
       category: "Fitting",
       itemKey: `fitting:${itemLabel}`,
       itemLabel,
-      zoneName,
-      zoneOrderValue: fitting.zoneId ? (zoneOrder.get(fitting.zoneId) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER,
+      zoneName: zoneMeta.zoneName,
+      zoneOrderValue: zoneMeta.zoneOrderValue,
       note: itemLabel !== meta.label ? meta.label : "",
       variant: fitting.type,
       exactLabel: itemLabel,
     };
     addPartRow(allRows, rowInput);
-    addPartRow(
-      resolveFittingPartsBucket(fitting, pipeRunsById) === "zone" ? zoneRows : mainRows,
-      rowInput,
-    );
+    const fittingBucketRows = resolveFittingPartsBucket(fitting, pipeRunsById) === "zone" ? zoneRows : mainRows;
+    addPartRow(fittingBucketRows, rowInput);
+
+    for (const accessoryRow of buildDerivedHeadConnectionAccessoryRows(state, fitting, zoneMeta, recommendationsById)) {
+      addPartRow(allRows, accessoryRow);
+      addPartRow(zoneRows, accessoryRow);
+    }
   }
 
   return {
@@ -2035,6 +2073,49 @@ function finalizeFittingPartRows(rows) {
   return [...rows.values()]
     .map((row) => finalizePartRow(row, "exact_sku"))
     .sort((a, b) => comparePartRows(a, b));
+}
+
+function resolveFittingZoneMeta(state, fitting, zoneOrder, zonesById) {
+  const sprinkler = fitting.anchor?.kind === "sprinkler" && fitting.anchor.sprinklerId
+    ? (state.sprinklers ?? []).find((item) => item.id === fitting.anchor.sprinklerId) ?? null
+    : null;
+  const zoneId = fitting.zoneId ?? sprinkler?.zoneId ?? null;
+  if (!zoneId) {
+    return {
+      zoneId: null,
+      zoneName: fitting.anchor?.kind === "sprinkler" ? "Unassigned" : "Main",
+      zoneOrderValue: Number.MAX_SAFE_INTEGER,
+    };
+  }
+
+  return {
+    zoneId,
+    zoneName: zonesById.get(zoneId)?.name ?? "Unassigned",
+    zoneOrderValue: zoneOrder.get(zoneId) ?? Number.MAX_SAFE_INTEGER,
+  };
+}
+
+function buildDerivedHeadConnectionAccessoryRows(state, fitting, zoneMeta, recommendationsById) {
+  if (fitting.anchor?.kind !== "sprinkler" || !HEAD_CONNECTION_FITTING_TYPES.has(fitting.type)) {
+    return [];
+  }
+
+  const sprinkler = (state.sprinklers ?? []).find((item) => item.id === fitting.anchor.sprinklerId) ?? null;
+  if (!sprinkler) {
+    return [];
+  }
+
+  const inletSizeInches = resolveRecommendationInletSizeInches(recommendationsById?.[sprinkler.id]);
+  const inletSizeLabel = formatNominalPipeSize(inletSizeInches);
+  return [{
+    category: "Fitting",
+    itemKey: `fitting:funny_pipe_elbow:${inletSizeLabel}`,
+    itemLabel: `${inletSizeLabel} funny pipe elbow`,
+    zoneName: zoneMeta.zoneName,
+    zoneOrderValue: zoneMeta.zoneOrderValue,
+    note: `${FUNNY_PIPE_ELBOWS_PER_HEAD_CONNECTION} per sprinkler connection`,
+    quantity: FUNNY_PIPE_ELBOWS_PER_HEAD_CONNECTION,
+  }];
 }
 
 function resolveFittingPartsBucket(fitting, pipeRunsById) {
@@ -2167,7 +2248,7 @@ function addPartRow(rows, input) {
     variants: new Set(),
   };
 
-  existing.quantity += 1;
+  existing.quantity += normalizePartQuantity(input.quantity);
   existing.zones.set(input.zoneName, input.zoneOrderValue);
   if (input.note) {
     existing.notes.add(input.note);
@@ -2176,6 +2257,11 @@ function addPartRow(rows, input) {
     existing.variants.add(input.exactLabel);
   }
   rows.set(input.itemKey, existing);
+}
+
+function normalizePartQuantity(value) {
+  const quantity = Math.round(Number(value));
+  return Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
 }
 
 function finalizePartRow(row, groupBy) {

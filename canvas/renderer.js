@@ -1,6 +1,7 @@
 import { resolvePlacedFittingSizeSpec } from "../analysis/fittings-analysis.js";
 import { pointFromAngle, pointInSprinkler, toRadians } from "../geometry/arcs.js";
 import { getFittingTypeMeta } from "../geometry/fittings.js";
+import { formatNozzleLabel } from "../geometry/nozzle-labels.js";
 import { buildPipeMidpoints, calculatePipeLengthUnits, distancePointToSegmentSquared } from "../geometry/pipes.js";
 import { normalizeRectificationCorners } from "../geometry/rectification.js";
 import { buildStripFootprintWorldPoints, buildStripHandleWorldPoints, isStripCoverage } from "../geometry/coverage.js";
@@ -84,7 +85,7 @@ export function createRenderer(canvas, store, analyzer) {
     if (state.view.showWire !== false) {
       drawWireRuns(state);
     }
-    drawSprinklers(state);
+    drawSprinklers(state, analysis);
     drawValveBoxes(state);
     drawControllers(state);
     drawFittings(state, analysis);
@@ -519,7 +520,7 @@ export function createRenderer(canvas, store, analyzer) {
     ctx.restore();
   }
 
-  function drawSprinklers(state) {
+  function drawSprinklers(state, analysis) {
     const selected = findSelectedSprinkler(state);
     state.sprinklers.forEach((sprinkler) => {
       const center = worldToScreen({ x: sprinkler.x, y: sprinkler.y }, state.view);
@@ -539,15 +540,38 @@ export function createRenderer(canvas, store, analyzer) {
       ctx.lineWidth = 2;
       ctx.arc(center.x, center.y, 9, 0, Math.PI * 2);
       ctx.stroke();
+      const textLines = [];
       if (state.view.showLabels) {
-        ctx.fillStyle = "#2f2418";
-        ctx.font = "12px Aptos, Segoe UI, sans-serif";
-        ctx.fillText(sprinkler.label || sprinkler.id, center.x + 10, center.y - 10);
-        if (zone && state.view.showZoneLabels) {
-          ctx.fillStyle = headColor;
-          ctx.font = "11px Aptos, Segoe UI, sans-serif";
-          ctx.fillText(zone.name, center.x + 10, center.y + 4);
+        textLines.push({
+          text: sprinkler.label || sprinkler.id,
+          color: "#2f2418",
+          font: "12px Aptos, Segoe UI, sans-serif",
+        });
+      }
+      if (state.view.showNozzleLabels === true) {
+        const recommendation = analysis?.recommendationsById?.[sprinkler.id] ?? null;
+        const nozzleLabel = formatNozzleLabel(recommendation);
+        if (nozzleLabel) {
+          textLines.push({
+            text: nozzleLabel,
+            color: "#2f2418",
+            font: "bold 13px Aptos, Segoe UI, sans-serif",
+          });
         }
+      }
+      if (zone && state.view.showLabels && state.view.showZoneLabels) {
+        textLines.push({
+          text: zone.name,
+          color: headColor,
+          font: "11px Aptos, Segoe UI, sans-serif",
+        });
+      }
+      if (textLines.length) {
+        textLines.forEach((line, index) => {
+          ctx.fillStyle = line.color;
+          ctx.font = line.font;
+          ctx.fillText(line.text, center.x + 10, center.y - 10 + index * 14);
+        });
       }
       ctx.restore();
     });

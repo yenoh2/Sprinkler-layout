@@ -117,6 +117,7 @@ export function createInitialState() {
       showFittings: true,
       showGrid: false,
       showLabels: true,
+      showNozzleLabels: false,
       showZoneLabels: true,
       coverageOpacity: 0.22,
       zoneViewMode: "coverage",
@@ -1947,6 +1948,7 @@ function normalizeView(view) {
   normalized.showTrench = "showTrench" in normalized ? Boolean(normalized.showTrench) : false;
   normalized.showWire = "showWire" in normalized ? Boolean(normalized.showWire) : true;
   normalized.showFittings = "showFittings" in normalized ? Boolean(normalized.showFittings) : true;
+  normalized.showNozzleLabels = "showNozzleLabels" in normalized ? Boolean(normalized.showNozzleLabels) : false;
 
   if (normalized.zoneViewMode === "heatmap") {
     normalized.zoneViewMode = "coverage";

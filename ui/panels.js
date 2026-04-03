@@ -1,6 +1,7 @@
 import { clamp } from "../geometry/arcs.js";
 import { buildFittingSuggestions, resolvePlacedFittingSizeSpec } from "../analysis/fittings-analysis.js";
 import { getAllFittingOptions, getCommonFittingOptions, getFittingTypeMeta, isManualFittingPlacementSupported } from "../geometry/fittings.js";
+import { formatNozzleLabel } from "../geometry/nozzle-labels.js";
 import { PIPE_DIAMETER_OPTIONS, calculatePipeLengthUnits, formatPipeDiameterLabel } from "../geometry/pipes.js";
 import { applyHomography, multiplyMatrices, rectifyImageDataUrl } from "../geometry/rectification.js";
 import { fitBackgroundToView } from "../geometry/scale.js";
@@ -70,6 +71,7 @@ function bindElements() {
     toggleFittings: document.getElementById("toggle-fittings"),
     toggleGrid: document.getElementById("toggle-grid"),
     toggleLabels: document.getElementById("toggle-labels"),
+    toggleNozzleLabels: document.getElementById("toggle-nozzle-labels"),
     toggleZoneLabels: document.getElementById("toggle-zone-labels"),
     coverageOpacity: document.getElementById("coverage-opacity"),
     analysisOverlayMode: document.getElementById("analysis-overlay-mode"),
@@ -454,6 +456,9 @@ function bindEvents(elements, store, renderer, interactions, io) {
   });
   elements.toggleLabels.addEventListener("change", () => {
     store.dispatch({ type: "SET_VIEW", payload: { showLabels: elements.toggleLabels.checked } });
+  });
+  elements.toggleNozzleLabels.addEventListener("change", () => {
+    store.dispatch({ type: "SET_VIEW", payload: { showNozzleLabels: elements.toggleNozzleLabels.checked } });
   });
   elements.toggleZoneLabels.addEventListener("change", () => {
     store.dispatch({ type: "SET_VIEW", payload: { showZoneLabels: elements.toggleZoneLabels.checked } });
@@ -955,6 +960,7 @@ function updateUi(elements, state, renderer, analyzer) {
   elements.toggleFittings.checked = state.view.showFittings !== false;
   elements.toggleGrid.checked = state.view.showGrid;
   elements.toggleLabels.checked = state.view.showLabels;
+  elements.toggleNozzleLabels.checked = state.view.showNozzleLabels === true;
   elements.toggleZoneLabels.checked = state.view.showZoneLabels;
   elements.coverageOpacity.value = String(state.view.coverageOpacity);
   elements.analysisOverlayMode.value = state.view.analysisOverlayMode ?? "application_rate";
@@ -2449,10 +2455,17 @@ function renderSprinklerAnalysis(node, selected, analysis) {
   }
 
   const zoneSummary = analysis?.zones?.find((zone) => zone.zoneId === recommendation.zoneId) ?? null;
+  const nozzleLabel = formatNozzleLabel(recommendation) || recommendation.nozzle;
+  const nozzleRows = nozzleLabel && nozzleLabel !== recommendation.nozzle
+    ? [
+      `<div><dt>Nozzle</dt><dd>${escapeHtml(nozzleLabel)}</dd></div>`,
+      `<div><dt>SKU</dt><dd>${escapeHtml(recommendation.nozzle)}</dd></div>`,
+    ]
+    : [`<div><dt>Nozzle</dt><dd>${escapeHtml(nozzleLabel)}</dd></div>`];
   const detailRows = recommendation.coverageModel === "strip"
     ? [
       `<div><dt>Body</dt><dd>${escapeHtml(recommendation.body)}</dd></div>`,
-      `<div><dt>Nozzle</dt><dd>${escapeHtml(recommendation.nozzle)}</dd></div>`,
+      ...nozzleRows,
       `<div><dt>Flow</dt><dd>${recommendation.flowGpm.toFixed(2)} GPM</dd></div>`,
       `<div><dt>Actual PR</dt><dd>${recommendation.actualPrecipInHr.toFixed(2)} in/hr</dd></div>`,
       `<div><dt>Strip type</dt><dd>${escapeHtml(capitalize(recommendation.stripMode))}</dd></div>`,
@@ -2461,7 +2474,7 @@ function renderSprinklerAnalysis(node, selected, analysis) {
     ]
     : [
       `<div><dt>Body</dt><dd>${escapeHtml(recommendation.body)}</dd></div>`,
-      `<div><dt>Nozzle</dt><dd>${escapeHtml(recommendation.nozzle)}</dd></div>`,
+      ...nozzleRows,
       `<div><dt>Flow</dt><dd>${recommendation.flowGpm.toFixed(2)} GPM</dd></div>`,
       `<div><dt>Actual PR</dt><dd>${recommendation.actualPrecipInHr.toFixed(2)} in/hr</dd></div>`,
       `<div><dt>Throw</dt><dd>${recommendation.desiredRadiusFt.toFixed(2)} ft on ${recommendation.selectedRadiusFt.toFixed(0)} ft nozzle</dd></div>`,
