@@ -48,14 +48,12 @@ The sprinkler layout tool shall allow a user to load a scale drawing of a yard, 
 ### 6.2 Scale Calibration
 
 - The system shall allow the user to define the drawing scale after import.
-- The system shall support two scale calibration methods:
-- Method 1: Enter a known drawing scale such as `1 in = 10 ft`.
-- Method 2: Click two points on the drawing and enter the real-world distance between them.
+- The system shall support two-point scale calibration by letting the user click two points on the drawing and enter the real-world distance between them.
 - The system shall convert on-screen distances into real-world units after calibration.
 - The system shall support at minimum `feet` and `meters`.
 - The system shall display the current scale clearly in the interface.
 - The system shall prevent sprinkler placement calculations until scale is defined, unless the user explicitly chooses a non-scaled draft mode.
-- The system shall allow recalibration after sprinklers are already placed and update positions and coverage accordingly.
+- The system shall allow recalibration after sprinklers are already placed and update positions and coverage accordingly while preserving existing sprinkler footprints on the drawing.
 
 ### 6.3 Drawing Canvas and Interaction
 
@@ -215,7 +213,7 @@ The sprinkler layout tool shall allow a user to load a scale drawing of a yard, 
 ## 12. Assumptions
 
 - The imported yard drawing is sufficiently accurate for scaled layout work.
-- Users know at least one real-world dimension on the plan for calibration if no explicit drawing scale is provided.
+- Users know at least one real-world dimension on the plan for calibration.
 - Hydraulic inputs are supplied manually by the user.
 - The first version focuses on 2D planning rather than terrain elevation analysis.
 

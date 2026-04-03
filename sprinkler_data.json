@@ -93,6 +93,15 @@
         ],
         "van_series_variable_arc": [
           {
+            "model": "15-VAN",
+            "max_radius_ft": 15,
+            "flow_gpm_90": 0.92,
+            "flow_gpm_180": 1.85,
+            "flow_gpm_270": 2.78,
+            "flow_gpm_360": 3.70,
+            "precip_avg": 1.58
+          },
+          {
             "model": "18-VAN",
             "max_radius_ft": 18,
             "flow_gpm_90": 1.33,

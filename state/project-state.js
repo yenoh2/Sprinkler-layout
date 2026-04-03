@@ -265,14 +265,17 @@ function applyAction(state, action) {
       state.ui.wireDraft = null;
       return state;
     case "ADD_CALIBRATION_POINT":
+      if (state.scale.calibrationPoints.length >= 2) {
+        state.scale.calibrationPoints = [action.payload.point];
+        return state;
+      }
       state.scale.calibrationPoints = appendBounded(state.scale.calibrationPoints, action.payload.point, 2);
       return state;
+    case "CLEAR_CALIBRATION_POINTS":
+      state.scale.calibrationPoints = [];
+      return state;
     case "SET_SCALE":
-      state.scale = {
-        ...state.scale,
-        ...action.payload,
-        calibrated: action.payload.pixelsPerUnit > 0,
-      };
+      applyScalePatch(state, action.payload);
       return state;
     case "SET_HYDRAULICS":
       state.hydraulics = {
@@ -1261,6 +1264,49 @@ function appendBounded(items, item, limit) {
   return [...items, item].slice(-limit);
 }
 
+function applyScalePatch(state, payload) {
+  const { preserveSprinklerFootprint = false, ...scalePatch } = payload ?? {};
+  const previousPixelsPerUnit = Number(state.scale.pixelsPerUnit);
+  const nextPixelsPerUnit = Number(scalePatch.pixelsPerUnit);
+
+  if (
+    preserveSprinklerFootprint
+    && previousPixelsPerUnit > 0
+    && nextPixelsPerUnit > 0
+    && Math.abs(previousPixelsPerUnit - nextPixelsPerUnit) > 0.000001
+  ) {
+    const geometryScale = previousPixelsPerUnit / nextPixelsPerUnit;
+    state.sprinklers.forEach((sprinkler) => scaleSprinklerGeometry(sprinkler, geometryScale));
+  }
+
+  state.scale = {
+    ...state.scale,
+    ...scalePatch,
+    calibrated: nextPixelsPerUnit > 0,
+  };
+}
+
+function scaleSprinklerGeometry(sprinkler, geometryScale) {
+  if (!Number.isFinite(geometryScale) || geometryScale <= 0) {
+    return;
+  }
+
+  const radius = Number(sprinkler.radius);
+  if (Number.isFinite(radius)) {
+    sprinkler.radius = Math.max(0.1, radius * geometryScale);
+  }
+
+  const stripLength = Number(sprinkler.stripLength);
+  if (Number.isFinite(stripLength)) {
+    sprinkler.stripLength = Math.max(0.1, stripLength * geometryScale);
+  }
+
+  const stripWidth = Number(sprinkler.stripWidth);
+  if (Number.isFinite(stripWidth)) {
+    sprinkler.stripWidth = Math.max(0.1, stripWidth * geometryScale);
+  }
+}
+
 function calculateMeasureDistance(state) {
   if (!state.scale.pixelsPerUnit) {
     return null;
@@ -1283,6 +1329,15 @@ function buildHint(state) {
   }
   if (!state.background.src) {
     return "Import a yard image to begin.";
+  }
+  if (state.ui.activeTool === "calibrate" && !state.scale.calibrationPoints.length) {
+    return "Click the first calibration point on the drawing.";
+  }
+  if (state.ui.activeTool === "calibrate" && state.scale.calibrationPoints.length === 1) {
+    return "Click the second calibration point on the drawing.";
+  }
+  if (state.ui.activeTool === "calibrate" && state.scale.calibrationPoints.length >= 2) {
+    return "Enter the measured distance and apply calibration. Clicking a new point starts over.";
   }
   if (!state.scale.calibrated) {
     return "Calibrate the drawing before placing sprinklers, valve boxes, controllers, pipe, or wire.";

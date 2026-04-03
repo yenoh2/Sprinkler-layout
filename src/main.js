@@ -64,6 +64,11 @@ document.addEventListener("keydown", (event) => {
   if (isInputFocused()) {
     if (event.key === "Escape") {
       const state = store.getState();
+      if (state.ui.activeTool === "calibrate" && state.scale.calibrationPoints.length) {
+        event.preventDefault();
+        store.dispatch({ type: "CLEAR_CALIBRATION_POINTS" });
+        return;
+      }
       if (state.ui.activeTool === "measure" && (state.ui.measurePoints.length || state.ui.measurePreviewPoint)) {
         event.preventDefault();
         store.dispatch({ type: "CLEAR_MEASURE" });
@@ -153,6 +158,11 @@ document.addEventListener("keydown", (event) => {
     if (state.ui.activeTool === "wire" && state.ui.wireDraft) {
       event.preventDefault();
       interactions.cancelWireDraft();
+      return;
+    }
+    if (state.ui.activeTool === "calibrate" && state.scale.calibrationPoints.length) {
+      event.preventDefault();
+      store.dispatch({ type: "CLEAR_CALIBRATION_POINTS" });
       return;
     }
     if (state.ui.activeTool === "measure" && (state.ui.measurePoints.length || state.ui.measurePreviewPoint)) {

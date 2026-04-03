@@ -45,10 +45,8 @@ function bindElements() {
     resetViewButton: document.getElementById("reset-view-button"),
     projectJsonInput: document.getElementById("project-json-input"),
     calibrationDistance: document.getElementById("calibration-distance"),
-    ratioPixels: document.getElementById("ratio-pixels"),
-    ratioUnits: document.getElementById("ratio-units"),
+    resetCalibrationPointsButton: document.getElementById("reset-calibration-points-button"),
     applyTwoPointButton: document.getElementById("apply-two-point-button"),
-    applyRatioButton: document.getElementById("apply-ratio-button"),
     calibrationPointsLabel: document.getElementById("calibration-points-label"),
     lineSizeSelect: document.getElementById("line-size-select"),
     pressureInput: document.getElementById("pressure-input"),
@@ -291,10 +289,9 @@ function bindEvents(elements, store, renderer, interactions, io) {
     }
   });
 
-  elements.applyRatioButton.addEventListener("click", () => {
-    if (!interactions.applyRatioCalibration(Number(elements.ratioPixels.value), Number(elements.ratioUnits.value), elements.unitsSelect.value)) {
-      alert("Enter valid ratio values greater than zero.");
-    }
+  elements.resetCalibrationPointsButton.addEventListener("click", () => {
+    store.dispatch({ type: "SET_ACTIVE_TOOL", payload: { tool: "calibrate" } });
+    store.dispatch({ type: "CLEAR_CALIBRATION_POINTS" });
   });
 
   const updateHydraulics = () => {
@@ -858,7 +855,13 @@ function updateUi(elements, state, renderer, analyzer) {
   elements.partsShowZoneUsage.checked = state.parts.showZoneUsage !== false;
   elements.analysisRateScaleMode.disabled = (state.view.analysisOverlayMode ?? "application_rate") !== "application_rate";
   elements.analysisRateScaleMax.disabled = elements.analysisRateScaleMode.disabled || (state.view.heatmapScaleMode ?? "zone") !== "fixed";
-  elements.calibrationPointsLabel.textContent = `Calibration points: ${state.scale.calibrationPoints.length} selected`;
+  const calibrationPointCount = state.scale.calibrationPoints.length;
+  elements.calibrationPointsLabel.textContent = calibrationPointCount >= 2
+    ? "Calibration points: 2 selected. Click Apply Calibration, or click a new point to start over."
+    : calibrationPointCount === 1
+      ? "Calibration points: 1 selected. Click the second point on the plan."
+      : "Calibration points: 0 selected. Click Pick New Points, then click the first point on the plan.";
+  elements.applyTwoPointButton.disabled = calibrationPointCount < 2;
   elements.historySummary.textContent = `${state.history.undoStack.length} undo / ${state.history.redoStack.length} redo`;
   elements.undoButton.disabled = !state.history.undoStack.length;
   elements.redoButton.disabled = !state.history.redoStack.length;

@@ -85,25 +85,16 @@
 
         <section class="panel">
           <h2>Calibration</h2>
-          <p class="panel-copy">Two-point calibration: click two points on the image, then enter the real distance.</p>
+          <p class="panel-copy">Click two points on the image, then enter the real-world distance between them.</p>
           <label class="field">
             <span>Measured distance</span>
             <input id="calibration-distance" type="number" min="0.01" step="0.01" value="10">
           </label>
-          <button id="apply-two-point-button" type="button">Apply Two-Point Calibration</button>
-          <hr>
-          <p class="panel-copy">Ratio calibration: define pixels per unit directly.</p>
-          <div class="field-group">
-            <label class="field">
-              <span>Pixels</span>
-              <input id="ratio-pixels" type="number" min="1" step="1" value="100">
-            </label>
-            <label class="field">
-              <span>Real units</span>
-              <input id="ratio-units" type="number" min="0.01" step="0.01" value="10">
-            </label>
+          <div class="button-row">
+            <button id="reset-calibration-points-button" type="button">Pick New Points</button>
+            <button id="apply-two-point-button" type="button">Apply Calibration</button>
           </div>
-          <button id="apply-ratio-button" type="button">Apply Ratio Calibration</button>
+          <p class="panel-copy">Reapplying calibration keeps existing sprinkler footprints aligned to the drawing while measured lengths and analysis update to the new scale.</p>
           <p id="calibration-points-label" class="muted-line">Calibration points: 0 selected</p>
         </section>
 

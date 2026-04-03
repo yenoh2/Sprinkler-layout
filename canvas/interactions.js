@@ -689,23 +689,7 @@ export function createInteractionController(canvas, store, renderer, analyzer) {
         units,
         pixelsPerUnit,
         distanceUnits,
-      },
-    });
-    return true;
-  }
-
-  function applyRatioCalibration(pixels, realUnits, units) {
-    const pixelsPerUnit = pixels / realUnits;
-    if (!(pixelsPerUnit > 0)) {
-      return false;
-    }
-    store.dispatch({
-      type: "SET_SCALE",
-      payload: {
-        mode: "ratio",
-        units,
-        pixelsPerUnit,
-        distanceUnits: realUnits,
+        preserveSprinklerFootprint: state.scale.calibrated && state.sprinklers.length > 0,
       },
     });
     return true;
@@ -839,7 +823,6 @@ export function createInteractionController(canvas, store, renderer, analyzer) {
   return {
     syncState,
     applyTwoPointCalibration,
-    applyRatioCalibration,
     fitBackground,
     finishPipeDraft,
     finishWireDraft,
