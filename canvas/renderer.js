@@ -2,6 +2,7 @@ import { resolvePlacedFittingSizeSpec } from "../analysis/fittings-analysis.js";
 import { pointFromAngle, pointInSprinkler, toRadians } from "../geometry/arcs.js";
 import { getFittingTypeMeta } from "../geometry/fittings.js";
 import { buildPipeMidpoints, calculatePipeLengthUnits, distancePointToSegmentSquared } from "../geometry/pipes.js";
+import { normalizeRectificationCorners } from "../geometry/rectification.js";
 import { buildStripFootprintWorldPoints, buildStripHandleWorldPoints, isStripCoverage } from "../geometry/coverage.js";
 import { toPixels, worldToScreen } from "../geometry/scale.js";
 import { findSelectedController, findSelectedFitting, findSelectedPipeRun, findSelectedSprinkler, findSelectedValveBox, findSelectedWireRun, getZoneById, hasHydraulics, isProjectReady } from "../state/project-state.js";
@@ -154,7 +155,10 @@ export function createRenderer(canvas, store, analyzer) {
     }
 
     const labels = ["TL", "TR", "BR", "BL"];
-    const points = state.ui.rectificationPoints.map((point) => worldToScreen(point, state.view));
+    const orderedWorldPoints = state.ui.rectificationPoints.length === 4
+      ? normalizeRectificationCorners(state.ui.rectificationPoints)
+      : state.ui.rectificationPoints;
+    const points = orderedWorldPoints.map((point) => worldToScreen(point, state.view));
 
     ctx.save();
     ctx.strokeStyle = "rgba(33, 102, 172, 0.9)";
@@ -179,7 +183,7 @@ export function createRenderer(canvas, store, analyzer) {
       ctx.fillRect(point.x + 10, point.y - 18, 28, 18);
       ctx.fillStyle = "rgba(33, 102, 172, 0.98)";
       ctx.font = "11px Aptos, Segoe UI, sans-serif";
-      ctx.fillText(labels[index] ?? String(index + 1), point.x + 14, point.y - 5);
+      ctx.fillText(state.ui.rectificationPoints.length === 4 ? (labels[index] ?? String(index + 1)) : String(index + 1), point.x + 14, point.y - 5);
       ctx.fillStyle = "rgba(33, 102, 172, 0.9)";
     });
     ctx.restore();

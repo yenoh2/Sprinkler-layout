@@ -3,7 +3,7 @@ import { distanceBetween } from "./arcs.js";
 const MAX_OUTPUT_DIMENSION = 4096;
 
 export function buildRectificationPlan(points, referenceWidth, referenceHeight, sourceWidth = 0, sourceHeight = 0) {
-  const sourceCorners = normalizeQuadrilateral(points);
+  const sourceCorners = normalizeRectificationCorners(points);
   if (!sourceCorners || !isConvexQuadrilateral(sourceCorners)) {
     return null;
   }
@@ -172,6 +172,46 @@ export function sanitizeReferenceDimension(value, fallback = 10) {
   return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : fallback;
 }
 
+export function normalizeRectificationCorners(points) {
+  if (!Array.isArray(points) || points.length < 4) {
+    return null;
+  }
+
+  const normalized = points
+    .slice(0, 4)
+    .map((point) => ({
+      x: Number(point?.x),
+      y: Number(point?.y),
+    }))
+    .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+
+  if (normalized.length !== 4) {
+    return null;
+  }
+
+  const centroid = {
+    x: normalized.reduce((sum, point) => sum + point.x, 0) / normalized.length,
+    y: normalized.reduce((sum, point) => sum + point.y, 0) / normalized.length,
+  };
+
+  const ordered = normalized
+    .map((point) => ({
+      ...point,
+      angle: Math.atan2(point.y - centroid.y, point.x - centroid.x),
+    }))
+    .sort((left, right) => left.angle - right.angle)
+    .map(({ angle, ...point }) => point);
+
+  const topLeftIndex = ordered.reduce((bestIndex, point, index, items) => {
+    const bestPoint = items[bestIndex];
+    const currentScore = point.x + point.y;
+    const bestScore = bestPoint.x + bestPoint.y;
+    return currentScore < bestScore ? index : bestIndex;
+  }, 0);
+
+  return ordered.slice(topLeftIndex).concat(ordered.slice(0, topLeftIndex));
+}
+
 function computeRectifiedReferenceSize(sourceCorners, referenceWidth, referenceHeight) {
   const topEdge = distanceBetween(sourceCorners[0], sourceCorners[1]);
   const bottomEdge = distanceBetween(sourceCorners[3], sourceCorners[2]);
@@ -224,22 +264,6 @@ function getBounds(points) {
     height: Math.max(1, maxY - minY),
     maxDimension: Math.max(maxX - minX, maxY - minY),
   };
-}
-
-function normalizeQuadrilateral(points) {
-  if (!Array.isArray(points) || points.length < 4) {
-    return null;
-  }
-
-  const normalized = points
-    .slice(0, 4)
-    .map((point) => ({
-      x: Number(point?.x),
-      y: Number(point?.y),
-    }))
-    .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
-
-  return normalized.length === 4 ? normalized : null;
 }
 
 function isConvexQuadrilateral(points) {

@@ -1503,16 +1503,16 @@ function buildHint(state) {
     return "Import a yard image to begin.";
   }
   if (state.ui.activeTool === "calibrate" && state.ui.calibrationMode === "rectify" && !state.ui.rectificationPoints.length) {
-    return "Click the top-left corner of the reference rectangle.";
+    return "Click the four corners of the reference rectangle in any order.";
   }
   if (state.ui.activeTool === "calibrate" && state.ui.calibrationMode === "rectify" && state.ui.rectificationPoints.length === 1) {
-    return "Click the top-right corner of the reference rectangle.";
+    return "Click another corner of the reference rectangle.";
   }
   if (state.ui.activeTool === "calibrate" && state.ui.calibrationMode === "rectify" && state.ui.rectificationPoints.length === 2) {
-    return "Click the bottom-right corner of the reference rectangle.";
+    return "Click a third corner of the reference rectangle.";
   }
   if (state.ui.activeTool === "calibrate" && state.ui.calibrationMode === "rectify" && state.ui.rectificationPoints.length === 3) {
-    return "Click the bottom-left corner of the reference rectangle.";
+    return "Click the final corner of the reference rectangle.";
   }
   if (state.ui.activeTool === "calibrate" && state.ui.calibrationMode === "rectify" && state.ui.rectificationPoints.length >= 4) {
     return "Enter the reference width and height, then apply rectification. Clicking a new point starts over.";

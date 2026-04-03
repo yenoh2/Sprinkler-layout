@@ -970,14 +970,14 @@ function updateUi(elements, state, renderer, analyzer) {
   elements.applyTwoPointButton.disabled = calibrationPointCount < 2;
   const rectificationPointCount = state.ui.rectificationPoints?.length ?? 0;
   elements.rectificationPointsLabel.textContent = rectificationPointCount >= 4
-    ? "Rectification corners: 4 selected. Click Apply Rectification, or click a new corner to start over."
+    ? "Rectification corners: 4 selected. Corners are auto-ordered. Click Apply Rectification, or click a new corner to start over."
     : rectificationPointCount === 3
-      ? "Rectification corners: 3 selected. Click the bottom-left corner."
+      ? "Rectification corners: 3 selected. Click one more corner."
       : rectificationPointCount === 2
-        ? "Rectification corners: 2 selected. Click the bottom-right corner."
+        ? "Rectification corners: 2 selected. Click two more corners."
         : rectificationPointCount === 1
-          ? "Rectification corners: 1 selected. Click the top-right corner."
-          : "Rectification corners: 0 selected. Click Pick 4 Corners to begin.";
+          ? "Rectification corners: 1 selected. Click three more corners."
+          : "Rectification corners: 0 selected. Click Pick 4 Corners to begin. Any order is fine.";
   elements.clearRectificationButton.disabled = rectificationPointCount < 1;
   elements.applyRectificationButton.disabled = rectificationPointCount < 4 || !state.background.src;
   elements.historySummary.textContent = `${state.history.undoStack.length} undo / ${state.history.redoStack.length} redo`;
