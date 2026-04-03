@@ -116,6 +116,14 @@ document.addEventListener("keydown", (event) => {
       });
       return;
     }
+    if (selectedWireRun && Number.isInteger(state.ui.selectedWireVertexIndex)) {
+      event.preventDefault();
+      store.dispatch({
+        type: "DELETE_WIRE_VERTEX",
+        payload: { id: selectedWireRun.id, index: state.ui.selectedWireVertexIndex },
+      });
+      return;
+    }
     if (selectedPipeRun) {
       event.preventDefault();
       store.dispatch({ type: "DELETE_PIPE_RUN", payload: { id: selectedPipeRun.id } });

@@ -296,6 +296,40 @@ export function createInteractionController(canvas, store, renderer, analyzer) {
       return;
     }
 
+    const wireVertexHit = renderer.getWireVertexHandleHit?.(worldPoint);
+    if (wireVertexHit) {
+      store.dispatch({
+        type: "SELECT_WIRE_RUN",
+        payload: { id: wireVertexHit.id, vertexIndex: wireVertexHit.index },
+      });
+      dragState = {
+        kind: "wire-vertex",
+        id: wireVertexHit.id,
+        index: wireVertexHit.index,
+        startScreenPoint: screenPoint,
+        historyStarted: false,
+      };
+      canvas.setPointerCapture(event.pointerId);
+      return;
+    }
+
+    const wireMidpointHit = renderer.getWireMidpointHandleHit?.(worldPoint);
+    if (wireMidpointHit) {
+      store.dispatch({
+        type: "SELECT_WIRE_RUN",
+        payload: { id: wireMidpointHit.id, vertexIndex: null },
+      });
+      dragState = {
+        kind: "wire-midpoint",
+        id: wireMidpointHit.id,
+        index: wireMidpointHit.index,
+        startScreenPoint: screenPoint,
+        historyStarted: false,
+      };
+      canvas.setPointerCapture(event.pointerId);
+      return;
+    }
+
     const handleHit = renderer.getArcHandleHit(worldPoint);
     if (handleHit) {
       const sprinkler = state.sprinklers.find((item) => item.id === handleHit.id);
@@ -475,6 +509,16 @@ export function createInteractionController(canvas, store, renderer, analyzer) {
 
     if (dragState.kind === "pipe-midpoint") {
       updateDraggedPipeMidpoint(state, dragState, screenPoint, worldPoint);
+      return;
+    }
+
+    if (dragState.kind === "wire-vertex") {
+      updateDraggedWireVertex(state, dragState, screenPoint, worldPoint);
+      return;
+    }
+
+    if (dragState.kind === "wire-midpoint") {
+      updateDraggedWireMidpoint(state, dragState, screenPoint, worldPoint);
       return;
     }
 
@@ -898,6 +942,47 @@ export function createInteractionController(canvas, store, renderer, analyzer) {
     });
   }
 
+  function updateDraggedWireVertex(state, nextDragState, screenPoint, worldPoint) {
+    if (!didPointerMoveEnough(nextDragState.startScreenPoint, screenPoint) && !nextDragState.historyStarted) {
+      return;
+    }
+    const snapResult = getWireSnapResult(store.getState(), worldPoint, {
+      excludeWireRunId: nextDragState.id,
+      excludeVertexIndex: nextDragState.index,
+    });
+    const action = {
+      type: "MOVE_WIRE_VERTEX",
+      payload: { id: nextDragState.id, index: nextDragState.index, point: snapResult.point },
+    };
+    if (!nextDragState.historyStarted) {
+      nextDragState.historyStarted = true;
+      store.dispatch(action);
+      return;
+    }
+    store.dispatch({ ...action, meta: { skipHistory: true } });
+  }
+
+  function updateDraggedWireMidpoint(state, nextDragState, screenPoint, worldPoint) {
+    if (!didPointerMoveEnough(nextDragState.startScreenPoint, screenPoint) && !nextDragState.historyStarted) {
+      return;
+    }
+    const snapResult = getWireSnapResult(store.getState(), worldPoint);
+    if (!nextDragState.historyStarted) {
+      nextDragState.historyStarted = true;
+      nextDragState.insertedIndex = nextDragState.index + 1;
+      store.dispatch({
+        type: "INSERT_WIRE_VERTEX",
+        payload: { id: nextDragState.id, index: nextDragState.index, point: snapResult.point },
+      });
+      return;
+    }
+    store.dispatch({
+      type: "MOVE_WIRE_VERTEX",
+      payload: { id: nextDragState.id, index: nextDragState.insertedIndex, point: snapResult.point },
+      meta: { skipHistory: true },
+    });
+  }
+
   function commitPipeDraft(points) {
     const currentState = store.getState();
     store.dispatch({
@@ -1078,16 +1163,20 @@ function getSnappedWorldPoint(state, worldPoint, options = {}) {
 function getWireSnapResult(state, worldPoint, options = {}) {
   const excludeLastDraftPoint = options.excludeDraftTerminal ? state.ui.wireDraft?.points?.at(-1) ?? null : null;
   const wirePointCandidates = (state.wireRuns ?? []).flatMap((wireRun) =>
-    wireRun.points.map((point, index) => ({
-      point,
-      source: {
-        kind: "wire_point",
-        wireRunId: wireRun.id,
-        controllerId: wireRun.controllerId ?? null,
-        valveBoxId: wireRun.valveBoxId ?? null,
-        vertexIndex: index,
-      },
-    })),
+    wireRun.points
+      .filter((point, index) =>
+        !(wireRun.id === options.excludeWireRunId && index === options.excludeVertexIndex),
+      )
+      .map((point, index) => ({
+        point,
+        source: {
+          kind: "wire_point",
+          wireRunId: wireRun.id,
+          controllerId: wireRun.controllerId ?? null,
+          valveBoxId: wireRun.valveBoxId ?? null,
+          vertexIndex: index,
+        },
+      })),
   );
   const candidates = [
     ...(state.controllers ?? []).map((controller) => ({

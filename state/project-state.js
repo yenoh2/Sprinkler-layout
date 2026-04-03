@@ -32,6 +32,9 @@ const HISTORY_ACTIONS = new Set([
   "MOVE_PIPE_VERTEX",
   "INSERT_PIPE_VERTEX",
   "DELETE_PIPE_VERTEX",
+  "MOVE_WIRE_VERTEX",
+  "INSERT_WIRE_VERTEX",
+  "DELETE_WIRE_VERTEX",
   "SET_SCALE",
   "SET_HYDRAULICS",
   "SET_BACKGROUND",
@@ -139,6 +142,7 @@ export function createInitialState() {
       selectedWireRunId: null,
       selectedFittingId: null,
       selectedPipeVertexIndex: null,
+      selectedWireVertexIndex: null,
       hint: "Import an image, calibrate scale, then place sprinklers.",
       measurePoints: [],
       measurePreviewPoint: null,
@@ -234,6 +238,7 @@ function applyAction(state, action) {
       }
       if (action.payload.tool !== "wire") {
         state.ui.wireDraft = null;
+        state.ui.selectedWireVertexIndex = null;
       }
       return state;
     case "SET_CALIBRATION_MODE":
@@ -282,6 +287,7 @@ function applyAction(state, action) {
       state.ui.selectedWireRunId = null;
       state.ui.selectedFittingId = null;
       state.ui.selectedPipeVertexIndex = null;
+      state.ui.selectedWireVertexIndex = null;
       state.ui.pipeDraft = null;
       state.ui.wireDraft = null;
       state.ui.rectificationPoints = [];
@@ -434,6 +440,7 @@ function applyAction(state, action) {
       state.ui.selectedWireRunId = null;
       state.ui.selectedFittingId = null;
       state.ui.selectedPipeVertexIndex = null;
+      state.ui.selectedWireVertexIndex = null;
       return state;
     case "MOVE_SPRINKLER": {
       const sprinkler = findSprinkler(state, action.payload.id);
@@ -467,6 +474,7 @@ function applyAction(state, action) {
       state.ui.selectedWireRunId = null;
       state.ui.selectedFittingId = null;
       state.ui.selectedPipeVertexIndex = null;
+      state.ui.selectedWireVertexIndex = null;
       return state;
     case "DUPLICATE_SPRINKLER": {
       const sprinkler = findSprinkler(state, action.payload.id);
@@ -487,6 +495,7 @@ function applyAction(state, action) {
       state.ui.selectedWireRunId = null;
       state.ui.selectedFittingId = null;
       state.ui.selectedPipeVertexIndex = null;
+      state.ui.selectedWireVertexIndex = null;
       return state;
     }
     case "ADD_VALVE_BOX":
@@ -503,6 +512,7 @@ function applyAction(state, action) {
       state.ui.selectedWireRunId = null;
       state.ui.selectedFittingId = null;
       state.ui.selectedPipeVertexIndex = null;
+      state.ui.selectedWireVertexIndex = null;
       return state;
     case "MOVE_VALVE_BOX": {
       const valveBox = findValveBox(state, action.payload.id);
@@ -546,6 +556,7 @@ function applyAction(state, action) {
       state.ui.selectedWireRunId = null;
       state.ui.selectedFittingId = null;
       state.ui.selectedPipeVertexIndex = null;
+      state.ui.selectedWireVertexIndex = null;
       return state;
     case "ADD_CONTROLLER":
       state.controllers.push({
@@ -562,6 +573,7 @@ function applyAction(state, action) {
       state.ui.selectedWireRunId = null;
       state.ui.selectedFittingId = null;
       state.ui.selectedPipeVertexIndex = null;
+      state.ui.selectedWireVertexIndex = null;
       return state;
     case "MOVE_CONTROLLER": {
       const controller = findController(state, action.payload.id);
@@ -605,6 +617,7 @@ function applyAction(state, action) {
       state.ui.selectedWireRunId = null;
       state.ui.selectedFittingId = null;
       state.ui.selectedPipeVertexIndex = null;
+      state.ui.selectedWireVertexIndex = null;
       return state;
     case "START_PIPE_DRAFT":
       state.ui.pipeDraft = {
@@ -620,6 +633,7 @@ function applyAction(state, action) {
       state.ui.selectedValveBoxId = null;
       state.ui.selectedControllerId = null;
       state.ui.selectedWireRunId = null;
+      state.ui.selectedWireVertexIndex = null;
       state.ui.selectedFittingId = null;
       return state;
     case "APPEND_PIPE_DRAFT_POINT":
@@ -666,6 +680,7 @@ function applyAction(state, action) {
       state.ui.selectedValveBoxId = null;
       state.ui.selectedControllerId = null;
       state.ui.selectedWireRunId = null;
+      state.ui.selectedWireVertexIndex = null;
       state.ui.selectedFittingId = null;
       state.ui.pipeDraft = null;
       return state;
@@ -705,6 +720,7 @@ function applyAction(state, action) {
       state.ui.selectedValveBoxId = null;
       state.ui.selectedControllerId = null;
       state.ui.selectedWireRunId = null;
+      state.ui.selectedWireVertexIndex = null;
       state.ui.selectedFittingId = null;
       return state;
     case "START_WIRE_DRAFT":
@@ -718,6 +734,7 @@ function applyAction(state, action) {
         previewPoint: null,
       };
       state.ui.selectedWireRunId = null;
+      state.ui.selectedWireVertexIndex = null;
       state.ui.selectedSprinklerId = null;
       state.ui.selectedValveBoxId = null;
       state.ui.selectedControllerId = null;
@@ -773,6 +790,7 @@ function applyAction(state, action) {
       };
       state.wireRuns.push(wireRun);
       state.ui.selectedWireRunId = wireRun.id;
+      state.ui.selectedWireVertexIndex = null;
       state.ui.selectedSprinklerId = null;
       state.ui.selectedValveBoxId = null;
       state.ui.selectedControllerId = null;
@@ -794,10 +812,12 @@ function applyAction(state, action) {
       state.wireRuns = state.wireRuns.filter((wireRun) => wireRun.id !== action.payload.id);
       if (state.ui.selectedWireRunId === action.payload.id) {
         state.ui.selectedWireRunId = null;
+        state.ui.selectedWireVertexIndex = null;
       }
       return state;
     case "SELECT_WIRE_RUN":
       state.ui.selectedWireRunId = action.payload.id || null;
+      state.ui.selectedWireVertexIndex = Number.isInteger(action.payload.vertexIndex) ? action.payload.vertexIndex : null;
       state.ui.selectedSprinklerId = null;
       state.ui.selectedValveBoxId = null;
       state.ui.selectedControllerId = null;
@@ -816,6 +836,7 @@ function applyAction(state, action) {
         state.ui.selectedPipeRunId = null;
         state.ui.selectedWireRunId = null;
         state.ui.selectedPipeVertexIndex = null;
+        state.ui.selectedWireVertexIndex = null;
       }
       return state;
     }
@@ -841,6 +862,7 @@ function applyAction(state, action) {
       state.ui.selectedPipeRunId = null;
       state.ui.selectedWireRunId = null;
       state.ui.selectedPipeVertexIndex = null;
+      state.ui.selectedWireVertexIndex = null;
       return state;
     case "SET_FITTINGS_PANEL_STATE":
       state.ui.fittingsPanel = sanitizeFittingsPanelState({
@@ -868,6 +890,7 @@ function applyAction(state, action) {
       state.ui.selectedWireRunId = null;
       state.ui.selectedFittingId = null;
       state.ui.selectedPipeVertexIndex = null;
+      state.ui.selectedWireVertexIndex = null;
       return state;
     case "SET_FITTING_DRAFT_PREVIEW":
       if (!state.ui.fittingDraft) {
@@ -897,6 +920,7 @@ function applyAction(state, action) {
       state.ui.selectedValveBoxId = null;
       state.ui.selectedControllerId = null;
       state.ui.selectedWireRunId = null;
+      state.ui.selectedWireVertexIndex = null;
       return state;
     }
     case "INSERT_PIPE_VERTEX": {
@@ -915,6 +939,7 @@ function applyAction(state, action) {
       state.ui.selectedValveBoxId = null;
       state.ui.selectedControllerId = null;
       state.ui.selectedWireRunId = null;
+      state.ui.selectedWireVertexIndex = null;
       return state;
     }
     case "DELETE_PIPE_VERTEX": {
@@ -925,6 +950,58 @@ function applyAction(state, action) {
       pipeRun.points.splice(action.payload.index, 1);
       state.ui.selectedPipeRunId = pipeRun.id;
       state.ui.selectedPipeVertexIndex = clamp(action.payload.index, 0, pipeRun.points.length - 1);
+      return state;
+    }
+    case "MOVE_WIRE_VERTEX": {
+      const wireRun = findWireRun(state, action.payload.id);
+      if (!wireRun || !Number.isInteger(action.payload.index) || action.payload.index < 0 || action.payload.index >= wireRun.points.length) {
+        return null;
+      }
+      const point = normalizePipePoints([action.payload.point])[0];
+      if (!point) {
+        return null;
+      }
+      wireRun.points[action.payload.index] = point;
+      state.ui.selectedWireRunId = wireRun.id;
+      state.ui.selectedWireVertexIndex = action.payload.index;
+      state.ui.selectedSprinklerId = null;
+      state.ui.selectedValveBoxId = null;
+      state.ui.selectedControllerId = null;
+      state.ui.selectedPipeRunId = null;
+      state.ui.selectedPipeVertexIndex = null;
+      state.ui.selectedFittingId = null;
+      return state;
+    }
+    case "INSERT_WIRE_VERTEX": {
+      const wireRun = findWireRun(state, action.payload.id);
+      if (!wireRun || !Number.isInteger(action.payload.index) || action.payload.index < 0 || action.payload.index >= wireRun.points.length) {
+        return null;
+      }
+      const point = normalizePipePoints([action.payload.point])[0];
+      if (!point) {
+        return null;
+      }
+      wireRun.points.splice(action.payload.index + 1, 0, point);
+      state.ui.selectedWireRunId = wireRun.id;
+      state.ui.selectedWireVertexIndex = action.payload.index + 1;
+      state.ui.selectedSprinklerId = null;
+      state.ui.selectedValveBoxId = null;
+      state.ui.selectedControllerId = null;
+      state.ui.selectedPipeRunId = null;
+      state.ui.selectedPipeVertexIndex = null;
+      state.ui.selectedFittingId = null;
+      return state;
+    }
+    case "DELETE_WIRE_VERTEX": {
+      const wireRun = findWireRun(state, action.payload.id);
+      if (!wireRun || !Number.isInteger(action.payload.index) || wireRun.points.length <= 2 || action.payload.index < 0 || action.payload.index >= wireRun.points.length) {
+        return null;
+      }
+      wireRun.points.splice(action.payload.index, 1);
+      state.ui.selectedWireRunId = wireRun.id;
+      state.ui.selectedWireVertexIndex = clamp(action.payload.index, 0, wireRun.points.length - 1);
+      state.ui.selectedPipeRunId = null;
+      state.ui.selectedPipeVertexIndex = null;
       return state;
     }
     case "ADD_MEASURE_POINT":
@@ -1597,6 +1674,7 @@ function normalizeLoadedProject(project) {
       measurePreviewPoint: null,
       fittingDraft: null,
       selectedPipeVertexIndex: null,
+      selectedWireVertexIndex: null,
       pipeDraft: null,
       wireDraft: null,
       expandedZoneIds: [],
@@ -1680,6 +1758,7 @@ export function cloneProjectSnapshot(state) {
   snapshot.ui.pipeDraft = null;
   snapshot.ui.wireDraft = null;
   snapshot.ui.selectedPipeVertexIndex = null;
+  snapshot.ui.selectedWireVertexIndex = null;
   return snapshot;
 }
 
@@ -2132,6 +2211,9 @@ function normalizeLoadedSelectionState(ui) {
     if (!ui.selectedPipeRunId) {
       ui.selectedPipeVertexIndex = null;
     }
+    if (!ui.selectedWireRunId) {
+      ui.selectedWireVertexIndex = null;
+    }
     return;
   }
 
@@ -2143,5 +2225,8 @@ function normalizeLoadedSelectionState(ui) {
   });
   if (keepKey !== "selectedPipeRunId") {
     ui.selectedPipeVertexIndex = null;
+  }
+  if (keepKey !== "selectedWireRunId") {
+    ui.selectedWireVertexIndex = null;
   }
 }

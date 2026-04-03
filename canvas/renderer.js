@@ -804,6 +804,12 @@ export function createRenderer(canvas, store, analyzer) {
       return;
     }
 
+    const selectedWireRun = findSelectedWireRun(state);
+    if (selectedWireRun && state.view.showWire !== false) {
+      drawSelectedWireHandles(state, selectedWireRun);
+      return;
+    }
+
     const selected = findSelectedSprinkler(state);
     if (!selected || !state.scale.pixelsPerUnit) {
       return;
@@ -856,6 +862,35 @@ export function createRenderer(canvas, store, analyzer) {
         screenPoint,
         selectedVertexIndex === index ? "#b65c2a" : "#fff7eb",
         selectedVertexIndex === index ? "#ffffff" : "#4f4033",
+        6,
+      );
+    });
+    ctx.restore();
+  }
+
+  function drawSelectedWireHandles(state, selectedWireRun) {
+    if (!selectedWireRun.points?.length || selectedWireRun.points.length < 2) {
+      return;
+    }
+
+    const selectedVertexIndex = Number.isInteger(state.ui.selectedWireVertexIndex)
+      ? state.ui.selectedWireVertexIndex
+      : null;
+    const midpoints = buildPipeMidpoints(selectedWireRun.points);
+    const accent = resolveWireAccentColor(state, selectedWireRun);
+
+    ctx.save();
+    midpoints.forEach((midpointEntry) => {
+      const screenPoint = worldToScreen(midpointEntry.point, state.view);
+      drawPipeHandle(ctx, screenPoint, "#f3fffd", accent, 4.5);
+    });
+    selectedWireRun.points.forEach((point, index) => {
+      const screenPoint = worldToScreen(point, state.view);
+      drawPipeHandle(
+        ctx,
+        screenPoint,
+        selectedVertexIndex === index ? accent : "#f3fffd",
+        selectedVertexIndex === index ? "#ffffff" : "rgba(32, 56, 61, 0.92)",
         6,
       );
     });
@@ -1097,6 +1132,42 @@ export function createRenderer(canvas, store, analyzer) {
       .find((entry) => entry.distance <= 81) || null;
   }
 
+  function getWireVertexHandleHit(worldPoint) {
+    const state = store.getState();
+    const selectedWireRun = findSelectedWireRun(state);
+    if (!selectedWireRun || state.view.showWire === false) {
+      return null;
+    }
+
+    const screenPoint = worldToScreen(worldPoint, state.view);
+    return selectedWireRun.points
+      .map((point, index) => ({
+        id: selectedWireRun.id,
+        index,
+        point,
+        distance: distanceSquared(screenPoint, worldToScreen(point, state.view)),
+      }))
+      .find((entry) => entry.distance <= 100) || null;
+  }
+
+  function getWireMidpointHandleHit(worldPoint) {
+    const state = store.getState();
+    const selectedWireRun = findSelectedWireRun(state);
+    if (!selectedWireRun || state.view.showWire === false) {
+      return null;
+    }
+
+    const screenPoint = worldToScreen(worldPoint, state.view);
+    return buildPipeMidpoints(selectedWireRun.points)
+      .map((entry) => ({
+        id: selectedWireRun.id,
+        index: entry.index,
+        point: entry.point,
+        distance: distanceSquared(screenPoint, worldToScreen(entry.point, state.view)),
+      }))
+      .find((entry) => entry.distance <= 81) || null;
+  }
+
   function getHitSprinkler(worldPoint) {
     const state = store.getState();
     return [...state.sprinklers].reverse().find((sprinkler) => {
@@ -1235,6 +1306,8 @@ export function createRenderer(canvas, store, analyzer) {
     getHitWireRun,
     getPipeVertexHandleHit,
     getPipeMidpointHandleHit,
+    getWireVertexHandleHit,
+    getWireMidpointHandleHit,
     getHitSprinkler,
     getHitValveBox,
     getHitController,
