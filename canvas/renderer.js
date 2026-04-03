@@ -5,6 +5,7 @@ import { buildPipeMidpoints, calculatePipeLengthUnits, distancePointToSegmentSqu
 import { normalizeRectificationCorners } from "../geometry/rectification.js";
 import { buildStripFootprintWorldPoints, buildStripHandleWorldPoints, isStripCoverage } from "../geometry/coverage.js";
 import { toPixels, worldToScreen } from "../geometry/scale.js";
+import { buildDerivedTrenchSpans, buildTrenchCacheKey } from "../geometry/trenches.js";
 import { findSelectedController, findSelectedFitting, findSelectedPipeRun, findSelectedSprinkler, findSelectedValveBox, findSelectedWireRun, getZoneById, hasHydraulics, isProjectReady } from "../state/project-state.js";
 
 const RATE_COLOR_STOPS = [
@@ -36,6 +37,8 @@ export function createRenderer(canvas, store, analyzer) {
   const backgroundImage = new Image();
   let currentBackground = "";
   let hoveredFittingPreview = null;
+  let trenchCacheKey = "";
+  let trenchCacheValue = [];
 
   function resize() {
     const frame = canvas.parentElement;
@@ -71,6 +74,9 @@ export function createRenderer(canvas, store, analyzer) {
     drawAnalysisOverlay(state, analysis);
     if (state.view.showCoverage) {
       drawCoverage(state, analysis);
+    }
+    if (state.view.showTrench === true) {
+      drawTrenchRuns(state);
     }
     if (state.view.showPipe) {
       drawPipeRuns(state);
@@ -340,6 +346,7 @@ export function createRenderer(canvas, store, analyzer) {
 
   function drawPipeRuns(state) {
     const selectedPipeRun = findSelectedPipeRun(state);
+    const trenchPrimary = state.view.showTrench === true;
     ctx.save();
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
@@ -350,16 +357,18 @@ export function createRenderer(canvas, store, analyzer) {
       }
       const isSelected = selectedPipeRun?.id === pipeRun.id;
       const isFocusedOut = pipeRun.kind === "zone" && state.ui.focusedZoneId && pipeRun.zoneId !== state.ui.focusedZoneId;
-      const strokeColor = resolvePipeStrokeColor(state, pipeRun, isSelected, isFocusedOut);
-      const underlayAlpha = isFocusedOut ? 0.3 : 0.5;
+      const strokeColor = resolvePipeStrokeColor(state, pipeRun, isSelected, isFocusedOut, trenchPrimary);
 
-      ctx.strokeStyle = `rgba(255, 247, 235, ${underlayAlpha})`;
-      ctx.lineWidth = isSelected ? 8 : 6;
-      drawPipePath(ctx, pipeRun.points, state.view);
-      ctx.stroke();
+      if (!trenchPrimary || isSelected) {
+        const underlayAlpha = trenchPrimary ? (isFocusedOut ? 0.12 : 0.18) : (isFocusedOut ? 0.3 : 0.5);
+        ctx.strokeStyle = `rgba(255, 247, 235, ${underlayAlpha})`;
+        ctx.lineWidth = trenchPrimary ? (isSelected ? 7 : 4.2) : (isSelected ? 8 : 6);
+        drawPipePath(ctx, pipeRun.points, state.view);
+        ctx.stroke();
+      }
 
       ctx.strokeStyle = strokeColor;
-      ctx.lineWidth = isSelected ? 4.6 : 3.4;
+      ctx.lineWidth = trenchPrimary ? (isSelected ? 3.6 : 1.65) : (isSelected ? 4.6 : 3.4);
       drawPipePath(ctx, pipeRun.points, state.view);
       ctx.stroke();
 
@@ -369,6 +378,36 @@ export function createRenderer(canvas, store, analyzer) {
         ctx.font = "12px Aptos, Segoe UI, sans-serif";
         ctx.fillText(pipeRun.label || pipeRun.id, labelPoint.x + 8, labelPoint.y - 8);
       }
+    });
+
+    ctx.restore();
+  }
+
+  function drawTrenchRuns(state) {
+    const trenchSpans = getDerivedTrenchSpans(state);
+    if (!trenchSpans.length) {
+      return;
+    }
+
+    const lineWidth = resolveTrenchLineWidth(state);
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    trenchSpans.forEach((span) => {
+      if (!span.points?.length || span.points.length < 2) {
+        return;
+      }
+      const isFocusedOut = Boolean(state.ui.focusedZoneId)
+        && span.zoneIds.length > 0
+        && !span.zoneIds.includes(state.ui.focusedZoneId);
+      ctx.save();
+      ctx.strokeStyle = resolveTrenchStrokeColor(isFocusedOut);
+      ctx.lineWidth = lineWidth;
+      ctx.setLineDash([]);
+      drawPipePath(ctx, span.points, state.view);
+      ctx.stroke();
+      ctx.restore();
     });
 
     ctx.restore();
@@ -410,6 +449,7 @@ export function createRenderer(canvas, store, analyzer) {
 
   function drawWireRuns(state) {
     const selectedWireRun = findSelectedWireRun(state);
+    const trenchPrimary = state.view.showTrench === true;
     ctx.save();
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
@@ -420,15 +460,17 @@ export function createRenderer(canvas, store, analyzer) {
       }
       const isSelected = selectedWireRun?.id === wireRun.id;
       const isFocusedOut = Boolean(state.ui.focusedZoneId) && !wireRunTouchesZone(state, wireRun, state.ui.focusedZoneId);
-      const strokeColor = resolveWireStrokeColor(state, wireRun, isSelected, isFocusedOut);
+      const strokeColor = resolveWireStrokeColor(state, wireRun, isSelected, isFocusedOut, trenchPrimary);
 
-      ctx.strokeStyle = `rgba(255, 247, 235, ${isFocusedOut ? 0.28 : 0.44})`;
-      ctx.lineWidth = isSelected ? 7 : 5;
-      drawPipePath(ctx, wireRun.points, state.view);
-      ctx.stroke();
+      if (!trenchPrimary || isSelected) {
+        ctx.strokeStyle = `rgba(255, 247, 235, ${trenchPrimary ? (isFocusedOut ? 0.1 : 0.16) : (isFocusedOut ? 0.28 : 0.44)})`;
+        ctx.lineWidth = trenchPrimary ? (isSelected ? 6.2 : 3.8) : (isSelected ? 7 : 5);
+        drawPipePath(ctx, wireRun.points, state.view);
+        ctx.stroke();
+      }
 
       ctx.strokeStyle = strokeColor;
-      ctx.lineWidth = isSelected ? 3.8 : 2.8;
+      ctx.lineWidth = trenchPrimary ? (isSelected ? 3.1 : 1.4) : (isSelected ? 3.8 : 2.8);
       drawPipePath(ctx, wireRun.points, state.view);
       ctx.stroke();
 
@@ -1175,6 +1217,16 @@ export function createRenderer(canvas, store, analyzer) {
     };
   }
 
+  function getDerivedTrenchSpans(state) {
+    const nextKey = buildTrenchCacheKey(state);
+    if (nextKey === trenchCacheKey) {
+      return trenchCacheValue;
+    }
+    trenchCacheKey = nextKey;
+    trenchCacheValue = buildDerivedTrenchSpans(state);
+    return trenchCacheValue;
+  }
+
   return {
     resize,
     render,
@@ -1249,17 +1301,32 @@ function drawPipeHandle(ctx, point, fillColor, strokeColor, radius) {
   ctx.stroke();
 }
 
-function resolvePipeStrokeColor(state, pipeRun, isSelected, isFocusedOut) {
-  if (pipeRun.kind === "main") {
-    return isSelected ? "#b65c2a" : `rgba(79, 64, 51, ${isFocusedOut ? 0.45 : 0.96})`;
-  }
-  const zoneColor = getZoneById(state, pipeRun.zoneId)?.color ?? "#6f6a63";
-  return hexToRgba(zoneColor, isFocusedOut ? 0.36 : (isSelected ? 0.98 : 0.9));
+function resolveTrenchLineWidth(state) {
+  return state.view.showTrench === true ? 4.8 : 0;
 }
 
-function resolveWireStrokeColor(state, wireRun, isSelected, isFocusedOut) {
+function resolveTrenchStrokeColor(isFocusedOut) {
+  return isFocusedOut ? "rgba(44, 91, 84, 0.34)" : "rgba(44, 91, 84, 0.98)";
+}
+
+function resolvePipeStrokeColor(state, pipeRun, isSelected, isFocusedOut, trenchPrimary = false) {
+  if (pipeRun.kind === "main") {
+    if (isSelected) {
+      return "#b65c2a";
+    }
+    return `rgba(79, 64, 51, ${trenchPrimary ? (isFocusedOut ? 0.16 : 0.34) : (isFocusedOut ? 0.45 : 0.96)})`;
+  }
+  const zoneColor = getZoneById(state, pipeRun.zoneId)?.color ?? "#6f6a63";
+  return hexToRgba(zoneColor, trenchPrimary
+    ? (isSelected ? 0.94 : (isFocusedOut ? 0.14 : 0.32))
+    : (isFocusedOut ? 0.36 : (isSelected ? 0.98 : 0.9)));
+}
+
+function resolveWireStrokeColor(state, wireRun, isSelected, isFocusedOut, trenchPrimary = false) {
   const accent = resolveWireAccentColor(state, wireRun);
-  return hexToRgba(accent, isFocusedOut ? 0.34 : (isSelected ? 0.98 : 0.9));
+  return hexToRgba(accent, trenchPrimary
+    ? (isSelected ? 0.94 : (isFocusedOut ? 0.14 : 0.28))
+    : (isFocusedOut ? 0.34 : (isSelected ? 0.98 : 0.9)));
 }
 
 function resolveWireAccentColor(state, wireRun) {

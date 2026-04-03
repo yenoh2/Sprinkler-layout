@@ -109,6 +109,7 @@ export function createInitialState() {
       zoom: 1,
       showCoverage: true,
       showPipe: true,
+      showTrench: false,
       showWire: true,
       showFittings: true,
       showGrid: false,
@@ -1864,6 +1865,7 @@ function sanitizeRuntimeGroupName(value) {
 function normalizeView(view) {
   const normalized = { ...view };
   normalized.showPipe = "showPipe" in normalized ? Boolean(normalized.showPipe) : true;
+  normalized.showTrench = "showTrench" in normalized ? Boolean(normalized.showTrench) : false;
   normalized.showWire = "showWire" in normalized ? Boolean(normalized.showWire) : true;
   normalized.showFittings = "showFittings" in normalized ? Boolean(normalized.showFittings) : true;
 

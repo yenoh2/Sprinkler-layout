@@ -65,6 +65,7 @@ function bindElements() {
     zonesList: document.getElementById("zones-list"),
     toggleCoverage: document.getElementById("toggle-coverage"),
     togglePipe: document.getElementById("toggle-pipe"),
+    toggleTrench: document.getElementById("toggle-trench"),
     toggleWire: document.getElementById("toggle-wire"),
     toggleFittings: document.getElementById("toggle-fittings"),
     toggleGrid: document.getElementById("toggle-grid"),
@@ -438,6 +439,9 @@ function bindEvents(elements, store, renderer, interactions, io) {
   });
   elements.togglePipe.addEventListener("change", () => {
     store.dispatch({ type: "SET_VIEW", payload: { showPipe: elements.togglePipe.checked } });
+  });
+  elements.toggleTrench.addEventListener("change", () => {
+    store.dispatch({ type: "SET_VIEW", payload: { showTrench: elements.toggleTrench.checked } });
   });
   elements.toggleWire.addEventListener("change", () => {
     store.dispatch({ type: "SET_VIEW", payload: { showWire: elements.toggleWire.checked } });
@@ -946,6 +950,7 @@ function updateUi(elements, state, renderer, analyzer) {
   elements.zoneViewMode.value = state.view.zoneViewMode;
   elements.toggleCoverage.checked = state.view.showCoverage;
   elements.togglePipe.checked = state.view.showPipe !== false;
+  elements.toggleTrench.checked = state.view.showTrench === true;
   elements.toggleWire.checked = state.view.showWire !== false;
   elements.toggleFittings.checked = state.view.showFittings !== false;
   elements.toggleGrid.checked = state.view.showGrid;
