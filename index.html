@@ -3,6 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Plan irrigation sprinkler layouts with calibrated background images, zone management, analysis overlays, and parts list generation.">
+  <meta property="og:title" content="Sprinkler Layout Tool">
+  <meta property="og:description" content="Plan irrigation sprinkler layouts with calibrated background images, zone management, analysis overlays, and parts list generation.">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💧</text></svg>" type="image/svg+xml">
   <title>Sprinkler Layout Tool</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
@@ -62,10 +67,9 @@
             <input id="project-name" type="text" value="Sprinkler Layout">
           </label>
           <label class="field">
-            <span>Units</span>
+            <span>Units (feet only)</span>
             <select id="units-select">
               <option value="ft">Feet</option>
-              <option value="m">Meters</option>
             </select>
           </label>
           <label class="field">
@@ -123,6 +127,7 @@
             <span>Supply line size</span>
             <select id="line-size-select">
               <option value="">Select line size</option>
+              <option value="0.5">1/2 in</option>
               <option value="0.75">3/4 in</option>
               <option value="1">1 in</option>
               <option value="1.25">1 1/4 in</option>

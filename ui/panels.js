@@ -1431,9 +1431,9 @@ function buildHeadSuggestionEmptyMessage(state, panelState, ignoredCount = 0) {
     return "All head suggestions in this view are currently ignored. Open Ignored to review them.";
   }
   if (panelState?.zoneMode === "zone" && panelState.zoneId) {
-    return "No visible head suggestions remain in this zone.";
+    return "No visible head suggestions remain in this zone. Head fittings are only suggested when a sprinkler has a nearby zone pipe.";
   }
-  return "No visible head suggestions remain on the current plan.";
+  return "No visible head suggestions remain on the current plan. Head fittings are only suggested when a sprinkler has a nearby zone pipe.";
 }
 
 function buildPipeSuggestionEmptyMessage(state, panelState, ignoredCount = 0) {

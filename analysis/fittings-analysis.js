@@ -2,9 +2,13 @@ import { formatNominalPipeSize, getFittingTypeMeta, resolveHeadElbowSizeSpec, re
 import { distancePointToSegmentSquared, pointsEqual } from "../geometry/pipes.js";
 import { worldToScreen } from "../geometry/scale.js";
 
+const BODY_5004_PRS = "Rain Bird 5004 PRS";
+
 const DEFAULT_HEAD_TAKEOFF_SNAP_SCREEN_PX = 18;
 const DEFAULT_TARGETED_FITTING_SNAP_SCREEN_PX = 20;
 const CONNECTION_POINT_EPSILON = 1;
+const HEAD_CONNECTION_PIPE_EPSILON_PX = 3;
+const HEAD_CONNECTION_PIPE_TOLERANCE_FT = 2 / 12;
 const DIRECTION_MERGE_COSINE = Math.cos((10 * Math.PI) / 180);
 const STRAIGHT_PAIR_MAX_DELTA_RAD = (40 * Math.PI) / 180;
 
@@ -57,19 +61,11 @@ export function buildHeadTakeoffPlacementPreview(
 ) {
   const snappedSprinkler = findNearestHeadTakeoffSprinkler(state, fittingDraft, screenPoint, snapDistancePx);
   if (!snappedSprinkler) {
-    return {
-      type: "head_takeoff",
-      label: `${getFittingTypeMeta("head_takeoff").label}: drop on a sprinkler head`,
-      valid: false,
-      x: worldPoint.x,
-      y: worldPoint.y,
-      zoneId: null,
-      sizeSpec: null,
-      anchor: null,
-    };
+    return buildInvalidHeadTakeoffPreview(worldPoint, "drop on a sprinkler head");
   }
 
-  return buildHeadTakeoffSuggestion(state, snappedSprinkler, analysis);
+  const suggestion = buildHeadTakeoffSuggestion(state, snappedSprinkler, analysis);
+  return suggestion ?? buildInvalidHeadTakeoffPreview(worldPoint, "sprinkler needs a nearby zone pipe");
 }
 
 export function buildTargetedFittingPlacementPreview(
@@ -107,7 +103,10 @@ export function buildHeadTakeoffSuggestion(state, sprinkler, analysis = null) {
     return null;
   }
 
-  const nearestZonePipe = findNearestZonePipeForPoint(state, sprinkler.zoneId, sprinkler);
+  const nearestZonePipe = findConnectedZonePipeForPoint(state, sprinkler.zoneId, sprinkler);
+  if (!nearestZonePipe) {
+    return null;
+  }
   const isTerminalEndpoint = isTerminalHeadConnection(state, sprinkler, nearestZonePipe);
   const type = isTerminalEndpoint ? "elbow" : "head_takeoff";
   const headConnectionDiameterInches = resolveSprinklerConnectionDiameterInches(sprinkler, analysis);
@@ -149,7 +148,10 @@ export function resolvePlacedFittingSizeSpec(state, fitting, analysis = null) {
     return fitting.sizeSpec ?? null;
   }
 
-  const nearestZonePipe = findNearestZonePipeForPoint(state, sprinkler.zoneId, sprinkler);
+  const anchoredPipeRun = fitting.anchor?.pipeRunId
+    ? (state.pipeRuns ?? []).find((pipeRun) => pipeRun.id === fitting.anchor.pipeRunId) ?? null
+    : null;
+  const nearestZonePipe = anchoredPipeRun ?? findConnectedZonePipeForPoint(state, sprinkler.zoneId, sprinkler);
   const headConnectionDiameterInches = resolveSprinklerConnectionDiameterInches(sprinkler, analysis);
   return fitting.type === "elbow"
     ? resolveHeadElbowSizeSpec(nearestZonePipe?.diameterInches ?? null, headConnectionDiameterInches)
@@ -544,6 +546,19 @@ function buildInvalidTargetedPreview(fittingDraft, worldPoint) {
   };
 }
 
+function buildInvalidHeadTakeoffPreview(worldPoint, instruction) {
+  return {
+    type: "head_takeoff",
+    label: `${getFittingTypeMeta("head_takeoff").label}: ${instruction}`,
+    valid: false,
+    x: worldPoint.x,
+    y: worldPoint.y,
+    zoneId: null,
+    sizeSpec: null,
+    anchor: null,
+  };
+}
+
 function isTerminalHeadConnection(state, sprinkler, nearestZonePipe) {
   if (!sprinkler || !nearestZonePipe?.points?.length) {
     return false;
@@ -589,7 +604,7 @@ function findNearestHeadTakeoffSprinkler(state, fittingDraft, screenPoint, snapD
   return best;
 }
 
-function findNearestZonePipeForPoint(state, zoneId, point) {
+function findConnectedZonePipeForPoint(state, zoneId, point) {
   if (!zoneId) {
     return null;
   }
@@ -612,7 +627,19 @@ function findNearestZonePipeForPoint(state, zoneId, point) {
     }
   }
 
-  return best?.pipeRun ?? null;
+  return best && best.distance <= resolveHeadConnectionPipeEpsilonSquared(state)
+    ? best.pipeRun
+    : null;
+}
+
+function resolveHeadConnectionPipeEpsilonSquared(state) {
+  const pixelsPerUnit = Number(state?.scale?.pixelsPerUnit);
+  if (!state?.scale?.calibrated || !Number.isFinite(pixelsPerUnit) || pixelsPerUnit <= 0) {
+    return HEAD_CONNECTION_PIPE_EPSILON_PX ** 2;
+  }
+
+  const epsilon = Math.max(1, pixelsPerUnit * HEAD_CONNECTION_PIPE_TOLERANCE_FT);
+  return epsilon ** 2;
 }
 
 function hasPlacedFittingNearSuggestion(state, suggestion) {
@@ -763,7 +790,7 @@ function resolveSprinklerConnectionDiameterInches(sprinkler, analysis) {
   if (Number.isFinite(inletSizeInches) && inletSizeInches > 0) {
     return inletSizeInches;
   }
-  if (recommendation?.body === "Rain Bird 5004 PRS") {
+  if (recommendation?.body === BODY_5004_PRS) {
     return 0.75;
   }
   return null;

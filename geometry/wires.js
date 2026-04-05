@@ -1,7 +1,9 @@
 export const WIRE_GAUGE_OPTIONS = ["18", "16", "14"];
 
+export const WIRE_KIND_OPTIONS = ["multiconductor", "single_conductor"];
+
 export function normalizeWireKind(value) {
-  return value === "multiconductor" ? "multiconductor" : "multiconductor";
+  return WIRE_KIND_OPTIONS.includes(value) ? value : "multiconductor";
 }
 
 export function normalizeWireGauge(value) {

@@ -7,7 +7,8 @@ export async function loadImageFile(file) {
 export async function loadProjectFile(file) {
   const text = await file.text();
   const parsed = JSON.parse(text);
-  if (parsed.version !== "1.0" || !parsed.project) {
+  const version = String(parsed.version ?? "");
+  if (!version.startsWith("1.") || !parsed.project) {
     throw new Error("Unsupported project file.");
   }
   return parsed.project;

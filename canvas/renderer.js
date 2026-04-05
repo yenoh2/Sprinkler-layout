@@ -9,6 +9,24 @@ import { toPixels, worldToScreen } from "../geometry/scale.js";
 import { buildDerivedTrenchSpans, buildTrenchCacheKey } from "../geometry/trenches.js";
 import { findSelectedController, findSelectedFitting, findSelectedPipeRun, findSelectedSprinkler, findSelectedValveBox, findSelectedWireRun, getZoneById, hasHydraulics, isProjectReady } from "../state/project-state.js";
 
+const THEME = {
+  bg: "#f6f1e4",
+  ink: "#2f2418",
+  accent: "#b65c2a",
+  panel: "#4f4033",
+  panelLight: "#fff7eb",
+  muted: "#7d6957",
+};
+
+const CANVAS_FONT_BODY = "Aptos, Segoe UI, sans-serif";
+const CANVAS_FONT = (size) => `${size}px ${CANVAS_FONT_BODY}`;
+const CANVAS_FONT_BOLD = (size) => `bold ${size}px ${CANVAS_FONT_BODY}`;
+
+const CANVAS_MIN_WIDTH = 600;
+const CANVAS_MIN_HEIGHT = 480;
+const CANVAS_PADDING = 12;
+const DEFAULT_GRID_SPACING = 50;
+
 const RATE_COLOR_STOPS = [
   { stop: 0, rgb: [24, 76, 107], alpha: 0 },
   { stop: 0.18, rgb: [62, 156, 170], alpha: 0.26 },
@@ -43,8 +61,8 @@ export function createRenderer(canvas, store, analyzer) {
 
   function resize() {
     const frame = canvas.parentElement;
-    const width = Math.max(600, Math.floor(frame.clientWidth - 12));
-    const height = Math.max(480, Math.floor(frame.clientHeight - 12));
+    const width = Math.max(CANVAS_MIN_WIDTH, Math.floor(frame.clientWidth - CANVAS_PADDING));
+    const height = Math.max(CANVAS_MIN_HEIGHT, Math.floor(frame.clientHeight - CANVAS_PADDING));
     if (canvas.width !== width || canvas.height !== height) {
       canvas.width = width;
       canvas.height = height;
@@ -55,7 +73,7 @@ export function createRenderer(canvas, store, analyzer) {
     resize();
     syncBackground(state.background.src);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = "#f6f1e4";
+    ctx.fillStyle = THEME.bg;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     const analysis = analyzer?.getSnapshot(state) ?? null;
 
@@ -118,7 +136,10 @@ export function createRenderer(canvas, store, analyzer) {
     ctx.save();
     ctx.strokeStyle = "rgba(91, 71, 54, 0.08)";
     ctx.lineWidth = 1;
-    const spacing = 50 * state.view.zoom;
+    const baseSpacing = (state.scale.calibrated && state.scale.pixelsPerUnit > 0)
+      ? Math.round(state.scale.pixelsPerUnit * 5)
+      : DEFAULT_GRID_SPACING;
+    const spacing = baseSpacing * state.view.zoom;
     if (spacing >= 18) {
       for (let x = state.view.offsetX % spacing; x < canvas.width; x += spacing) {
         ctx.beginPath();
@@ -189,7 +210,7 @@ export function createRenderer(canvas, store, analyzer) {
       ctx.fillStyle = "rgba(255, 247, 235, 0.98)";
       ctx.fillRect(point.x + 10, point.y - 18, 28, 18);
       ctx.fillStyle = "rgba(33, 102, 172, 0.98)";
-      ctx.font = "11px Aptos, Segoe UI, sans-serif";
+      ctx.font = CANVAS_FONT(11);
       ctx.fillText(state.ui.rectificationPoints.length === 4 ? (labels[index] ?? String(index + 1)) : String(index + 1), point.x + 14, point.y - 5);
       ctx.fillStyle = "rgba(33, 102, 172, 0.9)";
     });
@@ -220,7 +241,7 @@ export function createRenderer(canvas, store, analyzer) {
         ctx.fillStyle = "rgba(255, 247, 235, 0.96)";
         ctx.fillRect(midX - 46, midY - 24, 92, 22);
         ctx.fillStyle = "rgba(45, 106, 71, 0.96)";
-        ctx.font = "12px Aptos, Segoe UI, sans-serif";
+        ctx.font = CANVAS_FONT(12);
         ctx.fillText(`${state.ui.measureDistance.toFixed(2)} ${state.scale.units}`, midX - 38, midY - 9);
       }
     }
@@ -375,8 +396,8 @@ export function createRenderer(canvas, store, analyzer) {
 
       if (state.view.showLabels) {
         const labelPoint = worldToScreen(resolvePipeLabelPoint(pipeRun.points), state.view);
-        ctx.fillStyle = isSelected ? "#b65c2a" : strokeColor;
-        ctx.font = "12px Aptos, Segoe UI, sans-serif";
+        ctx.fillStyle = isSelected ? THEME.accent : strokeColor;
+        ctx.font = CANVAS_FONT(12);
         ctx.fillText(pipeRun.label || pipeRun.id, labelPoint.x + 8, labelPoint.y - 8);
       }
     });
@@ -443,7 +464,7 @@ export function createRenderer(canvas, store, analyzer) {
 
     draftPoints.forEach((point, index) => {
       const screenPoint = worldToScreen(point, state.view);
-      drawPipeHandle(ctx, screenPoint, index === draftPoints.length - 1 ? "#fff7eb" : "#ffffff", "#4f4033", 5);
+      drawPipeHandle(ctx, screenPoint, index === draftPoints.length - 1 ? THEME.panelLight : "#ffffff", THEME.panel, 5);
     });
     ctx.restore();
   }
@@ -477,8 +498,8 @@ export function createRenderer(canvas, store, analyzer) {
 
       if (state.view.showLabels) {
         const labelPoint = worldToScreen(resolvePipeLabelPoint(wireRun.points), state.view);
-        ctx.fillStyle = isSelected ? "#b65c2a" : strokeColor;
-        ctx.font = "12px Aptos, Segoe UI, sans-serif";
+        ctx.fillStyle = isSelected ? THEME.accent : strokeColor;
+        ctx.font = CANVAS_FONT(12);
         ctx.fillText(wireRun.label || wireRun.id, labelPoint.x + 8, labelPoint.y + 14);
       }
     });
@@ -515,7 +536,7 @@ export function createRenderer(canvas, store, analyzer) {
 
     draftPoints.forEach((point, index) => {
       const screenPoint = worldToScreen(point, state.view);
-      drawPipeHandle(ctx, screenPoint, index === draftPoints.length - 1 ? "#fff7eb" : "#ffffff", "#4f4033", 4.5);
+      drawPipeHandle(ctx, screenPoint, index === draftPoints.length - 1 ? THEME.panelLight : "#ffffff", THEME.panel, 4.5);
     });
     ctx.restore();
   }
@@ -525,11 +546,11 @@ export function createRenderer(canvas, store, analyzer) {
     state.sprinklers.forEach((sprinkler) => {
       const center = worldToScreen({ x: sprinkler.x, y: sprinkler.y }, state.view);
       const zone = getZoneById(state, sprinkler.zoneId);
-      const headColor = zone ? zone.color : "#2f2418";
+      const headColor = zone ? zone.color : THEME.ink;
       const isFocusedOut = state.ui.focusedZoneId && sprinkler.zoneId !== state.ui.focusedZoneId;
       ctx.save();
       ctx.beginPath();
-      ctx.fillStyle = selected?.id === sprinkler.id ? "#b65c2a" : headColor;
+      ctx.fillStyle = selected?.id === sprinkler.id ? THEME.accent : headColor;
       if (isFocusedOut) {
         ctx.globalAlpha = 0.35;
       }
@@ -544,8 +565,8 @@ export function createRenderer(canvas, store, analyzer) {
       if (state.view.showLabels) {
         textLines.push({
           text: sprinkler.label || sprinkler.id,
-          color: "#2f2418",
-          font: "12px Aptos, Segoe UI, sans-serif",
+          color: THEME.ink,
+          font: CANVAS_FONT(12),
         });
       }
       if (state.view.showNozzleLabels === true) {
@@ -563,7 +584,7 @@ export function createRenderer(canvas, store, analyzer) {
         textLines.push({
           text: zone.name,
           color: headColor,
-          font: "11px Aptos, Segoe UI, sans-serif",
+          font: CANVAS_FONT(11),
         });
       }
       if (textLines.length) {
@@ -589,15 +610,15 @@ export function createRenderer(canvas, store, analyzer) {
       if (isFocusedOut) {
         ctx.globalAlpha = 0.35;
       }
-      drawValveBoxSymbol(center, primaryZone?.color ?? "#7d6957", isSelected);
+      drawValveBoxSymbol(center, primaryZone?.color ?? THEME.muted, isSelected);
       if (state.view.showLabels) {
-        ctx.fillStyle = "#2f2418";
-        ctx.font = "12px Aptos, Segoe UI, sans-serif";
+        ctx.fillStyle = THEME.ink;
+        ctx.font = CANVAS_FONT(12);
         ctx.fillText(valveBox.label || valveBox.id, center.x + 16, center.y - 2);
         if (linkedZones.length && state.view.showZoneLabels) {
           const zoneText = linkedZones.length === 1 ? linkedZones[0].name : `${linkedZones.length} zones`;
-          ctx.fillStyle = primaryZone?.color ?? "#7d6957";
-          ctx.font = "11px Aptos, Segoe UI, sans-serif";
+          ctx.fillStyle = primaryZone?.color ?? THEME.muted;
+          ctx.font = CANVAS_FONT(11);
           ctx.fillText(zoneText, center.x + 16, center.y + 12);
         }
       }
@@ -628,8 +649,8 @@ export function createRenderer(canvas, store, analyzer) {
             : linkedValveBoxes.length > 1
               ? `${linkedValveBoxes.length} valve boxes`
               : `${linkedWireRuns.length} wire run${linkedWireRuns.length === 1 ? "" : "s"}`;
-          ctx.fillStyle = "#7d6957";
-          ctx.font = "11px Aptos, Segoe UI, sans-serif";
+          ctx.fillStyle = THEME.muted;
+          ctx.font = CANVAS_FONT(11);
           ctx.fillText(connectionText, center.x + 18, center.y + 12);
         }
       }
@@ -648,7 +669,7 @@ export function createRenderer(canvas, store, analyzer) {
       }
       const worldPoint = resolveFittingWorldPoint(state, fitting);
       const screenPoint = worldToScreen(worldPoint, state.view);
-      const zoneColor = getZoneById(state, fitting.zoneId)?.color ?? "#7d6957";
+      const zoneColor = getZoneById(state, fitting.zoneId)?.color ?? THEME.muted;
       const isSelected = selectedFitting?.id === fitting.id;
       const isFocusedOut = state.ui.focusedZoneId && fitting.zoneId && fitting.zoneId !== state.ui.focusedZoneId;
 
@@ -660,7 +681,7 @@ export function createRenderer(canvas, store, analyzer) {
       if (state.view.showLabels && isSelected) {
         const sizeSpec = resolvePlacedFittingSizeSpec(state, fitting, analysis);
         ctx.fillStyle = zoneColor;
-        ctx.font = "11px Aptos, Segoe UI, sans-serif";
+        ctx.font = CANVAS_FONT(11);
         ctx.fillText(sizeSpec || getFittingTypeMeta(fitting.type).label, screenPoint.x + 12, screenPoint.y - 12);
       }
       ctx.restore();
@@ -674,7 +695,7 @@ export function createRenderer(canvas, store, analyzer) {
 
     const preview = hoveredFittingPreview;
     const screenPoint = worldToScreen({ x: preview.x, y: preview.y }, state.view);
-    const zoneColor = getZoneById(state, preview.zoneId)?.color ?? "#b65c2a";
+    const zoneColor = getZoneById(state, preview.zoneId)?.color ?? THEME.accent;
 
     ctx.save();
     ctx.globalAlpha = 0.75;
@@ -686,7 +707,7 @@ export function createRenderer(canvas, store, analyzer) {
     drawFittingGlyph(screenPoint, zoneColor, preview.type, true, true);
     if (state.view.showLabels) {
       ctx.fillStyle = zoneColor;
-      ctx.font = "11px Aptos, Segoe UI, sans-serif";
+      ctx.font = CANVAS_FONT(11);
       ctx.fillText(preview.sizeSpec || preview.label || getFittingTypeMeta(preview.type).label, screenPoint.x + 12, screenPoint.y - 12);
     }
     ctx.restore();
@@ -699,13 +720,13 @@ export function createRenderer(canvas, store, analyzer) {
     }
 
     const screenPoint = worldToScreen({ x: preview.x, y: preview.y }, state.view);
-    const zoneColor = getZoneById(state, preview.zoneId)?.color ?? "#b65c2a";
+    const zoneColor = getZoneById(state, preview.zoneId)?.color ?? THEME.accent;
 
     ctx.save();
     ctx.globalAlpha = preview.valid ? 0.88 : 0.52;
     drawFittingGlyph(screenPoint, zoneColor, preview.type, false, true);
     ctx.fillStyle = "rgba(47, 36, 24, 0.88)";
-    ctx.font = "11px Aptos, Segoe UI, sans-serif";
+    ctx.font = CANVAS_FONT(11);
     ctx.fillText(preview.sizeSpec || preview.label || getFittingTypeMeta(preview.type).label, screenPoint.x + 12, screenPoint.y - 12);
     ctx.restore();
   }
@@ -715,8 +736,8 @@ export function createRenderer(canvas, store, analyzer) {
     const height = 18;
     const left = center.x - width / 2;
     const top = center.y - height / 2;
-    ctx.fillStyle = "#fff7eb";
-    ctx.strokeStyle = isSelected ? "#b65c2a" : "#4f4033";
+    ctx.fillStyle = THEME.panelLight;
+    ctx.strokeStyle = isSelected ? THEME.accent : THEME.panel;
     ctx.lineWidth = isSelected ? 2.6 : 2;
     ctx.fillRect(left, top, width, height);
     ctx.strokeRect(left, top, width, height);
@@ -724,8 +745,8 @@ export function createRenderer(canvas, store, analyzer) {
     ctx.fillStyle = accentColor;
     ctx.fillRect(left + 2, top + 2, width - 4, 4);
 
-    ctx.fillStyle = "#4f4033";
-    ctx.font = "bold 8px Aptos, Segoe UI, sans-serif";
+    ctx.fillStyle = THEME.panel;
+    ctx.font = CANVAS_FONT_BOLD(8);
     ctx.fillText("VB", left + 5, top + 13);
   }
 
@@ -734,13 +755,13 @@ export function createRenderer(canvas, store, analyzer) {
     const height = 22;
     const left = center.x - width / 2;
     const top = center.y - height / 2;
-    ctx.fillStyle = "#fff7eb";
-    ctx.strokeStyle = isSelected ? "#b65c2a" : "#4f4033";
+    ctx.fillStyle = THEME.panelLight;
+    ctx.strokeStyle = isSelected ? THEME.accent : THEME.panel;
     ctx.lineWidth = isSelected ? 2.6 : 2;
     ctx.fillRect(left, top, width, height);
     ctx.strokeRect(left, top, width, height);
 
-    ctx.fillStyle = "#4f4033";
+    ctx.fillStyle = THEME.panel;
     ctx.fillRect(left + 5, top + 4, width - 10, 2);
     ctx.fillRect(left + 5, top + 8, width - 10, 2);
     ctx.fillRect(left + 7, top + 13, 3, 3);
@@ -754,7 +775,7 @@ export function createRenderer(canvas, store, analyzer) {
     ctx.translate(center.x, center.y);
     ctx.rotate(Math.PI / 4);
     ctx.fillStyle = "rgba(255, 247, 235, 0.94)";
-    ctx.strokeStyle = isSelected ? "#b65c2a" : accentColor;
+    ctx.strokeStyle = isSelected ? THEME.accent : accentColor;
     ctx.lineWidth = isSelected ? 2.4 : 2;
     ctx.beginPath();
     ctx.rect(-radius, -radius, radius * 2, radius * 2);
@@ -877,15 +898,15 @@ export function createRenderer(canvas, store, analyzer) {
     ctx.save();
     midpoints.forEach((midpointEntry) => {
       const screenPoint = worldToScreen(midpointEntry.point, state.view);
-      drawPipeHandle(ctx, screenPoint, "#fff7eb", "#b65c2a", 4.5);
+      drawPipeHandle(ctx, screenPoint, THEME.panelLight, THEME.accent, 4.5);
     });
     selectedPipeRun.points.forEach((point, index) => {
       const screenPoint = worldToScreen(point, state.view);
       drawPipeHandle(
         ctx,
         screenPoint,
-        selectedVertexIndex === index ? "#b65c2a" : "#fff7eb",
-        selectedVertexIndex === index ? "#ffffff" : "#4f4033",
+        selectedVertexIndex === index ? THEME.accent : THEME.panelLight,
+        selectedVertexIndex === index ? "#ffffff" : THEME.panel,
         6,
       );
     });
@@ -982,8 +1003,8 @@ export function createRenderer(canvas, store, analyzer) {
     ctx.save();
     ctx.fillStyle = "rgba(47, 36, 24, 0.72)";
     ctx.fillRect(20, canvas.height - 28 - lines.length * 20, 340, 22 + lines.length * 20);
-    ctx.fillStyle = "#fff7eb";
-    ctx.font = "13px Aptos, Segoe UI, sans-serif";
+    ctx.fillStyle = THEME.panelLight;
+    ctx.font = CANVAS_FONT(13);
     lines.forEach((line, index) => {
       ctx.fillText(line, 32, canvas.height - 18 - (lines.length - index - 1) * 20);
     });
@@ -1409,7 +1430,7 @@ function resolveTrenchStrokeColor(isFocusedOut) {
 function resolvePipeStrokeColor(state, pipeRun, isSelected, isFocusedOut, trenchPrimary = false) {
   if (pipeRun.kind === "main") {
     if (isSelected) {
-      return "#b65c2a";
+      return THEME.accent;
     }
     return `rgba(79, 64, 51, ${trenchPrimary ? (isFocusedOut ? 0.16 : 0.34) : (isFocusedOut ? 0.45 : 0.96)})`;
   }
@@ -1453,7 +1474,7 @@ function resolveWireAccentColor(state, wireRun) {
   if (primaryZone?.color) {
     return primaryZone.color;
   }
-  return "#7d6957";
+  return THEME.muted;
 }
 
 function wireRunTouchesZone(state, wireRun, zoneId) {

@@ -6,6 +6,10 @@ import { resolvePlacedFittingSizeSpec } from "./fittings-analysis.js";
 import { calculatePipeLengthUnits, formatPipeDiameterLabel, getPipeKindLabel, normalizePipeKind } from "../geometry/pipes.js";
 import { formatWireRunLabel } from "../geometry/wires.js";
 
+const BODY_1800_PRS = "Rain Bird 1800 PRS";
+const BODY_5004_PRS = "Rain Bird 5004 PRS";
+const BODY_3504 = "Rain Bird 3504";
+
 const DEFAULT_ASSUMPTIONS = {
   sprayArcNormalizeToleranceDeg: 10,
   rotorSimplicityPrecipToleranceInHr: 0.01,
@@ -495,7 +499,7 @@ function recommendSpray(sprinkler, zone, zonesById, context) {
     const variable = context.sprayData.variableByRadius.get(fallbackRadius);
     return buildRecommendationBase(sprinkler, zone, zonesById, {
       family: "spray",
-      body: "Rain Bird 1800 PRS",
+      body: BODY_1800_PRS,
       nozzle: variable.model,
       nozzleType: "variable",
       skuFamily: variable.model,
@@ -512,7 +516,7 @@ function recommendSpray(sprinkler, zone, zonesById, context) {
   if (fixed && Math.abs(desiredArc - normalizedArc) <= context.assumptions.sprayArcNormalizeToleranceDeg) {
     return buildRecommendationBase(sprinkler, zone, zonesById, {
       family: "spray",
-      body: "Rain Bird 1800 PRS",
+      body: BODY_1800_PRS,
       nozzle: fixed.series,
       nozzleType: "fixed",
       skuFamily: fixed.series,
@@ -529,7 +533,7 @@ function recommendSpray(sprinkler, zone, zonesById, context) {
   const variable = context.sprayData.variableByRadius.get(radiusClass);
   return buildRecommendationBase(sprinkler, zone, zonesById, {
     family: "spray",
-    body: "Rain Bird 1800 PRS",
+    body: BODY_1800_PRS,
     nozzle: variable.model,
     nozzleType: "variable",
     skuFamily: variable.model,
@@ -549,7 +553,7 @@ function recommendStripSpray(sprinkler, zone, zonesById, context) {
     return buildRecommendationBase(sprinkler, zone, zonesById, {
       coverageModel: "strip",
       family: "spray",
-      body: "Rain Bird 1800 PRS",
+      body: BODY_1800_PRS,
       nozzle: `Custom ${capitalize(strip.mode)} strip`,
       nozzleType: "strip",
       skuFamily: "generic_strip",
@@ -568,7 +572,7 @@ function recommendStripSpray(sprinkler, zone, zonesById, context) {
   return buildRecommendationBase(sprinkler, zone, zonesById, {
     coverageModel: "strip",
     family: "spray",
-    body: "Rain Bird 1800 PRS",
+    body: BODY_1800_PRS,
     nozzle: candidate.model,
     nozzleType: "strip",
     skuFamily: candidate.model,
@@ -817,10 +821,10 @@ function resolveRecommendationInletSizeInches(details) {
     return explicit;
   }
 
-  if (details?.body === "Rain Bird 5004 PRS") {
+  if (details?.body === BODY_5004_PRS) {
     return 0.75;
   }
-  if (details?.body === "Rain Bird 3504" || details?.body === "Rain Bird 1800 PRS") {
+  if (details?.body === BODY_3504 || details?.body === BODY_1800_PRS) {
     return 0.5;
   }
   return 0.5;
@@ -1013,7 +1017,7 @@ function buildRotorCandidatesForHead(sprinkler, zone, zonesById, context) {
     .filter((set) => radiusFits(set.radiusFt, sprinkler.radius, set.maxReduction, context.assumptions))
     .flatMap((set) => set.variants.map((variant) => buildRecommendationBase(sprinkler, zone, zonesById, {
       family: "rotor",
-      body: "Rain Bird 5004 PRS",
+      body: BODY_5004_PRS,
       nozzle: `${set.label}_${variant.code}`,
       nozzleType: "pre-balanced rotor",
       skuFamily: set.label,
@@ -1040,7 +1044,7 @@ function buildRotorCandidatesForHead(sprinkler, zone, zonesById, context) {
   if (standardCandidate) {
     specialtyCandidates.push(buildRecommendationBase(sprinkler, zone, zonesById, {
       family: "rotor",
-      body: "Rain Bird 5004 PRS",
+      body: BODY_5004_PRS,
       nozzle: standardCandidate.nozzle,
       nozzleType: "standard-angle rotor",
       skuFamily: "5004_standard_angle_25_deg",
@@ -1053,7 +1057,7 @@ function buildRotorCandidatesForHead(sprinkler, zone, zonesById, context) {
   if (lowAngleCandidate) {
     specialtyCandidates.push(buildRecommendationBase(sprinkler, zone, zonesById, {
       family: "rotor",
-      body: "Rain Bird 5004 PRS",
+      body: BODY_5004_PRS,
       nozzle: lowAngleCandidate.nozzle,
       nozzleType: "low-angle rotor",
       skuFamily: "5004_low_angle_10_deg",
@@ -1080,7 +1084,7 @@ function buildRotorCandidatesForHead(sprinkler, zone, zonesById, context) {
   }
   return [buildRecommendationBase(sprinkler, zone, zonesById, {
     family: "rotor",
-    body: "Rain Bird 3504",
+    body: BODY_3504,
     nozzle: fallback3504.nozzle,
     nozzleType: "adjustable rotor",
     skuFamily: "3504_standard",
@@ -1192,7 +1196,7 @@ function describeSprayFit(sprinkler, sprayData, assumptions) {
     return candidate
       ? {
         canFit: true,
-        label: `Rain Bird 1800 PRS ${formatNozzleLabel({
+        label: `${BODY_1800_PRS} ${formatNozzleLabel({
           nozzle: candidate.model,
           nozzleType: "strip",
           coverageModel: "strip",
@@ -1214,7 +1218,7 @@ function describeSprayFit(sprinkler, sprayData, assumptions) {
   if (fixed && Math.abs(sprinkler.desiredArcDeg - normalizedArc) <= assumptions.sprayArcNormalizeToleranceDeg) {
     return {
       canFit: true,
-      label: `Rain Bird 1800 PRS ${formatNozzleLabel({
+      label: `${BODY_1800_PRS} ${formatNozzleLabel({
         family: "spray",
         nozzle: fixed.series,
         nozzleType: "fixed",
@@ -1228,7 +1232,7 @@ function describeSprayFit(sprinkler, sprayData, assumptions) {
   return variable
     ? {
       canFit: true,
-      label: `Rain Bird 1800 PRS ${formatNozzleLabel({
+      label: `${BODY_1800_PRS} ${formatNozzleLabel({
         family: "spray",
         nozzle: variable.model,
         nozzleType: "variable",

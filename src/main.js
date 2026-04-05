@@ -24,7 +24,10 @@ const analyzer = createIrrigationAnalyzer(irrigationDatabase);
 const renderer = createRenderer(canvas, store, analyzer);
 const interactions = createInteractionController(canvas, store, renderer, analyzer);
 const autosavedProject = loadAutosave();
+const AUTOSAVE_DEBOUNCE_MS = 250;
+const hintText = document.getElementById("hint-text");
 let autosaveTimer = null;
+let autosaveStatusMessage = "";
 let sprinklerClipboard = null;
 let sprinklerPasteCount = 0;
 
@@ -44,12 +47,16 @@ store.subscribe((state) => {
   renderer.render(state);
   interactions.syncState(state);
   updateStatusText(state);
+  updateHintText(state);
+  updateDocumentTitle(state);
   queueAutosave(state);
 });
 
 renderer.render(store.getState());
 interactions.syncState(store.getState());
 updateStatusText(store.getState());
+updateHintText(store.getState());
+updateDocumentTitle(store.getState());
 
 window.addEventListener("resize", () => {
   renderer.resize();
@@ -62,23 +69,6 @@ window.addEventListener("beforeunload", () => {
 
 document.addEventListener("keydown", (event) => {
   if (isInputFocused()) {
-    if (event.key === "Escape") {
-      const state = store.getState();
-      if (state.ui.activeTool === "calibrate" && state.ui.calibrationMode === "rectify" && state.ui.rectificationPoints.length) {
-        event.preventDefault();
-        store.dispatch({ type: "CLEAR_RECTIFICATION_POINTS" });
-        return;
-      }
-      if (state.ui.activeTool === "calibrate" && state.scale.calibrationPoints.length) {
-        event.preventDefault();
-        store.dispatch({ type: "CLEAR_CALIBRATION_POINTS" });
-        return;
-      }
-      if (state.ui.activeTool === "measure" && (state.ui.measurePoints.length || state.ui.measurePreviewPoint)) {
-        event.preventDefault();
-        store.dispatch({ type: "CLEAR_MEASURE" });
-      }
-    }
     return;
   }
 
@@ -219,6 +209,20 @@ function updateStatusText(state) {
   document.getElementById("analysis-readout").textContent = analysisText;
 }
 
+function updateHintText(state) {
+  if (!hintText) {
+    return;
+  }
+  hintText.textContent = autosaveStatusMessage || `Hint: ${state.ui.hint}`;
+}
+
+function updateDocumentTitle(state) {
+  const projectName = String(state.meta.projectName || "Sprinkler Layout").trim() || "Sprinkler Layout";
+  document.title = projectName === "Sprinkler Layout"
+    ? "Sprinkler Layout Tool"
+    : `${projectName} - Sprinkler Layout Tool`;
+}
+
 function formatAnalysisReadout(state, sample) {
   if (state.view.analysisOverlayMode === "none") {
     return "Analysis: off";
@@ -328,9 +332,12 @@ function queueAutosave(state) {
   window.clearTimeout(autosaveTimer);
   autosaveTimer = window.setTimeout(() => {
     flushAutosave(state);
-  }, 250);
+  }, AUTOSAVE_DEBOUNCE_MS);
 }
 
 function flushAutosave(state) {
-  saveAutosave(state);
+  const result = saveAutosave(state);
+  autosaveStatusMessage = result.ok ? "" : (result.userMessage || "");
+  updateHintText(store.getState());
+  return result;
 }
