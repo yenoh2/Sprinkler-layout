@@ -26,6 +26,7 @@
         <div class="tool-grid topbar-tool-grid">
           <button type="button" data-tool="select" class="tool-button is-active">Select</button>
           <button type="button" data-tool="place" class="tool-button">Place</button>
+          <button type="button" data-tool="area" class="tool-button">Area</button>
           <button type="button" data-tool="pipe" class="tool-button">Pipe</button>
           <button type="button" data-tool="wire" class="tool-button">Wire</button>
           <button type="button" data-tool="fittings" class="tool-button">Fittings</button>
@@ -39,6 +40,8 @@
           <span>Placement pattern</span>
           <select id="placement-pattern">
             <option value="full">Full circle</option>
+            <option value="quarter">Quarter spray</option>
+            <option value="half">Half spray</option>
             <option value="arc">Arc</option>
             <option value="strip">Strip</option>
           </select>
@@ -339,6 +342,11 @@
                 <input id="sprinkler-sweep" type="number" min="1" max="360" step="1">
               </label>
             </div>
+            <div id="sector-preset-buttons" class="button-row">
+              <button type="button" data-sector-preset="quarter">Quarter</button>
+              <button type="button" data-sector-preset="half">Half</button>
+              <button id="sprinkler-auto-orient-button" type="button">Auto orient</button>
+            </div>
             <div id="strip-fields" hidden>
               <div class="field-group">
                 <label class="field">
@@ -554,6 +562,24 @@
             </label>
             <div class="button-row">
               <button id="delete-fitting-button" type="button" class="danger-button">Delete</button>
+            </div>
+          </div>
+          <div id="watering-area-form" hidden>
+            <label class="field">
+              <span>Label</span>
+              <input id="watering-area-label" type="text">
+            </label>
+            <label class="field">
+              <span>Vertices</span>
+              <input id="watering-area-point-count" type="text" readonly>
+            </label>
+            <label class="field">
+              <span>Area</span>
+              <input id="watering-area-size" type="text" readonly>
+            </label>
+            <div class="selection-note">Quarter and half spray presets use these traced boundaries to aim inward automatically.</div>
+            <div class="button-row">
+              <button id="delete-watering-area-button" type="button" class="danger-button">Delete</button>
             </div>
           </div>
         </section>

@@ -5,6 +5,7 @@ import { formatNozzleLabel } from "../geometry/nozzle-labels.js";
 import { PIPE_DIAMETER_OPTIONS, calculatePipeLengthUnits, formatPipeDiameterLabel } from "../geometry/pipes.js";
 import { applyHomography, multiplyMatrices, rectifyImageDataUrl } from "../geometry/rectification.js";
 import { fitBackgroundToView } from "../geometry/scale.js";
+import { buildAutoOrientedSectorPatch, calculateWateringAreaAreaSquareUnits } from "../geometry/watering-areas.js";
 import {
   cloneProjectSnapshot,
   findSelectedController,
@@ -12,6 +13,7 @@ import {
   findSelectedPipeRun,
   findSelectedSprinkler,
   findSelectedValveBox,
+  findSelectedWateringArea,
   findSelectedWireRun,
   getNextZoneSeed,
   hasHydraulics,
@@ -98,6 +100,7 @@ function bindElements() {
     pipeRunForm: document.getElementById("pipe-run-form"),
     wireRunForm: document.getElementById("wire-run-form"),
     fittingForm: document.getElementById("fitting-form"),
+    wateringAreaForm: document.getElementById("watering-area-form"),
     sprinklerCoverageModel: document.getElementById("sprinkler-coverage-model"),
     sprinklerLabel: document.getElementById("sprinkler-label"),
     sprinklerX: document.getElementById("sprinkler-x"),
@@ -108,6 +111,8 @@ function bindElements() {
     sprinklerSweep: document.getElementById("sprinkler-sweep"),
     sectorRadiusPattern: document.getElementById("sector-radius-pattern"),
     sectorAngleFields: document.getElementById("sector-angle-fields"),
+    sectorPresetButtons: [...document.querySelectorAll("[data-sector-preset]")],
+    sprinklerAutoOrientButton: document.getElementById("sprinkler-auto-orient-button"),
     stripFields: document.getElementById("strip-fields"),
     sprinklerStripMode: document.getElementById("sprinkler-strip-mode"),
     sprinklerStripMirrorField: document.getElementById("sprinkler-strip-mirror-field"),
@@ -157,6 +162,10 @@ function bindElements() {
     fittingSize: document.getElementById("fitting-size"),
     fittingAnchor: document.getElementById("fitting-anchor"),
     deleteFittingButton: document.getElementById("delete-fitting-button"),
+    wateringAreaLabel: document.getElementById("watering-area-label"),
+    wateringAreaPointCount: document.getElementById("watering-area-point-count"),
+    wateringAreaSize: document.getElementById("watering-area-size"),
+    deleteWateringAreaButton: document.getElementById("delete-watering-area-button"),
     scaleStatus: document.getElementById("scale-status"),
     hydraulicsStatus: document.getElementById("hydraulics-status"),
     readyStatus: document.getElementById("ready-status"),
@@ -520,6 +529,15 @@ function bindEvents(elements, store, renderer, interactions, io) {
     element.addEventListener(eventName, () => updateSprinklerSelection(elements, store));
   });
 
+  elements.sectorPresetButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      applySprinklerSectorPreset(elements, store, button.dataset.sectorPreset);
+    });
+  });
+  elements.sprinklerAutoOrientButton?.addEventListener("click", () => {
+    autoOrientSelectedSprinkler(elements, store);
+  });
+
   [elements.valveBoxLabel, elements.valveBoxX, elements.valveBoxY].forEach((element) => {
     element.addEventListener("input", () => updateValveBoxSelection(elements, store));
   });
@@ -538,6 +556,8 @@ function bindEvents(elements, store, renderer, interactions, io) {
     const eventName = element?.tagName === "SELECT" ? "change" : "input";
     element?.addEventListener(eventName, () => updateWireRunSelection(elements, store));
   });
+
+  elements.wateringAreaLabel?.addEventListener("input", () => updateWateringAreaSelection(elements, store));
 
   elements.sprinklerZoneButton.addEventListener("click", () => {
     setZonePickerOpen(elements, elements.sprinklerZoneMenu.hidden);
@@ -623,6 +643,13 @@ function bindEvents(elements, store, renderer, interactions, io) {
     const selected = findSelectedFitting(store.getState());
     if (selected) {
       store.dispatch({ type: "DELETE_FITTING", payload: { id: selected.id } });
+    }
+  });
+
+  elements.deleteWateringAreaButton?.addEventListener("click", () => {
+    const selected = findSelectedWateringArea(store.getState());
+    if (selected) {
+      store.dispatch({ type: "DELETE_WATERING_AREA", payload: { id: selected.id } });
     }
   });
 
@@ -851,6 +878,87 @@ function updateSprinklerSelection(elements, store) {
   });
 }
 
+function applySprinklerSectorPreset(elements, store, preset) {
+  const selected = findSelectedSprinkler(store.getState());
+  if (!selected) {
+    return;
+  }
+
+  const sweepDeg = preset === "quarter" ? 90 : 180;
+  const state = store.getState();
+  const autoPatch = buildAutoOrientedSectorPatch(
+    { x: selected.x, y: selected.y },
+    sweepDeg,
+    state.wateringAreas,
+    {
+      pixelsPerUnit: state.scale.pixelsPerUnit,
+      radiusFt: selected.radius,
+      fallbackStartDeg: selected.startDeg,
+    },
+  );
+
+  store.dispatch({
+    type: "UPDATE_SPRINKLER",
+    payload: {
+      id: selected.id,
+      patch: {
+        coverageModel: "sector",
+        pattern: "arc",
+        startDeg: autoPatch?.startDeg ?? selected.startDeg,
+        sweepDeg,
+        rotationDeg: 0,
+      },
+    },
+  });
+}
+
+function autoOrientSelectedSprinkler(elements, store) {
+  const selected = findSelectedSprinkler(store.getState());
+  if (!selected || selected.coverageModel === "strip" || selected.pattern !== "arc" || selected.sweepDeg >= 360) {
+    return;
+  }
+
+  const state = store.getState();
+  const autoPatch = buildAutoOrientedSectorPatch(
+    { x: selected.x, y: selected.y },
+    selected.sweepDeg,
+    state.wateringAreas,
+    {
+      pixelsPerUnit: state.scale.pixelsPerUnit,
+      radiusFt: selected.radius,
+      fallbackStartDeg: selected.startDeg,
+    },
+  );
+  if (!autoPatch) {
+    return;
+  }
+
+  store.dispatch({
+    type: "UPDATE_SPRINKLER",
+    payload: {
+      id: selected.id,
+      patch: autoPatch,
+    },
+  });
+}
+
+function updateWateringAreaSelection(elements, store) {
+  const selected = findSelectedWateringArea(store.getState());
+  if (!selected) {
+    return;
+  }
+
+  store.dispatch({
+    type: "UPDATE_WATERING_AREA",
+    payload: {
+      id: selected.id,
+      patch: {
+        label: elements.wateringAreaLabel.value,
+      },
+    },
+  });
+}
+
 function updateValveBoxSelection(elements, store) {
   const selected = findSelectedValveBox(store.getState());
   if (!selected) {
@@ -1001,6 +1109,7 @@ function updateUi(elements, state, renderer, analyzer) {
   const selectedPipeRun = findSelectedPipeRun(state);
   const selectedWireRun = findSelectedWireRun(state);
   const selectedFitting = findSelectedFitting(state);
+  const selectedWateringArea = findSelectedWateringArea(state);
   populateZoneSelect(elements.activeZoneSelect, state.zones, state.ui.activeZoneId);
   populateAnalysisZoneSelect(elements.analysisZoneSelect, state.zones, analysis?.selectedZoneId ?? state.view.analysisZoneId ?? "");
   populateZoneSelect(elements.pipeZone, state.zones, selectedPipeRun?.zoneId ?? "");
@@ -1043,15 +1152,26 @@ function updateUi(elements, state, renderer, analyzer) {
           ? "Selected Wire Run"
         : selectedFitting
           ? "Selected Fitting"
+          : selectedWateringArea
+            ? "Selected Watering Area"
           : "Selected Item";
   elements.selectionTitle.textContent = selectionTitle;
-  elements.selectionEmpty.hidden = Boolean(selectedSprinkler || selectedValveBox || selectedController || selectedPipeRun || selectedWireRun || selectedFitting);
+  elements.selectionEmpty.hidden = Boolean(
+    selectedSprinkler
+    || selectedValveBox
+    || selectedController
+    || selectedPipeRun
+    || selectedWireRun
+    || selectedFitting
+    || selectedWateringArea
+  );
   elements.selectionForm.hidden = !selectedSprinkler;
   elements.valveBoxForm.hidden = !selectedValveBox;
   elements.controllerForm.hidden = !selectedController;
   elements.pipeRunForm.hidden = !selectedPipeRun;
   elements.wireRunForm.hidden = !selectedWireRun;
   elements.fittingForm.hidden = !selectedFitting;
+  elements.wateringAreaForm.hidden = !selectedWateringArea;
   if (selectedSprinkler) {
     const coverageValue = selectedSprinkler.coverageModel === "strip"
       ? "strip"
@@ -1077,11 +1197,33 @@ function updateUi(elements, state, renderer, analyzer) {
     const isStrip = coverageValue === "strip";
     elements.sectorRadiusPattern.hidden = isStrip;
     elements.sectorAngleFields.hidden = isStrip;
+    if (elements.sectorPresetButtons.length) {
+      elements.sectorPresetButtons.forEach((button) => {
+        button.hidden = isStrip;
+      });
+    }
+    if (elements.sprinklerAutoOrientButton) {
+      const canAutoOrient = !isStrip
+        && selectedSprinkler.pattern === "arc"
+        && selectedSprinkler.sweepDeg < 360
+        && state.wateringAreas.length > 0;
+      elements.sprinklerAutoOrientButton.hidden = isStrip;
+      elements.sprinklerAutoOrientButton.disabled = !canAutoOrient;
+    }
     elements.stripFields.hidden = !isStrip;
     elements.sprinklerStripMirrorField.hidden = !isStrip || elements.sprinklerStripMode.value !== "corner";
   } else {
     elements.sectorRadiusPattern.hidden = false;
     elements.sectorAngleFields.hidden = false;
+    if (elements.sectorPresetButtons.length) {
+      elements.sectorPresetButtons.forEach((button) => {
+        button.hidden = false;
+      });
+    }
+    if (elements.sprinklerAutoOrientButton) {
+      elements.sprinklerAutoOrientButton.hidden = false;
+      elements.sprinklerAutoOrientButton.disabled = true;
+    }
     elements.stripFields.hidden = true;
     elements.sprinklerStripMirrorField.hidden = true;
   }
@@ -1150,6 +1292,19 @@ function updateUi(elements, state, renderer, analyzer) {
     elements.fittingAnchor.value = formatFittingAnchor(selectedFitting.anchor);
   }
 
+  if (selectedWateringArea) {
+    const areaSquareUnits = calculateWateringAreaAreaSquareUnits(selectedWateringArea.points, state.scale.pixelsPerUnit);
+    elements.wateringAreaLabel.value = selectedWateringArea.label ?? "";
+    elements.wateringAreaPointCount.value = String(selectedWateringArea.points?.length ?? 0);
+    elements.wateringAreaSize.value = areaSquareUnits == null
+      ? "--"
+      : `${areaSquareUnits.toFixed(1)} sq ${state.scale.units}`;
+  } else {
+    elements.wateringAreaLabel.value = "";
+    elements.wateringAreaPointCount.value = "";
+    elements.wateringAreaSize.value = "";
+  }
+
   renderSprinklerAnalysis(elements.sprinklerAnalysis, selectedSprinkler, analysis);
   renderAnalysisLegend(elements, state, analysis);
   renderPartsScreen(elements, state, analysis);
@@ -1165,6 +1320,7 @@ function updateUi(elements, state, renderer, analyzer) {
     ["Scale", state.scale.calibrated ? `${state.scale.pixelsPerUnit.toFixed(2)} px/${state.scale.units}` : "Not calibrated"],
     ["Rectified", state.background.rectification?.enabled ? `Yes (${state.background.rectification.referenceWidth} x ${state.background.rectification.referenceHeight})` : "No"],
     ["Heads", String(summary.sprinklerCount)],
+    ["Watering areas", String(summary.wateringAreaCount ?? 0)],
     ["Valve boxes", String(summary.valveBoxCount ?? 0)],
     ["Controllers", String(summary.controllerCount ?? 0)],
     ["Pipe runs", String(summary.pipeRunCount ?? 0)],
@@ -2500,6 +2656,7 @@ function renderSprinklerAnalysis(node, selected, analysis) {
 function hasPlacedLayoutItems(state) {
   return Boolean(
     state.sprinklers?.length
+    || state.wateringAreas?.length
     || state.pipeRuns?.length
     || state.wireRuns?.length
     || state.valveBoxes?.length

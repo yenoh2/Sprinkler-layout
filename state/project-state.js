@@ -3,6 +3,7 @@ import { normalizeFittingType, normalizeFittingsPanelTab } from "../geometry/fit
 import { distancePointToSegmentSquared, normalizePipeKind, normalizePipePoints } from "../geometry/pipes.js";
 import { applyHomography, sanitizeReferenceDimension } from "../geometry/rectification.js";
 import { computePixelsPerUnitFromPoints } from "../geometry/scale.js";
+import { normalizeWateringAreaPoints } from "../geometry/watering-areas.js";
 import { normalizeWireGauge, normalizeWireKind, sanitizeWireColorCode, sanitizeWireConductorCount } from "../geometry/wires.js";
 
 const HEAD_CONNECTION_PIPE_EPSILON_PX = 3;
@@ -11,13 +12,16 @@ const MAX_UNDO_DEPTH = 50;
 const DEFAULT_SPRINKLER_RADIUS_FT = 12;
 const DEFAULT_STRIP_LENGTH_FT = 15;
 const DEFAULT_STRIP_WIDTH_FT = 4;
-const VALID_TOOLS = ["select", "place", "pipe", "wire", "fittings", "valve-box", "controller", "calibrate", "measure", "pan"];
+const VALID_TOOLS = ["select", "place", "area", "pipe", "wire", "fittings", "valve-box", "controller", "calibrate", "measure", "pan"];
 
 const HISTORY_ACTIONS = new Set([
   "ADD_SPRINKLER",
   "MOVE_SPRINKLER",
   "UPDATE_SPRINKLER",
   "DELETE_SPRINKLER",
+  "ADD_WATERING_AREA",
+  "UPDATE_WATERING_AREA",
+  "DELETE_WATERING_AREA",
   "ADD_VALVE_BOX",
   "MOVE_VALVE_BOX",
   "UPDATE_VALVE_BOX",
@@ -111,6 +115,7 @@ export function createInitialState() {
     },
     zones: [],
     sprinklers: [],
+    wateringAreas: [],
     valveBoxes: [],
     controllers: [],
     pipeRuns: [],
@@ -147,6 +152,7 @@ export function createInitialState() {
       pipePlacementKind: "zone",
       wirePlacementKind: "multiconductor",
       selectedSprinklerId: null,
+      selectedWateringAreaId: null,
       selectedValveBoxId: null,
       selectedControllerId: null,
       selectedPipeRunId: null,
@@ -161,6 +167,7 @@ export function createInitialState() {
       fittingDraft: null,
       pipeDraft: null,
       wireDraft: null,
+      wateringAreaDraft: null,
       cursorWorld: null,
       activeZoneId: null,
       focusedZoneId: null,
@@ -254,14 +261,15 @@ function applyAction(state, action) {
         state.ui.wireDraft = null;
         state.ui.selectedWireVertexIndex = null;
       }
+      if (action.payload.tool !== "area") {
+        state.ui.wateringAreaDraft = null;
+      }
       return state;
     case "SET_CALIBRATION_MODE":
       state.ui.calibrationMode = normalizeCalibrationMode(action.payload.mode);
       return state;
     case "SET_PLACEMENT_PATTERN":
-      state.ui.placementPattern = ["full", "arc", "strip"].includes(action.payload.pattern)
-        ? action.payload.pattern
-        : "full";
+      state.ui.placementPattern = normalizePlacementPattern(action.payload.pattern);
       return state;
     case "SET_PIPE_PLACEMENT_KIND":
       state.ui.pipePlacementKind = normalizePipeKind(action.payload.kind);
@@ -492,6 +500,65 @@ function applyAction(state, action) {
       state.ui.selectedSprinklerId = action.payload.newId;
       return state;
     }
+    case "START_WATERING_AREA_DRAFT":
+      state.ui.wateringAreaDraft = {
+        points: normalizeWateringAreaPoints(action.payload.points),
+        previewPoint: null,
+      };
+      clearAllSelections(state.ui);
+      return state;
+    case "APPEND_WATERING_AREA_DRAFT_POINT":
+      if (!state.ui.wateringAreaDraft) {
+        return null;
+      }
+      state.ui.wateringAreaDraft.points = [
+        ...state.ui.wateringAreaDraft.points,
+        ...normalizeWateringAreaPoints([action.payload.point]),
+      ];
+      return state;
+    case "SET_WATERING_AREA_DRAFT_PREVIEW":
+      if (!state.ui.wateringAreaDraft) {
+        return null;
+      }
+      state.ui.wateringAreaDraft.previewPoint = normalizeWateringAreaPoints([action.payload.point])[0] ?? null;
+      return state;
+    case "CLEAR_WATERING_AREA_DRAFT":
+      state.ui.wateringAreaDraft = null;
+      return state;
+    case "ADD_WATERING_AREA": {
+      const points = normalizeWateringAreaPoints(action.payload.points);
+      if (points.length < 3) {
+        return null;
+      }
+      const wateringArea = {
+        id: action.payload.id,
+        label: sanitizeWateringAreaLabel(action.payload.label, buildDefaultWateringAreaLabel(state.wateringAreas)),
+        points,
+      };
+      state.wateringAreas.push(wateringArea);
+      clearAllSelections(state.ui);
+      state.ui.selectedWateringAreaId = wateringArea.id;
+      state.ui.wateringAreaDraft = null;
+      return state;
+    }
+    case "UPDATE_WATERING_AREA": {
+      const wateringArea = findWateringArea(state, action.payload.id);
+      if (!wateringArea) {
+        return null;
+      }
+      Object.assign(wateringArea, sanitizeWateringAreaPatch(action.payload.patch, wateringArea, state));
+      return state;
+    }
+    case "DELETE_WATERING_AREA":
+      state.wateringAreas = state.wateringAreas.filter((wateringArea) => wateringArea.id !== action.payload.id);
+      if (state.ui.selectedWateringAreaId === action.payload.id) {
+        state.ui.selectedWateringAreaId = null;
+      }
+      return state;
+    case "SELECT_WATERING_AREA":
+      clearAllSelections(state.ui);
+      state.ui.selectedWateringAreaId = action.payload.id || null;
+      return state;
     case "ADD_VALVE_BOX":
       state.valveBoxes.push({
         id: action.payload.id,
@@ -930,6 +997,7 @@ function applyAction(state, action) {
 
 function clearAllSelections(ui) {
   ui.selectedSprinklerId = null;
+  ui.selectedWateringAreaId = null;
   ui.selectedValveBoxId = null;
   ui.selectedControllerId = null;
   ui.selectedPipeRunId = null;
@@ -977,6 +1045,10 @@ function cloneMutableState(state) {
     parts: { ...state.parts },
     zones: (state.zones ?? []).map((zone) => ({ ...zone })),
     sprinklers: (state.sprinklers ?? []).map((sprinkler) => ({ ...sprinkler })),
+    wateringAreas: (state.wateringAreas ?? []).map((wateringArea) => ({
+      ...wateringArea,
+      points: clonePoints(wateringArea.points),
+    })),
     valveBoxes: (state.valveBoxes ?? []).map((valveBox) => ({ ...valveBox })),
     controllers: (state.controllers ?? []).map((controller) => ({ ...controller })),
     pipeRuns: (state.pipeRuns ?? []).map((pipeRun) => ({
@@ -1000,6 +1072,7 @@ function cloneMutableState(state) {
       fittingDraft: cloneFittingDraft(state.ui.fittingDraft),
       pipeDraft: cloneLineDraft(state.ui.pipeDraft),
       wireDraft: cloneLineDraft(state.ui.wireDraft),
+      wateringAreaDraft: cloneLineDraft(state.ui.wateringAreaDraft),
       cursorWorld: clonePoint(state.ui.cursorWorld),
       expandedZoneIds: [...(state.ui.expandedZoneIds ?? [])],
       rectificationPoints: clonePoints(state.ui.rectificationPoints),
@@ -1118,6 +1191,27 @@ function sanitizePatch(patch) {
     sanitized.label = patch.label;
   }
 
+  return sanitized;
+}
+
+function sanitizeWateringAreaPatch(patch, wateringArea, state) {
+  if (!patch) {
+    return {};
+  }
+
+  const sanitized = {};
+  if ("label" in patch) {
+    sanitized.label = sanitizeWateringAreaLabel(
+      patch.label,
+      buildDefaultWateringAreaLabel((state?.wateringAreas ?? []).filter((entry) => entry.id !== wateringArea.id)),
+    );
+  }
+  if ("points" in patch) {
+    const points = normalizeWateringAreaPoints(patch.points);
+    if (points.length >= 3) {
+      sanitized.points = points;
+    }
+  }
   return sanitized;
 }
 
@@ -1399,6 +1493,13 @@ function applyBackgroundRectification(state, payload) {
   }
 
   state.sprinklers = state.sprinklers.map((sprinkler) => transformEntityPoint(sprinkler, transformMatrix));
+  state.wateringAreas = state.wateringAreas.map((wateringArea) => ({
+    ...wateringArea,
+    points: transformPoints(wateringArea.points, transformMatrix),
+  })).filter((wateringArea) => wateringArea.points.length >= 3);
+  if (state.ui.selectedWateringAreaId && !state.wateringAreas.some((wateringArea) => wateringArea.id === state.ui.selectedWateringAreaId)) {
+    state.ui.selectedWateringAreaId = null;
+  }
   state.valveBoxes = state.valveBoxes.map((valveBox) => transformEntityPoint(valveBox, transformMatrix));
   state.controllers = state.controllers.map((controller) => transformEntityPoint(controller, transformMatrix));
   state.pipeRuns = state.pipeRuns.map((pipeRun) => ({
@@ -1414,6 +1515,10 @@ function applyBackgroundRectification(state, payload) {
   state.ui.measurePoints = transformPoints(state.ui.measurePoints, transformMatrix);
   state.ui.measurePreviewPoint = transformPoint(state.ui.measurePreviewPoint, transformMatrix);
   state.ui.cursorWorld = transformPoint(state.ui.cursorWorld, transformMatrix);
+  if (state.ui.wateringAreaDraft) {
+    state.ui.wateringAreaDraft.points = transformPoints(state.ui.wateringAreaDraft.points, transformMatrix);
+    state.ui.wateringAreaDraft.previewPoint = transformPoint(state.ui.wateringAreaDraft.previewPoint, transformMatrix);
+  }
   state.ui.rectificationPoints = [];
   state.ui.calibrationMode = "scale";
   state.ui.fittingDraft = null;
@@ -1649,7 +1754,7 @@ function buildHint(state) {
     return "Enter the measured distance and apply calibration. Clicking a new point starts over.";
   }
   if (!state.scale.calibrated) {
-    return "Calibrate the drawing before placing sprinklers, valve boxes, controllers, pipe, or wire.";
+    return "Calibrate the drawing before tracing watering areas or placing sprinklers, valve boxes, controllers, pipe, or wire.";
   }
   if (!hasHydraulics(state)) {
     return "Enter line size and pressure before layout review.";
@@ -1666,6 +1771,12 @@ function buildHint(state) {
   if (state.ui.activeTool === "wire") {
     return `Click to start a controller-to-valve-box wire run. ${state.wireRuns.length} run${state.wireRuns.length === 1 ? "" : "s"} on plan.`;
   }
+  if (state.ui.activeTool === "area" && state.ui.wateringAreaDraft?.points?.length) {
+    return "Click to add watering-area corners. Press Enter or double-click to close the shape, or Esc to cancel.";
+  }
+  if (state.ui.activeTool === "area") {
+    return `Click to trace watering-area polygons for quarter and half spray auto-orient. ${state.wateringAreas.length} area${state.wateringAreas.length === 1 ? "" : "s"} on plan.`;
+  }
   if (state.ui.activeTool === "fittings" && state.ui.fittingDraft?.type === "head_takeoff") {
     return "Drag over a sprinkler head and release to place a head takeoff. Press Esc to cancel.";
   }
@@ -1680,6 +1791,12 @@ function buildHint(state) {
   }
   if (state.ui.activeTool === "place" && state.ui.placementPattern === "strip") {
     return "Click and drag to place a strip sprinkler, then fine-tune width or type from the selected head controls.";
+  }
+  if (state.ui.activeTool === "place" && state.ui.placementPattern === "quarter") {
+    return "Click to place a quarter spray. It will auto-face the nearest traced watering-area corner when possible.";
+  }
+  if (state.ui.activeTool === "place" && state.ui.placementPattern === "half") {
+    return "Click to place a half spray. It will auto-face inward from the nearest traced watering-area edge when possible.";
   }
   if (state.ui.activeTool === "valve-box") {
     return `Click to place valve boxes. ${state.valveBoxes.length} box${state.valveBoxes.length === 1 ? "" : "es"} on plan.`;
@@ -1711,6 +1828,9 @@ function normalizeLoadedProject(project) {
     zones: normalizedZones,
     valveBoxes: Array.isArray(project.valveBoxes) ? project.valveBoxes.map(normalizeValveBox) : [],
     controllers: Array.isArray(project.controllers) ? project.controllers.map(normalizeController) : [],
+    wateringAreas: Array.isArray(project.wateringAreas)
+      ? project.wateringAreas.map((wateringArea) => normalizeWateringArea(wateringArea)).filter(Boolean)
+      : [],
     pipeRuns: Array.isArray(project.pipeRuns) ? project.pipeRuns.map(normalizePipeRun).filter(Boolean) : [],
     wireRuns: Array.isArray(project.wireRuns)
       ? project.wireRuns.map((wireRun) => normalizeWireRun(wireRun, normalizedZones)).filter(Boolean)
@@ -1722,6 +1842,7 @@ function normalizeLoadedProject(project) {
       ...project.ui,
       measurePreviewPoint: null,
       fittingDraft: null,
+      wateringAreaDraft: null,
       selectedPipeVertexIndex: null,
       selectedWireVertexIndex: null,
       pipeDraft: null,
@@ -1741,9 +1862,7 @@ function normalizeLoadedProject(project) {
   merged.ui.activeTool = VALID_TOOLS.includes(merged.ui.activeTool)
     ? merged.ui.activeTool
     : "select";
-  merged.ui.placementPattern = ["full", "arc", "strip"].includes(merged.ui.placementPattern)
-    ? merged.ui.placementPattern
-    : "full";
+  merged.ui.placementPattern = normalizePlacementPattern(merged.ui.placementPattern);
   merged.ui.pipePlacementKind = normalizePipeKind(merged.ui.pipePlacementKind);
   merged.ui.wirePlacementKind = normalizeWireKind(merged.ui.wirePlacementKind);
   normalizeLoadedSelectionState(merged.ui);
@@ -1758,6 +1877,14 @@ function findSprinkler(state, id) {
 
 export function findSelectedSprinkler(state) {
   return findSprinkler(state, state.ui.selectedSprinklerId);
+}
+
+function findWateringArea(state, id) {
+  return state.wateringAreas.find((wateringArea) => wateringArea.id === id) || null;
+}
+
+export function findSelectedWateringArea(state) {
+  return findWateringArea(state, state.ui.selectedWateringAreaId);
 }
 
 function findValveBox(state, id) {
@@ -1808,6 +1935,7 @@ export function cloneProjectSnapshot(state) {
   snapshot.ui.fittingDraft = null;
   snapshot.ui.pipeDraft = null;
   snapshot.ui.wireDraft = null;
+  snapshot.ui.wateringAreaDraft = null;
   snapshot.ui.selectedPipeVertexIndex = null;
   snapshot.ui.selectedWireVertexIndex = null;
   return snapshot;
@@ -1887,6 +2015,18 @@ function normalizeSprinkler(sprinkler, units = "ft") {
     hidden: Boolean(sprinkler?.hidden),
     label: sprinkler?.label || "Sprinkler",
     zoneId: sprinkler?.zoneId || null,
+  };
+}
+
+function normalizeWateringArea(wateringArea) {
+  const points = normalizeWateringAreaPoints(wateringArea?.points);
+  if (points.length < 3) {
+    return null;
+  }
+  return {
+    id: wateringArea?.id || crypto.randomUUID(),
+    label: sanitizeWateringAreaLabel(wateringArea?.label, "Watering Area"),
+    points,
   };
 }
 
@@ -2106,6 +2246,22 @@ function normalizeDraftPoints(points, limit) {
     .filter(Boolean);
 }
 
+function normalizePlacementPattern(value) {
+  return ["full", "quarter", "half", "arc", "strip"].includes(value) ? value : "full";
+}
+
+function buildDefaultWateringAreaLabel(wateringAreas) {
+  const count = Array.isArray(wateringAreas) ? wateringAreas.length + 1 : 1;
+  return `Area ${count}`;
+}
+
+function sanitizeWateringAreaLabel(value, fallback = "Watering Area") {
+  const normalized = String(value ?? "")
+    .trim()
+    .replace(/\s+/g, " ");
+  return normalized || fallback;
+}
+
 function collectDependentFittingIdsForPipeRun(state, pipeRun) {
   const dependentIds = new Set();
   if (!pipeRun?.id) {
@@ -2254,6 +2410,7 @@ function getRequiredWireConductorsForValveBox(state, valveBoxId) {
 function normalizeLoadedSelectionState(ui) {
   const selectionKeys = [
     "selectedSprinklerId",
+    "selectedWateringAreaId",
     "selectedValveBoxId",
     "selectedControllerId",
     "selectedPipeRunId",

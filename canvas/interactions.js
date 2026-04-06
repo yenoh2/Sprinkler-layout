@@ -4,6 +4,7 @@ import { getFittingTypeMeta, isManualFittingPlacementSupported } from "../geomet
 import { normalizePipeKind, pointsEqual } from "../geometry/pipes.js";
 import { buildStripPrimaryPatch, buildStripSecondaryPatch, isStripCoverage } from "../geometry/coverage.js";
 import { computePixelsPerUnitFromPoints, fitBackgroundToView, screenToWorld, worldToScreen } from "../geometry/scale.js";
+import { buildAutoOrientedSectorPatch } from "../geometry/watering-areas.js";
 
 const PIPE_SNAP_SCREEN_PX = 12;
 const PIPE_HANDLE_DRAG_THRESHOLD_PX = 3;
@@ -88,12 +89,37 @@ export function createInteractionController(canvas, store, renderer, analyzer) {
           x: worldPoint.x,
           y: worldPoint.y,
           radius: 12,
-          pattern: state.ui.placementPattern,
-          startDeg: 0,
-          sweepDeg: state.ui.placementPattern === "arc" ? 180 : 360,
-          rotationDeg: 0,
+          ...buildSectorPlacementPayload(state, worldPoint),
         },
       });
+      return;
+    }
+
+    if (state.ui.activeTool === "area") {
+      if (!state.scale.calibrated) {
+        return;
+      }
+      if (!state.ui.wateringAreaDraft) {
+        store.dispatch({
+          type: "START_WATERING_AREA_DRAFT",
+          payload: { points: [worldPoint] },
+        });
+        return;
+      }
+
+      const lastPoint = state.ui.wateringAreaDraft.points.at(-1) ?? null;
+      const shouldAppend = !pointsEqual(lastPoint, worldPoint);
+      const nextPoints = shouldAppend
+        ? [...state.ui.wateringAreaDraft.points, worldPoint]
+        : [...state.ui.wateringAreaDraft.points];
+
+      if (shouldAppend) {
+        store.dispatch({ type: "APPEND_WATERING_AREA_DRAFT_POINT", payload: { point: worldPoint } });
+      }
+
+      if (event.detail >= 2 && nextPoints.length >= 3) {
+        commitWateringArea(nextPoints);
+      }
       return;
     }
 
@@ -401,6 +427,7 @@ export function createInteractionController(canvas, store, renderer, analyzer) {
 
     const fittingHit = renderer.getHitFitting?.(worldPoint) ?? null;
     const sprinklerHit = renderer.getHitSprinkler(worldPoint) ?? null;
+    const wateringAreaHit = renderer.getHitWateringArea?.(worldPoint) ?? null;
 
     if (state.ui.activeTool === "fittings") {
       if (fittingHit) {
@@ -444,7 +471,21 @@ export function createInteractionController(canvas, store, renderer, analyzer) {
       return;
     }
 
-    store.dispatch({ type: "SELECT_SPRINKLER", payload: { id: null } });
+    if (wateringAreaHit) {
+      store.dispatch({ type: "SELECT_WATERING_AREA", payload: { id: wateringAreaHit.id } });
+      dragState = {
+        kind: "move-watering-area",
+        id: wateringAreaHit.id,
+        startWorldPoint: worldPoint,
+        originalPoints: wateringAreaHit.points.map((point) => ({ ...point })),
+        lastPoints: wateringAreaHit.points.map((point) => ({ ...point })),
+        moved: false,
+      };
+      canvas.setPointerCapture(event.pointerId);
+      return;
+    }
+
+    store.dispatch({ type: "SELECT_WATERING_AREA", payload: { id: null } });
     panState = {
       startX: event.clientX,
       startY: event.clientY,
@@ -484,6 +525,12 @@ export function createInteractionController(canvas, store, renderer, analyzer) {
         payload: {
           point: previewSnap.point,
         },
+      });
+    }
+    if (state.ui.activeTool === "area" && state.ui.wateringAreaDraft?.points?.length) {
+      store.dispatch({
+        type: "SET_WATERING_AREA_DRAFT_PREVIEW",
+        payload: { point: worldPoint },
       });
     }
 
@@ -596,6 +643,23 @@ export function createInteractionController(canvas, store, renderer, analyzer) {
       return;
     }
 
+    if (dragState.kind === "move-watering-area") {
+      const deltaX = worldPoint.x - dragState.startWorldPoint.x;
+      const deltaY = worldPoint.y - dragState.startWorldPoint.y;
+      const nextPoints = dragState.originalPoints.map((point) => ({
+        x: point.x + deltaX,
+        y: point.y + deltaY,
+      }));
+      dragState.moved = Math.abs(deltaX) > 0.001 || Math.abs(deltaY) > 0.001;
+      dragState.lastPoints = nextPoints;
+      store.dispatch({
+        type: "UPDATE_WATERING_AREA",
+        payload: { id: dragState.id, patch: { points: nextPoints } },
+        meta: { skipHistory: true },
+      });
+      return;
+    }
+
     dragState.lastX = worldPoint.x;
     dragState.lastY = worldPoint.y;
     store.dispatch({
@@ -640,6 +704,12 @@ export function createInteractionController(canvas, store, renderer, analyzer) {
       store.dispatch({
         type: "MOVE_CONTROLLER",
         payload: { id: dragState.id, x: dragState.lastX, y: dragState.lastY },
+      });
+    }
+    if (dragState?.kind === "move-watering-area" && dragState.moved && dragState.lastPoints) {
+      store.dispatch({
+        type: "UPDATE_WATERING_AREA",
+        payload: { id: dragState.id, patch: { points: dragState.lastPoints } },
       });
     }
     if (dragState || panState) {
@@ -772,6 +842,15 @@ export function createInteractionController(canvas, store, renderer, analyzer) {
     return true;
   }
 
+  function finishWateringAreaDraft() {
+    const state = store.getState();
+    if (!state.ui.wateringAreaDraft?.points?.length || state.ui.wateringAreaDraft.points.length < 3) {
+      return false;
+    }
+    commitWateringArea(state.ui.wateringAreaDraft.points);
+    return true;
+  }
+
   function cancelPipeDraft() {
     if (!store.getState().ui.pipeDraft) {
       return false;
@@ -785,6 +864,14 @@ export function createInteractionController(canvas, store, renderer, analyzer) {
       return false;
     }
     store.dispatch({ type: "CLEAR_WIRE_DRAFT" });
+    return true;
+  }
+
+  function cancelWateringAreaDraft() {
+    if (!store.getState().ui.wateringAreaDraft) {
+      return false;
+    }
+    store.dispatch({ type: "CLEAR_WATERING_AREA_DRAFT" });
     return true;
   }
 
@@ -874,8 +961,10 @@ export function createInteractionController(canvas, store, renderer, analyzer) {
     fitBackground,
     finishPipeDraft,
     finishWireDraft,
+    finishWateringAreaDraft,
     cancelPipeDraft,
     cancelWireDraft,
+    cancelWateringAreaDraft,
     beginFittingPlacement,
     placeSuggestedFitting,
     cancelFittingDraft,
@@ -1008,6 +1097,16 @@ export function createInteractionController(canvas, store, renderer, analyzer) {
         conductorCount: currentState.ui.wireDraft?.conductorCount ?? null,
         gaugeAwg: currentState.ui.wireDraft?.gaugeAwg ?? "18",
         colorCode: currentState.ui.wireDraft?.colorCode ?? null,
+        points,
+      },
+    });
+  }
+
+  function commitWateringArea(points) {
+    store.dispatch({
+      type: "ADD_WATERING_AREA",
+      payload: {
+        id: crypto.randomUUID(),
         points,
       },
     });
@@ -1363,6 +1462,7 @@ function shouldStartPan(event, activeTool, isSpacePressed) {
 function getCursorForTool(tool) {
   switch (tool) {
     case "place":
+    case "area":
     case "pipe":
     case "wire":
     case "fittings":
@@ -1377,6 +1477,34 @@ function getCursorForTool(tool) {
     default:
       return "default";
   }
+}
+
+function buildSectorPlacementPayload(state, worldPoint) {
+  const placementPattern = state.ui.placementPattern ?? "full";
+  const sweepDeg = placementPattern === "quarter"
+    ? 90
+    : placementPattern === "half" || placementPattern === "arc"
+      ? 180
+      : 360;
+  const patch = placementPattern === "quarter" || placementPattern === "half"
+    ? buildAutoOrientedSectorPatch(
+      worldPoint,
+      sweepDeg,
+      state.wateringAreas,
+      {
+        pixelsPerUnit: state.scale.pixelsPerUnit,
+        radiusFt: 12,
+        fallbackStartDeg: 0,
+      },
+    )
+    : null;
+  return {
+    coverageModel: "sector",
+    pattern: patch?.pattern ?? (sweepDeg >= 360 ? "full" : "arc"),
+    startDeg: patch?.startDeg ?? 0,
+    sweepDeg: patch?.sweepDeg ?? sweepDeg,
+    rotationDeg: 0,
+  };
 }
 
 function isFormField(target) {
