@@ -356,6 +356,40 @@ export function createInteractionController(canvas, store, renderer, analyzer) {
       return;
     }
 
+    const wateringAreaVertexHit = renderer.getWateringAreaVertexHandleHit?.(worldPoint);
+    if (wateringAreaVertexHit) {
+      store.dispatch({
+        type: "SELECT_WATERING_AREA",
+        payload: { id: wateringAreaVertexHit.id, vertexIndex: wateringAreaVertexHit.index },
+      });
+      dragState = {
+        kind: "watering-area-vertex",
+        id: wateringAreaVertexHit.id,
+        index: wateringAreaVertexHit.index,
+        startScreenPoint: screenPoint,
+        historyStarted: false,
+      };
+      canvas.setPointerCapture(event.pointerId);
+      return;
+    }
+
+    const wateringAreaMidpointHit = renderer.getWateringAreaMidpointHandleHit?.(worldPoint);
+    if (wateringAreaMidpointHit) {
+      store.dispatch({
+        type: "SELECT_WATERING_AREA",
+        payload: { id: wateringAreaMidpointHit.id, vertexIndex: null },
+      });
+      dragState = {
+        kind: "watering-area-midpoint",
+        id: wateringAreaMidpointHit.id,
+        index: wateringAreaMidpointHit.index,
+        startScreenPoint: screenPoint,
+        historyStarted: false,
+      };
+      canvas.setPointerCapture(event.pointerId);
+      return;
+    }
+
     const handleHit = renderer.getArcHandleHit(worldPoint);
     if (handleHit) {
       const sprinkler = state.sprinklers.find((item) => item.id === handleHit.id);
@@ -566,6 +600,16 @@ export function createInteractionController(canvas, store, renderer, analyzer) {
 
     if (dragState.kind === "wire-midpoint") {
       updateDraggedWireMidpoint(state, dragState, screenPoint, worldPoint);
+      return;
+    }
+
+    if (dragState.kind === "watering-area-vertex") {
+      updateDraggedWateringAreaVertex(state, dragState, screenPoint, worldPoint);
+      return;
+    }
+
+    if (dragState.kind === "watering-area-midpoint") {
+      updateDraggedWateringAreaMidpoint(state, dragState, screenPoint, worldPoint);
       return;
     }
 
@@ -1068,6 +1112,42 @@ export function createInteractionController(canvas, store, renderer, analyzer) {
     store.dispatch({
       type: "MOVE_WIRE_VERTEX",
       payload: { id: nextDragState.id, index: nextDragState.insertedIndex, point: snapResult.point },
+      meta: { skipHistory: true },
+    });
+  }
+
+  function updateDraggedWateringAreaVertex(state, nextDragState, screenPoint, worldPoint) {
+    if (!didPointerMoveEnough(nextDragState.startScreenPoint, screenPoint) && !nextDragState.historyStarted) {
+      return;
+    }
+    const action = {
+      type: "MOVE_WATERING_AREA_VERTEX",
+      payload: { id: nextDragState.id, index: nextDragState.index, point: worldPoint },
+    };
+    if (!nextDragState.historyStarted) {
+      nextDragState.historyStarted = true;
+      store.dispatch(action);
+      return;
+    }
+    store.dispatch({ ...action, meta: { skipHistory: true } });
+  }
+
+  function updateDraggedWateringAreaMidpoint(state, nextDragState, screenPoint, worldPoint) {
+    if (!didPointerMoveEnough(nextDragState.startScreenPoint, screenPoint) && !nextDragState.historyStarted) {
+      return;
+    }
+    if (!nextDragState.historyStarted) {
+      nextDragState.historyStarted = true;
+      nextDragState.insertedIndex = nextDragState.index + 1;
+      store.dispatch({
+        type: "INSERT_WATERING_AREA_VERTEX",
+        payload: { id: nextDragState.id, index: nextDragState.index, point: worldPoint },
+      });
+      return;
+    }
+    store.dispatch({
+      type: "MOVE_WATERING_AREA_VERTEX",
+      payload: { id: nextDragState.id, index: nextDragState.insertedIndex, point: worldPoint },
       meta: { skipHistory: true },
     });
   }

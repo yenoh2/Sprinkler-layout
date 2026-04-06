@@ -22,6 +22,9 @@ const HISTORY_ACTIONS = new Set([
   "ADD_WATERING_AREA",
   "UPDATE_WATERING_AREA",
   "DELETE_WATERING_AREA",
+  "MOVE_WATERING_AREA_VERTEX",
+  "INSERT_WATERING_AREA_VERTEX",
+  "DELETE_WATERING_AREA_VERTEX",
   "ADD_VALVE_BOX",
   "MOVE_VALVE_BOX",
   "UPDATE_VALVE_BOX",
@@ -153,6 +156,7 @@ export function createInitialState() {
       wirePlacementKind: "multiconductor",
       selectedSprinklerId: null,
       selectedWateringAreaId: null,
+      selectedWateringAreaVertexIndex: null,
       selectedValveBoxId: null,
       selectedControllerId: null,
       selectedPipeRunId: null,
@@ -553,12 +557,55 @@ function applyAction(state, action) {
       state.wateringAreas = state.wateringAreas.filter((wateringArea) => wateringArea.id !== action.payload.id);
       if (state.ui.selectedWateringAreaId === action.payload.id) {
         state.ui.selectedWateringAreaId = null;
+        state.ui.selectedWateringAreaVertexIndex = null;
       }
       return state;
     case "SELECT_WATERING_AREA":
       clearAllSelections(state.ui);
       state.ui.selectedWateringAreaId = action.payload.id || null;
+      state.ui.selectedWateringAreaVertexIndex = Number.isInteger(action.payload.vertexIndex) ? action.payload.vertexIndex : null;
       return state;
+    case "MOVE_WATERING_AREA_VERTEX": {
+      const wateringArea = findWateringArea(state, action.payload.id);
+      if (!wateringArea || !Number.isInteger(action.payload.index) || action.payload.index < 0 || action.payload.index >= wateringArea.points.length) {
+        return null;
+      }
+      const point = normalizeWateringAreaPoints([action.payload.point])[0];
+      if (!point) {
+        return null;
+      }
+      wateringArea.points[action.payload.index] = point;
+      clearAllSelections(state.ui);
+      state.ui.selectedWateringAreaId = wateringArea.id;
+      state.ui.selectedWateringAreaVertexIndex = action.payload.index;
+      return state;
+    }
+    case "INSERT_WATERING_AREA_VERTEX": {
+      const wateringArea = findWateringArea(state, action.payload.id);
+      if (!wateringArea || !Number.isInteger(action.payload.index) || action.payload.index < 0 || action.payload.index >= wateringArea.points.length) {
+        return null;
+      }
+      const point = normalizeWateringAreaPoints([action.payload.point])[0];
+      if (!point) {
+        return null;
+      }
+      wateringArea.points.splice(action.payload.index + 1, 0, point);
+      clearAllSelections(state.ui);
+      state.ui.selectedWateringAreaId = wateringArea.id;
+      state.ui.selectedWateringAreaVertexIndex = action.payload.index + 1;
+      return state;
+    }
+    case "DELETE_WATERING_AREA_VERTEX": {
+      const wateringArea = findWateringArea(state, action.payload.id);
+      if (!wateringArea || !Number.isInteger(action.payload.index) || wateringArea.points.length <= 3 || action.payload.index < 0 || action.payload.index >= wateringArea.points.length) {
+        return null;
+      }
+      wateringArea.points.splice(action.payload.index, 1);
+      clearAllSelections(state.ui);
+      state.ui.selectedWateringAreaId = wateringArea.id;
+      state.ui.selectedWateringAreaVertexIndex = clamp(action.payload.index, 0, wateringArea.points.length - 1);
+      return state;
+    }
     case "ADD_VALVE_BOX":
       state.valveBoxes.push({
         id: action.payload.id,
@@ -998,6 +1045,7 @@ function applyAction(state, action) {
 function clearAllSelections(ui) {
   ui.selectedSprinklerId = null;
   ui.selectedWateringAreaId = null;
+  ui.selectedWateringAreaVertexIndex = null;
   ui.selectedValveBoxId = null;
   ui.selectedControllerId = null;
   ui.selectedPipeRunId = null;
@@ -1936,6 +1984,7 @@ export function cloneProjectSnapshot(state) {
   snapshot.ui.pipeDraft = null;
   snapshot.ui.wireDraft = null;
   snapshot.ui.wateringAreaDraft = null;
+  snapshot.ui.selectedWateringAreaVertexIndex = null;
   snapshot.ui.selectedPipeVertexIndex = null;
   snapshot.ui.selectedWireVertexIndex = null;
   return snapshot;
@@ -2422,6 +2471,9 @@ function normalizeLoadedSelectionState(ui) {
     if (!ui.selectedPipeRunId) {
       ui.selectedPipeVertexIndex = null;
     }
+    if (!ui.selectedWateringAreaId) {
+      ui.selectedWateringAreaVertexIndex = null;
+    }
     if (!ui.selectedWireRunId) {
       ui.selectedWireVertexIndex = null;
     }
@@ -2436,6 +2488,9 @@ function normalizeLoadedSelectionState(ui) {
   });
   if (keepKey !== "selectedPipeRunId") {
     ui.selectedPipeVertexIndex = null;
+  }
+  if (keepKey !== "selectedWateringAreaId") {
+    ui.selectedWateringAreaVertexIndex = null;
   }
   if (keepKey !== "selectedWireRunId") {
     ui.selectedWireVertexIndex = null;

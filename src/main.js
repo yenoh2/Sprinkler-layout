@@ -116,6 +116,14 @@ document.addEventListener("keydown", (event) => {
       });
       return;
     }
+    if (selectedWateringArea && Number.isInteger(state.ui.selectedWateringAreaVertexIndex)) {
+      event.preventDefault();
+      store.dispatch({
+        type: "DELETE_WATERING_AREA_VERTEX",
+        payload: { id: selectedWateringArea.id, index: state.ui.selectedWateringAreaVertexIndex },
+      });
+      return;
+    }
     if (selectedPipeRun) {
       event.preventDefault();
       store.dispatch({ type: "DELETE_PIPE_RUN", payload: { id: selectedPipeRun.id } });

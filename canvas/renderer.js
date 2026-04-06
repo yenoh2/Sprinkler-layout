@@ -387,21 +387,6 @@ export function createRenderer(canvas, store, analyzer) {
       ctx.fill();
       ctx.stroke();
 
-      if (isSelected) {
-        ctx.save();
-        ctx.fillStyle = "#fff7eb";
-        ctx.strokeStyle = "rgba(36, 90, 52, 0.96)";
-        ctx.lineWidth = 1.6;
-        wateringArea.points.forEach((point) => {
-          const screenPoint = worldToScreen(point, state.view);
-          ctx.beginPath();
-          ctx.arc(screenPoint.x, screenPoint.y, 4.5, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.stroke();
-        });
-        ctx.restore();
-      }
-
       if (state.view.showLabels) {
         const centroidScreen = worldToScreen(centroid, state.view);
         ctx.fillStyle = isSelected ? "rgba(36, 90, 52, 0.98)" : "rgba(56, 115, 71, 0.92)";
@@ -1016,6 +1001,11 @@ export function createRenderer(canvas, store, analyzer) {
       return;
     }
 
+    const selectedVertexIndex = Number.isInteger(state.ui.selectedWateringAreaVertexIndex)
+      ? state.ui.selectedWateringAreaVertexIndex
+      : null;
+    const midpoints = buildWateringAreaMidpoints(selectedWateringArea.points);
+
     ctx.save();
     drawWateringAreaPath(selectedWateringArea.points, state);
     ctx.strokeStyle = "rgba(27, 76, 44, 0.98)";
@@ -1023,6 +1013,20 @@ export function createRenderer(canvas, store, analyzer) {
     ctx.setLineDash([10, 6]);
     ctx.stroke();
     ctx.setLineDash([]);
+    midpoints.forEach((midpointEntry) => {
+      const screenPoint = worldToScreen(midpointEntry.point, state.view);
+      drawPipeHandle(ctx, screenPoint, "#f2fbf4", "rgba(36, 90, 52, 0.96)", 4.5);
+    });
+    selectedWateringArea.points.forEach((point, index) => {
+      const screenPoint = worldToScreen(point, state.view);
+      drawPipeHandle(
+        ctx,
+        screenPoint,
+        selectedVertexIndex === index ? "rgba(36, 90, 52, 0.96)" : "#fff7eb",
+        selectedVertexIndex === index ? "#ffffff" : "rgba(36, 90, 52, 0.96)",
+        5.8,
+      );
+    });
     ctx.restore();
   }
 
@@ -1344,6 +1348,42 @@ export function createRenderer(canvas, store, analyzer) {
       .find((entry) => entry.distance <= 81) || null;
   }
 
+  function getWateringAreaVertexHandleHit(worldPoint) {
+    const state = store.getState();
+    const selectedWateringArea = findSelectedWateringArea(state);
+    if (!selectedWateringArea) {
+      return null;
+    }
+
+    const screenPoint = worldToScreen(worldPoint, state.view);
+    return selectedWateringArea.points
+      .map((point, index) => ({
+        id: selectedWateringArea.id,
+        index,
+        point,
+        distance: distanceSquared(screenPoint, worldToScreen(point, state.view)),
+      }))
+      .find((entry) => entry.distance <= 100) || null;
+  }
+
+  function getWateringAreaMidpointHandleHit(worldPoint) {
+    const state = store.getState();
+    const selectedWateringArea = findSelectedWateringArea(state);
+    if (!selectedWateringArea) {
+      return null;
+    }
+
+    const screenPoint = worldToScreen(worldPoint, state.view);
+    return buildWateringAreaMidpoints(selectedWateringArea.points)
+      .map((entry) => ({
+        id: selectedWateringArea.id,
+        index: entry.index,
+        point: entry.point,
+        distance: distanceSquared(screenPoint, worldToScreen(entry.point, state.view)),
+      }))
+      .find((entry) => entry.distance <= 81) || null;
+  }
+
   function getHitSprinkler(worldPoint) {
     const state = store.getState();
     return [...state.sprinklers].reverse().find((sprinkler) => {
@@ -1505,6 +1545,8 @@ export function createRenderer(canvas, store, analyzer) {
     getPipeMidpointHandleHit,
     getWireVertexHandleHit,
     getWireMidpointHandleHit,
+    getWateringAreaVertexHandleHit,
+    getWateringAreaMidpointHandleHit,
     getHitSprinkler,
     getHitWateringArea,
     getHitValveBox,
@@ -1547,6 +1589,24 @@ function buildStripHandlePositions(state, sprinkler) {
     primaryWorld: worldHandles.primaryWorld,
     secondaryWorld: worldHandles.secondaryWorld,
   };
+}
+
+function buildWateringAreaMidpoints(points) {
+  const safePoints = points ?? [];
+  if (safePoints.length < 2) {
+    return [];
+  }
+
+  return safePoints.map((point, index) => {
+    const nextPoint = safePoints[(index + 1) % safePoints.length];
+    return {
+      index,
+      point: {
+        x: (point.x + nextPoint.x) / 2,
+        y: (point.y + nextPoint.y) / 2,
+      },
+    };
+  });
 }
 
 function drawPipePath(ctx, points, view) {

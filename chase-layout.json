@@ -2,7 +2,7 @@
   "version": "1.0",
   "project": {
     "meta": {
-      "projectName": "Chase Layout",
+      "projectName": "Sprinkler Layout",
       "units": "ft",
       "version": "1.0"
     },
@@ -669,6 +669,86 @@
         "hidden": true,
         "label": "S-32",
         "zoneId": "4897d3ce-4108-4b01-b95f-8c86a093342f"
+      }
+    ],
+    "wateringAreas": [
+      {
+        "id": "f4dca309-cb15-4c4f-bd68-c472e593b366",
+        "label": "Area 1",
+        "points": [
+          {
+            "x": 52.997450863580724,
+            "y": 531.4659915839109
+          },
+          {
+            "x": 291.1178011622505,
+            "y": 499.89775903092266
+          },
+          {
+            "x": 524.0390301452655,
+            "y": 446.23176080068544
+          },
+          {
+            "x": 507.4017505441425,
+            "y": 402.0362583477589
+          },
+          {
+            "x": 738.629859991162,
+            "y": 311.0723669340045
+          },
+          {
+            "x": 766.5408701251617,
+            "y": 501.4365335142022
+          },
+          {
+            "x": 780.0249467680972,
+            "y": 520.8319929321734
+          },
+          {
+            "x": 791.9929561416186,
+            "y": 750.1933922315335
+          },
+          {
+            "x": 895.4239784181696,
+            "y": 885.3559498223412
+          },
+          {
+            "x": 863.147810924673,
+            "y": 913.2385821169557
+          },
+          {
+            "x": 842.6799720789454,
+            "y": 885.3559498223412
+          },
+          {
+            "x": 680.0068392515723,
+            "y": 883.3064615462517
+          },
+          {
+            "x": 680.6036118659044,
+            "y": 748.2817255883784
+          },
+          {
+            "x": 547.6293323344944,
+            "y": 747.5974955756141
+          },
+          {
+            "x": 547.4194016261756,
+            "y": 626.3485762012199
+          },
+          {
+            "x": 172.634401931908,
+            "y": 628.2609000378785
+          },
+          {
+            "x": 141.58659678955127,
+            "y": 655.3763372448858
+          },
+          {
+            "x": 51.420331512066866,
+            "y": 655.3763372448858
+          }
+        ]
       }
     ],
     "valveBoxes": [
@@ -1912,9 +1992,9 @@
       }
     ],
     "view": {
-      "offsetX": 153.68998084500492,
-      "offsetY": -286.6954131845371,
-      "zoom": 1.0837388451534,
+      "offsetX": -836.9945552172805,
+      "offsetY": -1210.790789341504,
+      "zoom": 2.6495825715941104,
       "showCoverage": true,
       "showPipe": false,
       "showTrench": false,
@@ -1937,11 +2017,13 @@
       "redoStack": []
     },
     "ui": {
-      "activeTool": "select",
-      "placementPattern": "arc",
+      "activeTool": "place",
+      "placementPattern": "half",
       "pipePlacementKind": "zone",
       "wirePlacementKind": "multiconductor",
       "selectedSprinklerId": null,
+      "selectedWateringAreaId": null,
+      "selectedWateringAreaVertexIndex": null,
       "selectedValveBoxId": null,
       "selectedControllerId": null,
       "selectedPipeRunId": null,
@@ -1949,19 +2031,18 @@
       "selectedFittingId": null,
       "selectedPipeVertexIndex": null,
       "selectedWireVertexIndex": null,
-      "hint": "Ready to place sprinklers. 23 heads on plan.",
+      "hint": "Click to place a half spray. It will auto-face inward from the nearest traced watering-area edge when possible.",
       "measurePoints": [],
       "measurePreviewPoint": null,
       "measureDistance": null,
       "fittingDraft": null,
       "pipeDraft": null,
       "wireDraft": null,
+      "wateringAreaDraft": null,
       "cursorWorld": null,
       "activeZoneId": "cd25121e-8c1d-419b-b6df-f621809c5046",
       "focusedZoneId": null,
-      "expandedZoneIds": [
-        "cd25121e-8c1d-419b-b6df-f621809c5046"
-      ],
+      "expandedZoneIds": [],
       "appScreen": "layout",
       "calibrationMode": "scale",
       "rectificationPoints": [],
