@@ -128,7 +128,7 @@ The repo includes a reporting script that analyzes a saved layout and writes a m
 node .\tools\recommend-nozzles.mjs
 ```
 
-It reads `sprinkler-layout.json` and `sprinkler_data.json` and updates `zone-nozzle-analysis.md`.
+It reads `sprinkler-layout.json` and `sprinkler_data.json`, uses the same shared analyzer as the app, and updates `zone-nozzle-analysis.md`.
 
 ## Browser Target
 
