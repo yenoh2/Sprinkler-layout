@@ -78,6 +78,7 @@ function bindElements() {
     coverageOpacity: document.getElementById("coverage-opacity"),
     analysisOverlayMode: document.getElementById("analysis-overlay-mode"),
     analysisTargetDepth: document.getElementById("analysis-target-depth"),
+    analysisNozzleSelectionMode: document.getElementById("analysis-nozzle-selection-mode"),
     analysisZoneSelect: document.getElementById("analysis-zone-select"),
     analysisCellPx: document.getElementById("analysis-cell-px"),
     analysisRateScaleMode: document.getElementById("analysis-rate-scale-mode"),
@@ -482,6 +483,9 @@ function bindEvents(elements, store, renderer, interactions, io) {
   elements.analysisTargetDepth.addEventListener("change", () => {
     const value = Math.max(0.1, Number(elements.analysisTargetDepth.value) || 1);
     store.dispatch({ type: "SET_ANALYSIS", payload: { targetDepthInches: value } });
+  });
+  elements.analysisNozzleSelectionMode.addEventListener("change", () => {
+    store.dispatch({ type: "SET_ANALYSIS", payload: { nozzleSelectionMode: elements.analysisNozzleSelectionMode.value } });
   });
   elements.analysisZoneSelect.addEventListener("change", () => {
     store.dispatch({ type: "SET_VIEW", payload: { analysisZoneId: elements.analysisZoneSelect.value || null } });
@@ -1073,6 +1077,7 @@ function updateUi(elements, state, renderer, analyzer) {
   elements.coverageOpacity.value = String(state.view.coverageOpacity);
   elements.analysisOverlayMode.value = state.view.analysisOverlayMode ?? "application_rate";
   elements.analysisTargetDepth.value = formatEditableNumber(state.analysis.targetDepthInches ?? 1);
+  elements.analysisNozzleSelectionMode.value = state.analysis.nozzleSelectionMode ?? "optimized";
   elements.analysisCellPx.value = String(state.view.heatmapCellPx ?? 18);
   elements.analysisRateScaleMode.value = state.view.heatmapScaleMode ?? "zone";
   elements.analysisRateScaleMax.value = formatEditableNumber(state.view.heatmapScaleMaxInHr ?? 3);
@@ -2671,6 +2676,8 @@ function renderCompatibilityCard(compatibility) {
   const preferredFamilyLabel = compatibility.zonePreferredFamily === "mixed"
     ? "Mixed"
     : capitalize(compatibility.zonePreferredFamily ?? "mixed");
+  const preferredFitTitle = compatibility.preferredFitTitle ?? "Preferred fit";
+  const alternateFitTitle = compatibility.alternateFitTitle ?? "Alternate fit";
   const lines = [
     `<div class="analysis-card ${statusClass}">`,
     '<div class="analysis-card-title">Zone Family Compatibility</div>',
@@ -2682,10 +2689,10 @@ function renderCompatibilityCard(compatibility) {
   if (compatibility.preferredFitLabel || compatibility.alternateFitLabel) {
     lines.push('<dl class="analysis-grid">');
     if (compatibility.preferredFitLabel) {
-      lines.push(`<div><dt>Preferred fit</dt><dd>${escapeHtml(compatibility.preferredFitLabel)}</dd></div>`);
+      lines.push(`<div><dt>${escapeHtml(preferredFitTitle)}</dt><dd>${escapeHtml(compatibility.preferredFitLabel)}</dd></div>`);
     }
     if (compatibility.alternateFitLabel) {
-      lines.push(`<div><dt>Alternate fit</dt><dd>${escapeHtml(compatibility.alternateFitLabel)}</dd></div>`);
+      lines.push(`<div><dt>${escapeHtml(alternateFitTitle)}</dt><dd>${escapeHtml(compatibility.alternateFitLabel)}</dd></div>`);
     }
     lines.push("</dl>");
   }

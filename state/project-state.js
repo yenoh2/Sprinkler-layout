@@ -13,6 +13,7 @@ const DEFAULT_SPRINKLER_RADIUS_FT = 12;
 const DEFAULT_STRIP_LENGTH_FT = 15;
 const DEFAULT_STRIP_WIDTH_FT = 4;
 const VALID_TOOLS = ["select", "place", "area", "pipe", "wire", "fittings", "valve-box", "controller", "calibrate", "measure", "pan"];
+const ANALYSIS_NOZZLE_SELECTION_MODES = new Set(["conventional", "optimized"]);
 
 const HISTORY_ACTIONS = new Set([
   "ADD_SPRINKLER",
@@ -110,6 +111,7 @@ export function createInitialState() {
     },
     analysis: {
       targetDepthInches: 1,
+      nozzleSelectionMode: "optimized",
     },
     parts: {
       groupBy: "body_nozzle_split",
@@ -1468,6 +1470,11 @@ function sanitizeAnalysisPatch(patch) {
   if ("targetDepthInches" in patch) {
     const targetDepth = Number(patch.targetDepthInches);
     sanitized.targetDepthInches = Number.isFinite(targetDepth) && targetDepth > 0 ? targetDepth : 1;
+  }
+  if ("nozzleSelectionMode" in patch) {
+    sanitized.nozzleSelectionMode = ANALYSIS_NOZZLE_SELECTION_MODES.has(patch.nozzleSelectionMode)
+      ? patch.nozzleSelectionMode
+      : "optimized";
   }
   return sanitized;
 }
