@@ -34,6 +34,9 @@ function bindElements() {
   return {
     screenButtons: [...document.querySelectorAll("[data-screen]")],
     topbarTools: document.querySelector(".topbar-tools"),
+    topbarContextControls: document.getElementById("topbar-context-controls"),
+    topbarPlacementPatternField: document.getElementById("topbar-placement-pattern-field"),
+    topbarPipeKindField: document.getElementById("topbar-pipe-kind-field"),
     layoutScreen: document.getElementById("layout-screen"),
     partsScreen: document.getElementById("parts-screen"),
     toolbarPanels: [...document.querySelectorAll(".toolbar-panel > .panel")],
@@ -48,6 +51,7 @@ function bindElements() {
     exportPngButton: document.getElementById("export-png-button"),
     resetViewButton: document.getElementById("reset-view-button"),
     projectJsonInput: document.getElementById("project-json-input"),
+    calibrateToolButton: document.getElementById("calibrate-tool-button"),
     calibrationDistance: document.getElementById("calibration-distance"),
     resetCalibrationPointsButton: document.getElementById("reset-calibration-points-button"),
     applyTwoPointButton: document.getElementById("apply-two-point-button"),
@@ -240,6 +244,9 @@ function bindEvents(elements, store, renderer, interactions, io) {
   });
 
   elements.toolButtons.forEach((button) => {
+    if (button === elements.calibrateToolButton) {
+      return;
+    }
     button.addEventListener("click", () => {
       renderer.setHoveredFittingPreview(null);
       store.dispatch({ type: "SET_ACTIVE_TOOL", payload: { tool: button.dataset.tool } });
@@ -301,6 +308,12 @@ function bindEvents(elements, store, renderer, interactions, io) {
     if (!store.getState().background.src) {
       store.dispatch({ type: "RESET_VIEW" });
     }
+  });
+
+  elements.calibrateToolButton.addEventListener("click", () => {
+    renderer.setHoveredFittingPreview(null);
+    store.dispatch({ type: "SET_CALIBRATION_MODE", payload: { mode: "scale" } });
+    store.dispatch({ type: "SET_ACTIVE_TOOL", payload: { tool: "calibrate" } });
   });
 
   elements.applyTwoPointButton.addEventListener("click", () => {
@@ -1057,9 +1070,14 @@ function updateUi(elements, state, renderer, analyzer) {
   elements.projectName.value = state.meta.projectName;
   elements.unitsSelect.value = state.scale.units;
   elements.placementPattern.value = state.ui.placementPattern;
-  elements.placementPattern.disabled = state.ui.activeTool !== "place";
+  const showPlacementPatternField = state.ui.activeTool === "place";
+  elements.topbarPlacementPatternField.hidden = !showPlacementPatternField;
+  elements.placementPattern.disabled = !showPlacementPatternField;
   elements.pipePlacementKind.value = state.ui.pipePlacementKind ?? "main";
-  elements.pipePlacementKind.disabled = state.ui.activeTool !== "pipe";
+  const showPipeKindField = state.ui.activeTool === "pipe";
+  elements.topbarPipeKindField.hidden = !showPipeKindField;
+  elements.pipePlacementKind.disabled = !showPipeKindField;
+  elements.topbarContextControls.hidden = !showPlacementPatternField && !showPipeKindField;
   elements.lineSizeSelect.value = state.hydraulics.lineSizeInches ? String(state.hydraulics.lineSizeInches) : "";
   elements.pressureInput.value = state.hydraulics.pressurePsi ?? "";
   elements.designFlowLimitInput.value = state.hydraulics.designFlowLimitGpm ?? "";

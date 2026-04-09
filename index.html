@@ -21,37 +21,49 @@
         <button type="button" data-screen="layout" class="screen-switch-button is-active">Layout</button>
         <button type="button" data-screen="parts" class="screen-switch-button">Parts</button>
       </div>
-      <div class="topbar-tools">
+      <div class="topbar-tools" role="navigation" aria-label="Layout tools">
         <div class="tool-grid topbar-tool-grid">
-          <button type="button" data-tool="select" class="tool-button is-active">Select</button>
-          <button type="button" data-tool="place" class="tool-button">Place</button>
-          <button type="button" data-tool="area" class="tool-button">Area</button>
-          <button type="button" data-tool="pipe" class="tool-button">Pipe</button>
-          <button type="button" data-tool="wire" class="tool-button">Wire</button>
-          <button type="button" data-tool="fittings" class="tool-button">Fittings</button>
-          <button type="button" data-tool="valve-box" class="tool-button">Valve Box</button>
-          <button type="button" data-tool="controller" class="tool-button">Controller</button>
-          <button type="button" data-tool="calibrate" class="tool-button">Calibrate</button>
-          <button type="button" data-tool="measure" class="tool-button">Measure</button>
-          <button type="button" data-tool="pan" class="tool-button">Pan</button>
+          <div class="tool-group" aria-label="Navigate">
+            <button type="button" data-tool="select" class="tool-button is-active">Select</button>
+            <button type="button" data-tool="pan" class="tool-button">Pan</button>
+          </div>
+          <span class="tool-divider" aria-hidden="true"></span>
+          <div class="tool-group" aria-label="Draw">
+            <button type="button" data-tool="place" class="tool-button">Place</button>
+            <button type="button" data-tool="area" class="tool-button">Area</button>
+            <button type="button" data-tool="pipe" class="tool-button">Pipe</button>
+            <button type="button" data-tool="wire" class="tool-button">Wire</button>
+            <button type="button" data-tool="fittings" class="tool-button">Fittings</button>
+          </div>
+          <span class="tool-divider" aria-hidden="true"></span>
+          <div class="tool-group" aria-label="Infrastructure">
+            <button type="button" data-tool="valve-box" class="tool-button">Valve Box</button>
+            <button type="button" data-tool="controller" class="tool-button">Controller</button>
+          </div>
+          <span class="tool-divider" aria-hidden="true"></span>
+          <div class="tool-group" aria-label="Utility">
+            <button type="button" data-tool="measure" class="tool-button">Measure</button>
+          </div>
         </div>
-        <label class="field field-compact topbar-pattern">
-          <span>Placement pattern</span>
-          <select id="placement-pattern">
-            <option value="full">Full circle</option>
-            <option value="quarter">Quarter spray</option>
-            <option value="half">Half spray</option>
-            <option value="arc">Arc</option>
-            <option value="strip">Strip</option>
-          </select>
-        </label>
-        <label class="field field-compact topbar-pattern">
-          <span>Pipe type</span>
-          <select id="pipe-placement-kind">
-            <option value="main">Main supply</option>
-            <option value="zone" selected>Zone line</option>
-          </select>
-        </label>
+        <div class="topbar-context-controls" id="topbar-context-controls" hidden>
+          <label class="field field-compact topbar-context-option" id="topbar-placement-pattern-field" hidden>
+            <span>Pattern</span>
+            <select id="placement-pattern">
+              <option value="full">Full circle</option>
+              <option value="quarter">Quarter spray</option>
+              <option value="half">Half spray</option>
+              <option value="arc">Arc</option>
+              <option value="strip">Strip</option>
+            </select>
+          </label>
+          <label class="field field-compact topbar-context-option" id="topbar-pipe-kind-field" hidden>
+            <span>Pipe type</span>
+            <select id="pipe-placement-kind">
+              <option value="main">Main supply</option>
+              <option value="zone" selected>Zone line</option>
+            </select>
+          </label>
+        </div>
       </div>
       <div class="status-strip topbar-status">
         <span id="scale-status" class="status-pill status-pill-warning">Uncalibrated</span>
@@ -92,6 +104,7 @@
         <section class="panel">
           <h2>Calibration</h2>
           <p class="panel-copy">Click two points on the image, then enter the real-world distance between them.</p>
+          <button type="button" data-tool="calibrate" class="tool-button calibrate-action-button" id="calibrate-tool-button">Start Calibration</button>
           <label class="field">
             <span>Measured distance</span>
             <input id="calibration-distance" type="number" min="0.01" step="0.01" value="10">

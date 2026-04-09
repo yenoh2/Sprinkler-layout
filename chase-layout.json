@@ -79,7 +79,8 @@
       "designFlowLimitGpm": 12
     },
     "analysis": {
-      "targetDepthInches": 1
+      "targetDepthInches": 1,
+      "nozzleSelectionMode": "optimized"
     },
     "parts": {
       "groupBy": "body_nozzle_split",
@@ -106,7 +107,7 @@
         "visible": true,
         "runtimeMinutes": null,
         "runtimeGroupName": null,
-        "includeInPartsList": false,
+        "includeInPartsList": true,
         "valveBoxId": "85c7b95e-1ed3-47cf-9b88-cfffd92eb92d",
         "controllerId": null,
         "stationNumber": null
@@ -292,8 +293,8 @@
       },
       {
         "id": "7d238311-63db-499e-a1c7-a77845cca1ca",
-        "x": 789.25,
-        "y": 746.89,
+        "x": 789.7017659128442,
+        "y": 753.5395349973148,
         "coverageModel": "sector",
         "radius": 25.238674047794582,
         "pattern": "arc",
@@ -488,7 +489,7 @@
         "radius": 12.58687815099691,
         "pattern": "arc",
         "startDeg": 54,
-        "sweepDeg": 135,
+        "sweepDeg": 126,
         "rotationDeg": 0,
         "stripMode": "end",
         "stripMirror": "right",
@@ -810,8 +811,8 @@
             "y": 599.8654605893543
           },
           {
-            "x": 768.5926008058102,
-            "y": 546.4140274975033
+            "x": 772.3061708312036,
+            "y": 594.5059331409183
           }
         ]
       },
@@ -875,23 +876,6 @@
           {
             "x": 775.7926304749941,
             "y": 593.8862356196619
-          }
-        ]
-      },
-      {
-        "id": "f0a912f8-1991-45d7-9e6a-c2bcd9250757",
-        "kind": "zone",
-        "zoneId": "4897d3ce-4108-4b01-b95f-8c86a093342f",
-        "label": "Zone line 8",
-        "diameterInches": 1,
-        "points": [
-          {
-            "x": 772.8997827656062,
-            "y": 593.1003131765708
-          },
-          {
-            "x": 761.84434529135,
-            "y": 599.8654605893543
           }
         ]
       },
@@ -1200,15 +1184,23 @@
         "kind": "zone",
         "zoneId": "7f2ded09-5a16-4bb4-aa5b-b0aefbc74c68",
         "label": "Zone line 20",
-        "diameterInches": 0.75,
+        "diameterInches": 1,
         "points": [
           {
-            "x": 420.49993642471003,
-            "y": 424.69555064500787
+            "x": 494.66695412233474,
+            "y": 401.94950589581106
           },
           {
-            "x": 480.16401198553274,
-            "y": 391.58489601351164
+            "x": 513.7190352942949,
+            "y": 409.571888517902
+          },
+          {
+            "x": 552.7093437786154,
+            "y": 607.30550905509
+          },
+          {
+            "x": 774.5783832254225,
+            "y": 569.7875287772723
           }
         ]
       },
@@ -1307,7 +1299,7 @@
         "controllerId": "1141df24-b29a-4e11-a764-a03b298bc122",
         "valveBoxId": "d8e30f98-8a54-4c44-af79-1cb85269eebf",
         "label": "Wire run 1",
-        "conductorCount": 7,
+        "conductorCount": 9,
         "gaugeAwg": "18",
         "colorCode": null,
         "points": [
@@ -1316,12 +1308,20 @@
             "y": 923.2503572571098
           },
           {
+            "x": 694.9845638153821,
+            "y": 950.9217642347796
+          },
+          {
             "x": 706.7515113430409,
             "y": 883.1700608103586
           },
           {
-            "x": 888.054790762717,
-            "y": 878.3565908613039
+            "x": 806.3691900681632,
+            "y": 884.2255305644304
+          },
+          {
+            "x": 845.6431165118258,
+            "y": 829.5774660772404
           },
           {
             "x": 778.3508964316687,
@@ -1338,7 +1338,7 @@
         "controllerId": "1141df24-b29a-4e11-a764-a03b298bc122",
         "valveBoxId": "d8e30f98-8a54-4c44-af79-1cb85269eebf",
         "label": "Wire run 2",
-        "conductorCount": 4,
+        "conductorCount": 5,
         "gaugeAwg": "18",
         "colorCode": null,
         "points": [
@@ -1357,7 +1357,7 @@
         "controllerId": "1141df24-b29a-4e11-a764-a03b298bc122",
         "valveBoxId": "2f322feb-3785-427e-a890-c7bb4193dc8b",
         "label": "Wire run 3",
-        "conductorCount": 6,
+        "conductorCount": 5,
         "gaugeAwg": "18",
         "colorCode": null,
         "points": [
@@ -1366,12 +1366,20 @@
             "y": 923.2503572571098
           },
           {
+            "x": 705.784896284115,
+            "y": 952.412156814134
+          },
+          {
             "x": 706.7515113430409,
             "y": 883.1700608103586
           },
           {
-            "x": 878.141475534248,
-            "y": 875.0593864459198
+            "x": 807.4061499447467,
+            "y": 889.8152864202707
+          },
+          {
+            "x": 850.6074258851646,
+            "y": 827.7152044561687
           },
           {
             "x": 778.3508964316687,
@@ -1496,19 +1504,6 @@
         "status": "placed"
       },
       {
-        "id": "a0b6cf23-66f5-4453-b6a1-2525f46c8bcc",
-        "type": "elbow",
-        "label": "",
-        "zoneId": "4897d3ce-4108-4b01-b95f-8c86a093342f",
-        "sizeSpec": "1 x 1/2 elbow",
-        "anchor": null,
-        "x": 754.5617915544846,
-        "y": 556.1673849274033,
-        "rotationDeg": 0,
-        "locked": false,
-        "status": "placed"
-      },
-      {
         "id": "c94b0bd9-6128-4774-b84b-7e17d9b7ce44",
         "type": "elbow",
         "label": "",
@@ -1594,23 +1589,6 @@
         "status": "placed"
       },
       {
-        "id": "4b80511e-c4a1-485c-a981-fbb2eea81829",
-        "type": "head_takeoff",
-        "label": "",
-        "zoneId": "57ea6064-5e3f-4695-9431-2a56cbef8fdb",
-        "sizeSpec": "1 x 1 x 1/2 tee",
-        "anchor": {
-          "kind": "sprinkler",
-          "sprinklerId": "07f70478-75f3-4987-89a6-96d5a05c254b",
-          "pipeRunId": "222b714e-fdee-4793-8b2b-c90f2ffad39e"
-        },
-        "x": 544.3905553707662,
-        "y": 617.3736582149648,
-        "rotationDeg": 0,
-        "locked": false,
-        "status": "placed"
-      },
-      {
         "id": "48adfb3d-ef08-44db-a829-b98cf40236a5",
         "type": "head_takeoff",
         "label": "",
@@ -1679,19 +1657,6 @@
         "status": "placed"
       },
       {
-        "id": "e25c9294-71ca-48e3-8da7-b5cc1cddfdd4",
-        "type": "elbow",
-        "label": "",
-        "zoneId": "57ea6064-5e3f-4695-9431-2a56cbef8fdb",
-        "sizeSpec": "1 x 1/2 elbow",
-        "anchor": null,
-        "x": 475.466366759982,
-        "y": 543.9814950039126,
-        "rotationDeg": 0,
-        "locked": false,
-        "status": "placed"
-      },
-      {
         "id": "2a48a290-c5d9-4e79-b59f-19a9f40da77b",
         "type": "tee",
         "label": "",
@@ -1704,23 +1669,6 @@
         },
         "x": 791.2470157351079,
         "y": 739.7890089631981,
-        "rotationDeg": 0,
-        "locked": false,
-        "status": "placed"
-      },
-      {
-        "id": "d737b9b1-cfb4-465c-aa45-dee20d12e39e",
-        "type": "tee",
-        "label": "",
-        "zoneId": "4897d3ce-4108-4b01-b95f-8c86a093342f",
-        "sizeSpec": "1 x 1 x 1 tee",
-        "anchor": {
-          "kind": "pipe_vertex",
-          "pipeRunId": "f0a912f8-1991-45d7-9e6a-c2bcd9250757",
-          "vertexIndex": 1
-        },
-        "x": 761.84434529135,
-        "y": 599.8654605893543,
         "rotationDeg": 0,
         "locked": false,
         "status": "placed"
@@ -1775,17 +1723,187 @@
         "rotationDeg": 0,
         "locked": false,
         "status": "placed"
+      },
+      {
+        "id": "45ed3fd5-cbca-4af6-9a69-c8e9e1da26ec",
+        "type": "head_takeoff",
+        "label": "",
+        "zoneId": "57ea6064-5e3f-4695-9431-2a56cbef8fdb",
+        "sizeSpec": "1 x 1 x 1/2 tee",
+        "anchor": {
+          "kind": "sprinkler",
+          "sprinklerId": "427e9663-2718-45f4-bbc5-16678ac1505e",
+          "pipeRunId": "acecaf58-db95-41ad-9ed4-8165eee4a521"
+        },
+        "x": 153.58,
+        "y": 518.22,
+        "rotationDeg": 0,
+        "locked": false,
+        "status": "placed"
+      },
+      {
+        "id": "e31f99cc-9f2d-4a6b-815c-8482275aa97e",
+        "type": "head_takeoff",
+        "label": "",
+        "zoneId": "57ea6064-5e3f-4695-9431-2a56cbef8fdb",
+        "sizeSpec": "1 x 1 x 1/2 tee",
+        "anchor": {
+          "kind": "sprinkler",
+          "sprinklerId": "74c12448-3620-489a-8474-24d88a8e094a",
+          "pipeRunId": "222b714e-fdee-4793-8b2b-c90f2ffad39e"
+        },
+        "x": 53.19946827661954,
+        "y": 650.998287550802,
+        "rotationDeg": 0,
+        "locked": false,
+        "status": "placed"
+      },
+      {
+        "id": "1389df51-49a8-4be1-b3ce-3439335a2cc5",
+        "type": "head_takeoff",
+        "label": "",
+        "zoneId": "57ea6064-5e3f-4695-9431-2a56cbef8fdb",
+        "sizeSpec": "1 x 1 x 1/2 tee",
+        "anchor": {
+          "kind": "sprinkler",
+          "sprinklerId": "82468588-716e-46b6-9a1c-ba5944046ae4",
+          "pipeRunId": "222b714e-fdee-4793-8b2b-c90f2ffad39e"
+        },
+        "x": 52.86,
+        "y": 529.98,
+        "rotationDeg": 0,
+        "locked": false,
+        "status": "placed"
+      },
+      {
+        "id": "d746e2fa-0b17-4bc0-9cf3-952e1ac09b15",
+        "type": "head_takeoff",
+        "label": "",
+        "zoneId": "e696f5cc-8f48-4ff2-9fa9-5f4090e4466e",
+        "sizeSpec": "1 x 1 x 1/2 tee",
+        "anchor": {
+          "kind": "sprinkler",
+          "sprinklerId": "dbb4b0d2-c167-435e-9838-d4201da338f9",
+          "pipeRunId": "b70c454c-2639-4d76-947e-25b5c7eb273f"
+        },
+        "x": 522.4380699940473,
+        "y": 448.54753077781,
+        "rotationDeg": 0,
+        "locked": false,
+        "status": "placed"
+      },
+      {
+        "id": "7dfb2a7d-190a-490e-a2f3-931666335d11",
+        "type": "elbow",
+        "label": "",
+        "zoneId": "e696f5cc-8f48-4ff2-9fa9-5f4090e4466e",
+        "sizeSpec": "1 x 1/2 elbow",
+        "anchor": {
+          "kind": "sprinkler",
+          "sprinklerId": "cc6b11cd-b413-4087-aff5-b43dfacb4e2f",
+          "pipeRunId": "b70c454c-2639-4d76-947e-25b5c7eb273f"
+        },
+        "x": 384.90670184317804,
+        "y": 478.19433887656936,
+        "rotationDeg": 0,
+        "locked": false,
+        "status": "placed"
+      },
+      {
+        "id": "b3812c50-ff97-4247-a2d7-4b2e02f890eb",
+        "type": "elbow",
+        "label": "",
+        "zoneId": "e696f5cc-8f48-4ff2-9fa9-5f4090e4466e",
+        "sizeSpec": "1 x 1/2 elbow",
+        "anchor": {
+          "kind": "sprinkler",
+          "sprinklerId": "bd2c376b-2329-4be9-9dd9-4bb12c7ad515",
+          "pipeRunId": "b70c454c-2639-4d76-947e-25b5c7eb273f"
+        },
+        "x": 406.44,
+        "y": 624.53,
+        "rotationDeg": 0,
+        "locked": false,
+        "status": "placed"
+      },
+      {
+        "id": "405b6c5f-7079-4fd6-8a56-2499d7592ff0",
+        "type": "head_takeoff",
+        "label": "",
+        "zoneId": "e696f5cc-8f48-4ff2-9fa9-5f4090e4466e",
+        "sizeSpec": "1 x 1 x 1/2 tee",
+        "anchor": {
+          "kind": "sprinkler",
+          "sprinklerId": "07f70478-75f3-4987-89a6-96d5a05c254b",
+          "pipeRunId": "b70c454c-2639-4d76-947e-25b5c7eb273f"
+        },
+        "x": 544.53,
+        "y": 624.45,
+        "rotationDeg": 0,
+        "locked": false,
+        "status": "placed"
+      },
+      {
+        "id": "09998960-8339-446b-b31c-0e81e08cd39e",
+        "type": "tee",
+        "label": "",
+        "zoneId": "e696f5cc-8f48-4ff2-9fa9-5f4090e4466e",
+        "sizeSpec": "1 x 1 x 1 tee",
+        "anchor": {
+          "kind": "pipe_vertex",
+          "pipeRunId": "5ef94df7-8b3d-4db9-9641-506eb81914fd",
+          "vertexIndex": 0
+        },
+        "x": 544.7906235128353,
+        "y": 606.1656719037196,
+        "rotationDeg": 0,
+        "locked": false,
+        "status": "placed"
+      },
+      {
+        "id": "fd23d1ae-a0f8-4c12-bece-456ffcff73ba",
+        "type": "elbow",
+        "label": "",
+        "zoneId": "57ea6064-5e3f-4695-9431-2a56cbef8fdb",
+        "sizeSpec": "1 x 1/2 elbow",
+        "anchor": {
+          "kind": "sprinkler",
+          "sprinklerId": "dfaa4f04-cdf7-436e-8015-a8cf1e95168d",
+          "pipeRunId": "acecaf58-db95-41ad-9ed4-8165eee4a521"
+        },
+        "x": 267.99,
+        "y": 500.77,
+        "rotationDeg": 0,
+        "locked": false,
+        "status": "placed"
+      },
+      {
+        "id": "c48a56db-4738-4859-aec2-e93415c68765",
+        "type": "tee",
+        "label": "",
+        "zoneId": null,
+        "sizeSpec": "1 tee",
+        "anchor": {
+          "kind": "pipe_vertex",
+          "pipeRunId": "01267946-0604-4f28-bb19-fb42255240ad",
+          "vertexIndex": 0
+        },
+        "x": 168.22471345318155,
+        "y": 808.14430382529,
+        "rotationDeg": 0,
+        "locked": false,
+        "status": "placed"
       }
     ],
     "view": {
-      "offsetX": -549.6935852508029,
-      "offsetY": -637.9425741671907,
-      "zoom": 1.8696221600292517,
-      "showCoverage": true,
+      "offsetX": 158.30498364936932,
+      "offsetY": -302.22176206987706,
+      "zoom": 1.0906258999102525,
+      "showCoverage": false,
       "showPipe": true,
       "showTrench": false,
       "showWire": false,
-      "showFittings": false,
+      "showFittings": true,
       "showGrid": false,
       "showLabels": false,
       "showNozzleLabels": true,
@@ -1807,7 +1925,7 @@
       "placementPattern": "arc",
       "pipePlacementKind": "zone",
       "wirePlacementKind": "multiconductor",
-      "selectedSprinklerId": "7d238311-63db-499e-a1c7-a77845cca1ca",
+      "selectedSprinklerId": null,
       "selectedWateringAreaId": null,
       "selectedWateringAreaVertexIndex": null,
       "selectedValveBoxId": null,
