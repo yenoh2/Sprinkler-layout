@@ -79,6 +79,7 @@ function bindElements() {
     toggleLabels: document.getElementById("toggle-labels"),
     toggleNozzleLabels: document.getElementById("toggle-nozzle-labels"),
     toggleZoneLabels: document.getElementById("toggle-zone-labels"),
+    toggleHeadSpacingLabels: document.getElementById("toggle-head-spacing-labels"),
     coverageOpacity: document.getElementById("coverage-opacity"),
     analysisOverlayMode: document.getElementById("analysis-overlay-mode"),
     analysisTargetDepth: document.getElementById("analysis-target-depth"),
@@ -485,6 +486,9 @@ function bindEvents(elements, store, renderer, interactions, io) {
   });
   elements.toggleZoneLabels.addEventListener("change", () => {
     store.dispatch({ type: "SET_VIEW", payload: { showZoneLabels: elements.toggleZoneLabels.checked } });
+  });
+  elements.toggleHeadSpacingLabels.addEventListener("change", () => {
+    store.dispatch({ type: "SET_VIEW", payload: { showHeadSpacingLabels: elements.toggleHeadSpacingLabels.checked } });
   });
   elements.coverageOpacity.addEventListener("input", () => {
     store.dispatch({ type: "SET_VIEW", payload: { coverageOpacity: Number(elements.coverageOpacity.value) } });
@@ -1092,6 +1096,7 @@ function updateUi(elements, state, renderer, analyzer) {
   elements.toggleLabels.checked = state.view.showLabels;
   elements.toggleNozzleLabels.checked = state.view.showNozzleLabels === true;
   elements.toggleZoneLabels.checked = state.view.showZoneLabels;
+  elements.toggleHeadSpacingLabels.checked = state.view.showHeadSpacingLabels === true;
   elements.coverageOpacity.value = String(state.view.coverageOpacity);
   elements.analysisOverlayMode.value = state.view.analysisOverlayMode ?? "application_rate";
   elements.analysisTargetDepth.value = formatEditableNumber(state.analysis.targetDepthInches ?? 1);

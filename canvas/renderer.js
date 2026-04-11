@@ -2,7 +2,13 @@ import { resolvePlacedFittingSizeSpec } from "../analysis/fittings-analysis.js";
 import { pointFromAngle, pointInSprinkler, toRadians } from "../geometry/arcs.js";
 import { getFittingTypeMeta } from "../geometry/fittings.js";
 import { formatNozzleLabel } from "../geometry/nozzle-labels.js";
-import { buildPipeMidpoints, calculatePipeLengthUnits, distancePointToSegmentSquared } from "../geometry/pipes.js";
+import {
+  buildPipeMidpoints,
+  calculatePipeLengthUnits,
+  distancePointToSegmentSquared,
+  getPointAtPipeDistance,
+  projectPointOntoPipe,
+} from "../geometry/pipes.js";
 import { normalizeRectificationCorners } from "../geometry/rectification.js";
 import { buildStripFootprintWorldPoints, buildStripHandleWorldPoints, isStripCoverage } from "../geometry/coverage.js";
 import { toPixels, worldToScreen } from "../geometry/scale.js";
@@ -27,6 +33,9 @@ const CANVAS_MIN_WIDTH = 600;
 const CANVAS_MIN_HEIGHT = 480;
 const CANVAS_PADDING = 12;
 const DEFAULT_GRID_SPACING = 50;
+const HEAD_SPACING_LABEL_OFFSET_PX = 16;
+const HEAD_CONNECTION_PIPE_EPSILON_PX = 3;
+const HEAD_CONNECTION_PIPE_TOLERANCE_FT = 2 / 12;
 
 const RATE_COLOR_STOPS = [
   { stop: 0, rgb: [24, 76, 107], alpha: 0 },
@@ -432,7 +441,65 @@ export function createRenderer(canvas, store, analyzer) {
         ctx.font = CANVAS_FONT(12);
         ctx.fillText(pipeRun.label || pipeRun.id, labelPoint.x + 8, labelPoint.y - 8);
       }
+
+      if (pipeRun.kind === "zone" && state.view.showHeadSpacingLabels === true) {
+        drawZonePipeHeadSpacingLabels(state, pipeRun, isSelected, isFocusedOut);
+      }
     });
+
+    ctx.restore();
+  }
+
+  function drawZonePipeHeadSpacingLabels(state, pipeRun, isSelected, isFocusedOut) {
+    if (!state.scale.calibrated || !(state.scale.pixelsPerUnit > 0)) {
+      return;
+    }
+
+    const headEntries = buildZonePipeHeadSpacingEntries(state, pipeRun);
+    if (headEntries.length < 2) {
+      return;
+    }
+
+    const zoneColor = getZoneById(state, pipeRun.zoneId)?.color ?? THEME.muted;
+    ctx.save();
+    if (isFocusedOut) {
+      ctx.globalAlpha = 0.42;
+    }
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = CANVAS_FONT_BOLD(isSelected ? 11 : 10);
+
+    for (let index = 1; index < headEntries.length; index += 1) {
+      const start = headEntries[index - 1];
+      const end = headEntries[index];
+      const spanPixels = end.distanceAlongPath - start.distanceAlongPath;
+      if (!(spanPixels > 1)) {
+        continue;
+      }
+
+      const placement = getPointAtPipeDistance(pipeRun.points, (start.distanceAlongPath + end.distanceAlongPath) / 2);
+      if (!placement?.point) {
+        continue;
+      }
+
+      const label = formatDistanceLabel(spanPixels / state.scale.pixelsPerUnit, state.scale.units);
+      const anchor = worldToScreen(placement.point, state.view);
+      const offsetPoint = offsetHeadSpacingLabel(anchor, placement.angleRad);
+      const metrics = ctx.measureText(label);
+      const width = Math.ceil(metrics.width) + 12;
+      const height = 18;
+
+      ctx.fillStyle = "rgba(255, 247, 235, 0.96)";
+      ctx.strokeStyle = isSelected ? THEME.accent : hexToRgba(zoneColor, 0.72);
+      ctx.lineWidth = isSelected ? 1.5 : 1.1;
+      ctx.beginPath();
+      ctx.rect(offsetPoint.x - width / 2, offsetPoint.y - height / 2, width, height);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = isSelected ? THEME.accent : THEME.panel;
+      ctx.fillText(label, offsetPoint.x, offsetPoint.y + 0.5);
+    }
 
     ctx.restore();
   }
@@ -1742,6 +1809,80 @@ function resolvePipeLabelPoint(points) {
       y: (points[midIndex].y + points[midIndex + 1].y) / 2,
     }
     : points[midIndex];
+}
+
+function buildZonePipeHeadSpacingEntries(state, pipeRun) {
+  return (state.sprinklers ?? [])
+    .filter((sprinkler) => sprinkler.zoneId === pipeRun.zoneId)
+    .map((sprinkler) => findNearestZonePipeProjection(state, sprinkler))
+    .filter((projection) =>
+      projection
+      && projection.pipeRunId === pipeRun.id
+      && projection.distanceSquared <= resolveHeadSpacingPipeToleranceSquared(state),
+    )
+    .sort((first, second) => first.distanceAlongPath - second.distanceAlongPath);
+}
+
+function findNearestZonePipeProjection(state, sprinkler) {
+  if (!sprinkler) {
+    return null;
+  }
+
+  const sprinklerZoneId = sprinkler.zoneId ?? null;
+  let best = null;
+  for (const pipeRun of state.pipeRuns ?? []) {
+    if (pipeRun.kind !== "zone" || (pipeRun.zoneId ?? null) !== sprinklerZoneId) {
+      continue;
+    }
+
+    const projection = projectPointOntoPipe(pipeRun.points, sprinkler);
+    if (!projection || (best && projection.distanceSquared >= best.distanceSquared)) {
+      continue;
+    }
+
+    best = {
+      ...projection,
+      pipeRunId: pipeRun.id,
+      sprinklerId: sprinkler.id,
+    };
+  }
+
+  return best;
+}
+
+function resolveHeadSpacingPipeToleranceSquared(state) {
+  const pixelsPerUnit = Number(state?.scale?.pixelsPerUnit);
+  if (!state?.scale?.calibrated || !Number.isFinite(pixelsPerUnit) || pixelsPerUnit <= 0) {
+    return HEAD_CONNECTION_PIPE_EPSILON_PX ** 2;
+  }
+  const epsilon = Math.max(1, pixelsPerUnit * HEAD_CONNECTION_PIPE_TOLERANCE_FT);
+  return epsilon ** 2;
+}
+
+function offsetHeadSpacingLabel(anchor, angleRad) {
+  const safeAngle = Number.isFinite(angleRad) ? angleRad : 0;
+  let normalX = -Math.sin(safeAngle);
+  let normalY = Math.cos(safeAngle);
+  if (normalY > 0) {
+    normalX *= -1;
+    normalY *= -1;
+  }
+  return {
+    x: anchor.x + normalX * HEAD_SPACING_LABEL_OFFSET_PX,
+    y: anchor.y + normalY * HEAD_SPACING_LABEL_OFFSET_PX,
+  };
+}
+
+function formatDistanceLabel(distance, units) {
+  const safeDistance = Number(distance);
+  if (!Number.isFinite(safeDistance) || safeDistance < 0) {
+    return `-- ${units}`;
+  }
+  return `${formatCompactNumber(safeDistance)} ${units}`;
+}
+
+function formatCompactNumber(value) {
+  return String(Number(value.toFixed(2)));
 }
 
 function getSequentialColor(value, maxValue, stops) {

@@ -68,6 +68,112 @@ export function distancePointToSegmentSquared(point, a, b) {
   });
 }
 
+export function projectPointOntoPipe(points, point) {
+  const safePoints = normalizePipePoints(points);
+  const safePoint = normalizePipePoints([point])[0];
+  if (!safePoint || safePoints.length < 2) {
+    return null;
+  }
+
+  let best = null;
+  let traversedLength = 0;
+  for (let index = 1; index < safePoints.length; index += 1) {
+    const start = safePoints[index - 1];
+    const end = safePoints[index];
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const segmentLength = Math.hypot(dx, dy);
+    if (segmentLength === 0) {
+      continue;
+    }
+
+    const t = Math.max(0, Math.min(1, ((safePoint.x - start.x) * dx + (safePoint.y - start.y) * dy) / (dx * dx + dy * dy)));
+    const projectionPoint = {
+      x: start.x + t * dx,
+      y: start.y + t * dy,
+    };
+    const candidate = {
+      point: projectionPoint,
+      segmentIndex: index - 1,
+      t,
+      distanceSquared: distanceSquared(safePoint, projectionPoint),
+      distanceAlongPath: traversedLength + segmentLength * t,
+    };
+
+    if (!best || candidate.distanceSquared < best.distanceSquared) {
+      best = candidate;
+    }
+
+    traversedLength += segmentLength;
+  }
+
+  return best ? { ...best, totalLength: traversedLength } : null;
+}
+
+export function getPointAtPipeDistance(points, distanceAlongPath) {
+  const safePoints = normalizePipePoints(points);
+  if (!safePoints.length) {
+    return null;
+  }
+  if (safePoints.length === 1) {
+    return {
+      point: safePoints[0],
+      segmentIndex: 0,
+      t: 0,
+      angleRad: 0,
+    };
+  }
+
+  const totalLength = calculatePipeLengthPixels(safePoints);
+  if (totalLength <= 0) {
+    return {
+      point: safePoints[0],
+      segmentIndex: 0,
+      t: 0,
+      angleRad: 0,
+    };
+  }
+
+  const targetDistance = Math.max(0, Math.min(totalLength, Number(distanceAlongPath) || 0));
+  let traversedLength = 0;
+  for (let index = 1; index < safePoints.length; index += 1) {
+    const start = safePoints[index - 1];
+    const end = safePoints[index];
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const segmentLength = Math.hypot(dx, dy);
+    if (segmentLength === 0) {
+      continue;
+    }
+
+    const isLastSegment = index === safePoints.length - 1;
+    if (targetDistance <= traversedLength + segmentLength || isLastSegment) {
+      const segmentDistance = Math.max(0, Math.min(segmentLength, targetDistance - traversedLength));
+      const t = segmentLength > 0 ? segmentDistance / segmentLength : 0;
+      return {
+        point: {
+          x: start.x + dx * t,
+          y: start.y + dy * t,
+        },
+        segmentIndex: index - 1,
+        t,
+        angleRad: Math.atan2(dy, dx),
+      };
+    }
+
+    traversedLength += segmentLength;
+  }
+
+  const lastStart = safePoints[safePoints.length - 2];
+  const lastPoint = safePoints[safePoints.length - 1];
+  return {
+    point: lastPoint,
+    segmentIndex: safePoints.length - 2,
+    t: 1,
+    angleRad: Math.atan2(lastPoint.y - lastStart.y, lastPoint.x - lastStart.x),
+  };
+}
+
 export function pointsEqual(a, b, epsilon = 0.001) {
   if (!a || !b) {
     return false;
