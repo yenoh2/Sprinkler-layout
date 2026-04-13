@@ -139,6 +139,7 @@ function bindElements() {
     valveBoxLabel: document.getElementById("valve-box-label"),
     valveBoxX: document.getElementById("valve-box-x"),
     valveBoxY: document.getElementById("valve-box-y"),
+    valveBoxRotation: document.getElementById("valve-box-rotation"),
     valveBoxZones: document.getElementById("valve-box-zones"),
     deleteValveBoxButton: document.getElementById("delete-valve-box-button"),
     controllerLabel: document.getElementById("controller-label"),
@@ -559,7 +560,7 @@ function bindEvents(elements, store, renderer, interactions, io) {
     autoOrientSelectedSprinkler(elements, store);
   });
 
-  [elements.valveBoxLabel, elements.valveBoxX, elements.valveBoxY].forEach((element) => {
+  [elements.valveBoxLabel, elements.valveBoxX, elements.valveBoxY, elements.valveBoxRotation].forEach((element) => {
     element.addEventListener("input", () => updateValveBoxSelection(elements, store));
   });
 
@@ -993,6 +994,7 @@ function updateValveBoxSelection(elements, store) {
         label: elements.valveBoxLabel.value,
         x: Number(elements.valveBoxX.value),
         y: Number(elements.valveBoxY.value),
+        rotationDeg: Number(elements.valveBoxRotation.value),
       },
     },
   });
@@ -1260,8 +1262,10 @@ function updateUi(elements, state, renderer, analyzer) {
     elements.valveBoxLabel.value = selectedValveBox.label ?? "";
     elements.valveBoxX.value = formatEditableNumber(selectedValveBox.x);
     elements.valveBoxY.value = formatEditableNumber(selectedValveBox.y);
+    elements.valveBoxRotation.value = String(Math.round(selectedValveBox.rotationDeg ?? 0));
     renderValveBoxZones(elements, state, selectedValveBox);
   } else {
+    elements.valveBoxRotation.value = "";
     elements.valveBoxZones.innerHTML = "";
   }
 

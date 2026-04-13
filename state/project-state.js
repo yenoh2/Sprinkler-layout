@@ -615,6 +615,7 @@ function applyAction(state, action) {
         x: action.payload.x,
         y: action.payload.y,
         label: action.payload.label || `VB-${state.valveBoxes.length + 1}`,
+        rotationDeg: normalizeAngle(Number(action.payload.rotationDeg ?? 0)),
       });
       clearAllSelections(state.ui);
       state.ui.selectedValveBoxId = action.payload.id;
@@ -1362,6 +1363,9 @@ function sanitizeValveBoxPatch(patch) {
   }
   if ("label" in patch) {
     sanitized.label = patch.label || "Valve Box";
+  }
+  if ("rotationDeg" in patch) {
+    sanitized.rotationDeg = normalizeAngle(Number(patch.rotationDeg ?? 0));
   }
   return sanitized;
 }
@@ -2112,6 +2116,7 @@ function normalizeValveBox(valveBox) {
     x: Number.isFinite(x) ? x : 0,
     y: Number.isFinite(y) ? y : 0,
     label: valveBox?.label || "Valve Box",
+    rotationDeg: normalizeAngle(Number(valveBox?.rotationDeg ?? 0)),
   };
 }
 

@@ -36,6 +36,12 @@ const DEFAULT_GRID_SPACING = 50;
 const HEAD_SPACING_LABEL_OFFSET_PX = 16;
 const HEAD_CONNECTION_PIPE_EPSILON_PX = 3;
 const HEAD_CONNECTION_PIPE_TOLERANCE_FT = 2 / 12;
+const DEFAULT_VALVE_BOX_SYMBOL_WIDTH = 24;
+const DEFAULT_VALVE_BOX_SYMBOL_HEIGHT = 18;
+const VALVE_BOX_WIDTH_INCHES = 28;
+const VALVE_BOX_HEIGHT_INCHES = 21;
+const INCHES_PER_FOOT = 12;
+const VALVE_BOX_HIT_PADDING_PX = 6;
 
 const RATE_COLOR_STOPS = [
   { stop: 0, rgb: [24, 76, 107], alpha: 0 },
@@ -700,7 +706,7 @@ export function createRenderer(canvas, store, analyzer) {
   function drawValveBoxes(state) {
     const selectedValveBox = findSelectedValveBox(state);
     state.valveBoxes.forEach((valveBox) => {
-      const center = worldToScreen({ x: valveBox.x, y: valveBox.y }, state.view);
+      const boxRect = resolveValveBoxScreenRect(state, valveBox);
       const linkedZones = state.zones.filter((zone) => zone.valveBoxId === valveBox.id);
       const primaryZone = linkedZones[0] ?? null;
       const isSelected = selectedValveBox?.id === valveBox.id;
@@ -709,16 +715,17 @@ export function createRenderer(canvas, store, analyzer) {
       if (isFocusedOut) {
         ctx.globalAlpha = 0.35;
       }
-      drawValveBoxSymbol(center, primaryZone?.color ?? THEME.muted, isSelected);
+      drawValveBoxSymbol(boxRect, primaryZone?.color ?? THEME.muted, isSelected);
       if (state.view.showLabels) {
+        const labelX = boxRect.right + 8;
         ctx.fillStyle = THEME.ink;
         ctx.font = CANVAS_FONT(12);
-        ctx.fillText(valveBox.label || valveBox.id, center.x + 16, center.y - 2);
+        ctx.fillText(valveBox.label || valveBox.id, labelX, boxRect.center.y - 2);
         if (linkedZones.length && state.view.showZoneLabels) {
           const zoneText = linkedZones.length === 1 ? linkedZones[0].name : `${linkedZones.length} zones`;
           ctx.fillStyle = primaryZone?.color ?? THEME.muted;
           ctx.font = CANVAS_FONT(11);
-          ctx.fillText(zoneText, center.x + 16, center.y + 12);
+          ctx.fillText(zoneText, labelX, boxRect.center.y + 12);
         }
       }
       ctx.restore();
@@ -830,23 +837,31 @@ export function createRenderer(canvas, store, analyzer) {
     ctx.restore();
   }
 
-  function drawValveBoxSymbol(center, accentColor, isSelected) {
-    const width = 24;
-    const height = 18;
-    const left = center.x - width / 2;
-    const top = center.y - height / 2;
+  function drawValveBoxSymbol(boxRect, accentColor, isSelected) {
+    const { center, width, height, halfWidth, halfHeight, angleRad } = boxRect;
+    const inset = Math.max(1.5, Math.min(3, Math.min(width, height) * 0.12));
+    const accentHeight = Math.max(2, Math.min(6, height * 0.22));
+
+    ctx.save();
+    ctx.translate(center.x, center.y);
+    ctx.rotate(angleRad);
     ctx.fillStyle = THEME.panelLight;
     ctx.strokeStyle = isSelected ? THEME.accent : THEME.panel;
     ctx.lineWidth = isSelected ? 2.6 : 2;
-    ctx.fillRect(left, top, width, height);
-    ctx.strokeRect(left, top, width, height);
+    ctx.fillRect(-halfWidth, -halfHeight, width, height);
+    ctx.strokeRect(-halfWidth, -halfHeight, width, height);
 
     ctx.fillStyle = accentColor;
-    ctx.fillRect(left + 2, top + 2, width - 4, 4);
+    ctx.fillRect(-halfWidth + inset, -halfHeight + inset, Math.max(width - inset * 2, 0), accentHeight);
 
-    ctx.fillStyle = THEME.panel;
-    ctx.font = CANVAS_FONT_BOLD(8);
-    ctx.fillText("VB", left + 5, top + 13);
+    if (width >= 16 && height >= 12) {
+      ctx.fillStyle = THEME.panel;
+      ctx.font = CANVAS_FONT_BOLD(Math.max(7, Math.min(10, height * 0.38)));
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("VB", 0, height * 0.14);
+    }
+    ctx.restore();
   }
 
   function drawControllerSymbol(center, isSelected) {
@@ -1483,8 +1498,10 @@ export function createRenderer(canvas, store, analyzer) {
     const state = store.getState();
     const screenPoint = worldToScreen(worldPoint, state.view);
     return [...state.valveBoxes].reverse().find((valveBox) => {
-      const center = worldToScreen({ x: valveBox.x, y: valveBox.y }, state.view);
-      return Math.abs(screenPoint.x - center.x) <= 14 && Math.abs(screenPoint.y - center.y) <= 12;
+      const boxRect = resolveValveBoxScreenRect(state, valveBox);
+      const localPoint = toValveBoxLocalPoint(screenPoint, boxRect);
+      return Math.abs(localPoint.x) <= boxRect.halfWidth + VALVE_BOX_HIT_PADDING_PX
+        && Math.abs(localPoint.y) <= boxRect.halfHeight + VALVE_BOX_HIT_PADDING_PX;
     }) || null;
   }
 
@@ -1701,6 +1718,65 @@ function drawPipeHandle(ctx, point, fillColor, strokeColor, radius) {
 
 function resolveTrenchLineWidth(state) {
   return state.view.showTrench === true ? 4.8 : 0;
+}
+
+function resolveValveBoxScreenRect(state, valveBox) {
+  const center = worldToScreen({ x: valveBox.x, y: valveBox.y }, state.view);
+  const width = resolveValveBoxScreenDimension(state, VALVE_BOX_WIDTH_INCHES / INCHES_PER_FOOT, DEFAULT_VALVE_BOX_SYMBOL_WIDTH);
+  const height = resolveValveBoxScreenDimension(state, VALVE_BOX_HEIGHT_INCHES / INCHES_PER_FOOT, DEFAULT_VALVE_BOX_SYMBOL_HEIGHT);
+  const rotationDeg = Number.isFinite(Number(valveBox?.rotationDeg)) ? Number(valveBox.rotationDeg) : 0;
+  const angleRad = toRadians(rotationDeg);
+  const halfWidth = width / 2;
+  const halfHeight = height / 2;
+  const corners = [
+    { x: -halfWidth, y: -halfHeight },
+    { x: halfWidth, y: -halfHeight },
+    { x: halfWidth, y: halfHeight },
+    { x: -halfWidth, y: halfHeight },
+  ].map((corner) => rotateValveBoxPoint(corner, center, angleRad));
+  const left = Math.min(...corners.map((corner) => corner.x));
+  const right = Math.max(...corners.map((corner) => corner.x));
+  const top = Math.min(...corners.map((corner) => corner.y));
+  const bottom = Math.max(...corners.map((corner) => corner.y));
+  return {
+    center,
+    width,
+    height,
+    halfWidth,
+    halfHeight,
+    rotationDeg,
+    angleRad,
+    corners,
+    left,
+    right,
+    top,
+    bottom,
+  };
+}
+
+function resolveValveBoxScreenDimension(state, dimensionUnits, fallback) {
+  const dimension = toPixels(dimensionUnits, state.scale) * state.view.zoom;
+  return dimension > 0 ? dimension : fallback;
+}
+
+function rotateValveBoxPoint(point, center, angleRad) {
+  const cos = Math.cos(angleRad);
+  const sin = Math.sin(angleRad);
+  return {
+    x: center.x + point.x * cos - point.y * sin,
+    y: center.y + point.x * sin + point.y * cos,
+  };
+}
+
+function toValveBoxLocalPoint(screenPoint, boxRect) {
+  const dx = screenPoint.x - boxRect.center.x;
+  const dy = screenPoint.y - boxRect.center.y;
+  const cos = Math.cos(boxRect.angleRad);
+  const sin = Math.sin(boxRect.angleRad);
+  return {
+    x: dx * cos + dy * sin,
+    y: -dx * sin + dy * cos,
+  };
 }
 
 function resolveTrenchStrokeColor(isFocusedOut) {
